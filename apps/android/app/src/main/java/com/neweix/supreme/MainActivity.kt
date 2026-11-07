@@ -190,40 +190,58 @@ class MainActivity : FragmentActivity() {
         val email = emailInput.text.toString().trim()
         val password = passwordInput.text.toString()
         if (isBusy) return
-        setBusy(true, "Authenticating Supreme Account…")
-        background.execute {
-            try {
-                val session = SupremeAuthClient.signIn(email, password)
-                val factors = SupremeAuthClient.verifiedTotpFactors(session.accessToken)
-                if (factors.isEmpty()) {
-                    runOnUiThread {
-                        passwordInput.text.clear()
-                        setBusy(false, "TOTP MFA is not enrolled on the Supreme Account. Access remains locked.")
-                    }
-                    return@execute
-                }
-                val factor = factors.first()
-                val challenge = SupremeAuthClient.createTotpChallenge(session.accessToken, factor.id)
-                runOnUiThread {
-                    pendingPasswordSession = session
-                    pendingFactorId = factor.id
-                    pendingChallengeId = challenge
-                    passwordInput.text.clear()
-                    emailInput.isEnabled = false
-                    passwordInput.visibility = View.GONE
-                    codeInput.visibility = View.VISIBLE
-                    primaryButton.text = "VERIFY MFA"
-                    statusText.text = "Enter the current code from your authenticator app."
-                    setBusy(false, null)
-                    codeInput.requestFocus()
-                }
-            } catch (error: Exception) {
-                runOnUiThread {
-                    passwordInput.text.clear()
-                    setBusy(false, safeMessage(error))
-                }
-            }
+        if (email.isBlank() || password.isBlank()) {
+            setBusy(false, "Enter the Supreme account email and password.")
+            return
         }
+
+        setBusy(true, "Complete the security verification…")
+        SupremeCaptchaDialog.show(
+            activity = this,
+            onToken = { captchaToken ->
+                if (!isFinishing && !isDestroyed) {
+                    setBusy(true, "Authenticating Supreme Account…")
+                    background.execute {
+                        try {
+                            val session = SupremeAuthClient.signIn(email, password, captchaToken)
+                            val factors = SupremeAuthClient.verifiedTotpFactors(session.accessToken)
+                            if (factors.isEmpty()) {
+                                runOnUiThread {
+                                    passwordInput.text.clear()
+                                    setBusy(false, "TOTP MFA is not enrolled on the Supreme Account. Access remains locked.")
+                                }
+                                return@execute
+                            }
+                            val factor = factors.first()
+                            val challenge = SupremeAuthClient.createTotpChallenge(session.accessToken, factor.id)
+                            runOnUiThread {
+                                pendingPasswordSession = session
+                                pendingFactorId = factor.id
+                                pendingChallengeId = challenge
+                                passwordInput.text.clear()
+                                emailInput.isEnabled = false
+                                passwordInput.visibility = View.GONE
+                                codeInput.visibility = View.VISIBLE
+                                primaryButton.text = "VERIFY MFA"
+                                statusText.text = "Enter the current code from your authenticator app."
+                                setBusy(false, null)
+                                codeInput.requestFocus()
+                            }
+                        } catch (error: Exception) {
+                            runOnUiThread {
+                                passwordInput.text.clear()
+                                setBusy(false, safeMessage(error))
+                            }
+                        }
+                    }
+                }
+            },
+            onError = { message ->
+                if (!isFinishing && !isDestroyed) {
+                    setBusy(false, message)
+                }
+            },
+        )
     }
 
     private fun verifyMfaCode() {
@@ -642,7 +660,11 @@ class MainActivity : FragmentActivity() {
     private fun safeMessage(error: Exception): String {
         return when (error) {
             is SupremeAuthException -> when (error.statusCode) {
-                400, 401 -> "Supreme sign-in could not be verified. Check the credentials and authenticator code."
+                400, 401, 422 -> if (error.message?.contains("captcha", ignoreCase = true) == true) {
+                    "Security verification was rejected. Complete the check and try again."
+                } else {
+                    "Supreme sign-in could not be verified. Check the account credentials."
+                }
                 403 -> "Supreme access is denied. The account or verified device is not authorized."
                 429 -> "Too many attempts. Wait before trying again."
                 503 -> "Supreme security verification is not configured yet. Access remains locked."

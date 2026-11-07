@@ -24,7 +24,7 @@ Of these, 99 mapped files had identical Git blob SHAs in the destination. The re
 ## Consolidation performed
 
 - Updated the Android `MainActivity.kt` from the source revision after comparing the existing native shell.
-- Preserved `SupremeAttestationClient.kt` and `SupremeKeyAttestation.kt` as native attestation transport/key-generation components. They are not wired into login and must not be treated as authentication.
+- Wired `SupremeAttestationClient.kt` and `SupremeKeyAttestation.kt` into the native post-TOTP login flow. Server-side Android Key Attestation and device-session verification remain the authentication authority.
 - Removed the copied NEWEIX workforce-identity migration; Supreme identity is managed only by `supreme.identities`.
 - Updated the attestation endpoint documentation with the latest challenge-attempt budget and production migration history.
 - Added the Supreme web icon to the preserved commerce integration snapshot.
@@ -44,9 +44,9 @@ Of these, 99 mapped files had identical Git blob SHAs in the destination. The re
 ## Explicitly not done
 
 - No changes were pushed to `neweix24/neweix`.
-- The Supreme identity handoff and `public.staff_profiles` cleanup migration was applied to production and verified on 2026-11-07. No device-session or Custom Access Token Hook migration has been deployed.
+- The Supreme identity handoff, `public.staff_profiles` cleanup, device-bound session, attested-session issuer, and AAL2 Custom Access Token Hook migrations are applied to the shared production Supabase project. The latest identity-authorization hardening migration is also applied and verified.
 - No secrets, signing keys, API tokens, or environment files were copied.
-- No production deployment or APK release was performed.
+- No production-signed Android APK release or Play Store deployment was performed. Supabase database migrations and the Supreme Edge Functions are deployed.
 - No claim is made that the imported Next.js modules build independently.
 
 ## Known architecture boundary

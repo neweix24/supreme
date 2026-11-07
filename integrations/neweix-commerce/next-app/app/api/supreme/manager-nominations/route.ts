@@ -15,9 +15,8 @@ async function authorizeSupreme() {
   const { data: { user }, error: userError } = await session.auth.getUser();
   if (userError || !user) return { error: response("Sign-in required.", 401) };
 
-  const { data: profile, error: profileError } = await session
-    .schema("supreme").from("identities").select("role, is_active, public_id").eq("user_id", user.id).eq("public_id", "supreme").maybeSingle();
-  if (profileError || !profile || profile.role !== "ruler" || profile.public_id !== "supreme" || profile.is_active !== true) {
+  const { data: isSupremeIdentity, error: profileError } = await session.rpc("is_current_supreme_ruler");
+  if (profileError || isSupremeIdentity !== true) {
     return { error: response("Supreme access required.", 403) };
   }
 
