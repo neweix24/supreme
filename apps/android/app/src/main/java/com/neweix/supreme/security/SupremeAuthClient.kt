@@ -154,6 +154,62 @@ internal class SupremeAuthClient {
             payload.optString("token_type", "bearer"), userId, aal)
     }
 
+    fun establishWebSession(session: AuthSession): List<String> {
+        assertWorkerThread()
+        val origin = BuildConfig.SITE_ORIGIN.trimEnd('/')
+        val url = URL("$origin/api/supreme/native/session-cookie")
+        require(url.protocol == "https" && url.host == "neweix.com" && url.userInfo == null) {
+            "Supreme web session origin is invalid."
+        }
+        val body = JSONObject()
+            .put("access_token", session.accessToken)
+            .put("refresh_token", session.refreshToken)
+            .toString()
+            .toByteArray(StandardCharsets.UTF_8)
+        val connection = (url.openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 10_000
+            readTimeout = 15_000
+            instanceFollowRedirects = false
+            useCaches = false
+            doInput = true
+            doOutput = true
+            setRequestProperty("Authorization", "Bearer " + session.accessToken)
+            setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("Cache-Control", "no-store")
+            setFixedLengthStreamingMode(body.size)
+        }
+        try {
+            connection.outputStream.use { it.write(body) }
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val responseText = stream?.use { input ->
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(1024)
+                var total = 0
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    require(total <= 8 * 1024) { "Supreme web session response was too large." }
+                    output.write(buffer, 0, count)
+                }
+                output.toString(StandardCharsets.UTF_8.name())
+            }.orEmpty()
+            if (status !in 200..299) {
+                throw AuthException("Supreme workspace session could not be established.")
+            }
+            val established = JSONObject(responseText).optBoolean("session_established", false)
+            if (!established) throw AuthException("Supreme workspace session was not confirmed.")
+            return connection.headerFields.entries
+                .filter { it.key.equals("Set-Cookie", ignoreCase = true) }
+                .flatMap { it.value.orEmpty() }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     fun signOut(accessToken: String) {
         assertWorkerThread()
         val result = request("POST", "/auth/v1/logout", accessToken, "{}")
