@@ -17,10 +17,6 @@
     <path
         android:fillColor="#050505"
         android:pathData="M34,60 H74 V67 H34 Z" />
-    <path
-        android:fillColor="#F5E5B4"
-        android:pathData="M39,43 A3,3 0,1 0,39.1 43 M69,43 A3,3 0,1 0,69.1 43" />
-
     <!-- Distinct, high-contrast Supreme S monogram. -->
     <path
         android:fillColor="#050505"
