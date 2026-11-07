@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+
+apply(from = "logo-guard.gradle.kts")
 val releaseKeystorePath = providers.environmentVariable("SUPREME_RELEASE_KEYSTORE_PATH").orNull
 val releaseStorePassword = providers.environmentVariable("SUPREME_RELEASE_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("SUPREME_RELEASE_KEY_ALIAS").orNull
