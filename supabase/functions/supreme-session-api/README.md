@@ -7,7 +7,6 @@ Deploy as the Supabase Edge Function `supreme-session-api` with JWT verification
 - Supabase project defaults: `SUPABASE_URL`, `SUPABASE_ANON_KEY` or `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
 - `SUPABASE_DB_URL`: server-side database connection string if it is not already present in the Edge Function runtime.
 - `SUPREME_ANDROID_SIGNING_CERT_SHA256`: the permanent production APK signer SHA-256 digest. Never set this to the debug signer.
-- `SUPREME_ANDROID_MIN_VERSION_CODE`: minimum approved production app version code.
 
 Never place service-role credentials, database URLs or signing configuration in the APK.
 
