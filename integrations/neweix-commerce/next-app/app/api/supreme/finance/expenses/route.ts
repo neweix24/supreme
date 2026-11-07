@@ -29,12 +29,12 @@ async function authorizeSupreme(): Promise<SupremeActorResult> {
   if (userError || !user) return { ok: false, error: "Authentication required.", status: 401 };
 
   const { data: profile, error } = await session
-    .from("staff_profiles")
-    .select("role, is_active")
-    .eq("user_id", user.id)
+    .schema("supreme").from("identities")
+    .select("role, is_active, public_id")
+    .eq("user_id", user.id).eq("public_id", "supreme")
     .maybeSingle();
 
-  if (error || !profile || profile.is_active !== true || profile.role !== "supreme") {
+  if (error || !profile || profile.is_active !== true || profile.role !== "ruler" || profile.public_id !== "supreme") {
     return { ok: false, error: "Only an active Supreme account can manage operating expenses.", status: 403 };
   }
 
