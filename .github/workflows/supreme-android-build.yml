@@ -6,6 +6,7 @@ on:
       - feat/neweix-supreme-android-mainline
       - feat/supreme-server-attestation-verifier
       - feat/supreme-deno-x509-parser
+      - migration/neweix-supreme-consolidation
     paths:
       - "apps/android/**"
       - ".github/workflows/supreme-android-build.yml"
