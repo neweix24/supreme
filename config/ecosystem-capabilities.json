@@ -1,0 +1,272 @@
+{
+  "schema_version": 1,
+  "purpose": "Inventory of already implemented ecosystem capabilities and their ownership. This catalog is descriptive only; it does not grant runtime permissions or imply that Supreme adapters are deployed.",
+  "policy": {
+    "preserve_service_ownership": true,
+    "duplicate_business_logic_in_supreme": false,
+    "enable_only_after_adapter_and_authorization_tests": true,
+    "source_of_truth": "Each service repository and its production database remain authoritative for that service's business data."
+  },
+  "services": [
+    {
+      "service_id": "neweix",
+      "repository": "neweix24/neweix",
+      "ownership": "commerce_and_operations",
+      "implementation_status": "implemented_in_source",
+      "supreme_integration_status": "reference_snapshot_and_registry_only",
+      "capabilities": [
+        {
+          "id": "storefront.catalog",
+          "label": "Storefront and product catalog",
+          "source_paths": [
+            "app/products/page.tsx",
+            "app/products/[slug]/page.tsx",
+            "app/api/products/route.ts"
+          ]
+        },
+        {
+          "id": "commerce.cart-checkout",
+          "label": "Cart and checkout",
+          "source_paths": [
+            "app/cart/page.tsx",
+            "app/checkout/page.tsx",
+            "app/api/orders/route.ts"
+          ]
+        },
+        {
+          "id": "commerce.orders",
+          "label": "Order lifecycle and order tracking",
+          "source_paths": [
+            "app/admin/orders/page.tsx",
+            "app/api/admin/orders/route.ts",
+            "app/api/orders/track/route.ts"
+          ]
+        },
+        {
+          "id": "commerce.payments",
+          "label": "COD and MFS payment workflows",
+          "source_paths": [
+            "app/api/payment-config/route.ts",
+            "app/api/orders/route.ts"
+          ]
+        },
+        {
+          "id": "commerce.delivery",
+          "label": "Pathao delivery booking, quotes and tracking",
+          "source_paths": [
+            "app/api/admin/pathao/route.ts",
+            "app/api/delivery/quote/route.ts",
+            "app/api/webhooks/pathao/route.ts",
+            "docs/pathao-64-district-coverage.md"
+          ]
+        },
+        {
+          "id": "commerce.inventory",
+          "label": "Inventory and warehouse management",
+          "source_paths": [
+            "app/admin/inventory/page.tsx",
+            "app/admin/warehouses/page.tsx",
+            "features/admin/warehouse-manager.tsx"
+          ]
+        },
+        {
+          "id": "commerce.customer-account",
+          "label": "Customer profile, saved products, returns and data requests",
+          "source_paths": [
+            "app/account/page.tsx",
+            "app/api/account/profile/route.ts",
+            "app/api/account/returns/route.ts"
+          ]
+        },
+        {
+          "id": "commerce.staff-workforce",
+          "label": "Staff administration and workforce operations",
+          "source_paths": [
+            "app/admin/staff/page.tsx",
+            "app/admin/workforce/page.tsx",
+            "app/api/workforce/tasks/route.ts"
+          ]
+        },
+        {
+          "id": "commerce.search-reviews",
+          "label": "Product search and reviews",
+          "source_paths": [
+            "app/api/search/route.ts",
+            "app/api/reviews/route.ts",
+            "app/api/search/suggestions/route.ts"
+          ]
+        },
+        {
+          "id": "commerce.messaging",
+          "label": "OTP and transactional SMS notifications",
+          "source_paths": [
+            "app/api/account/phone/send-otp/route.ts",
+            "app/api/admin/bulksms/route.ts"
+          ]
+        },
+        {
+          "id": "commerce.social-publishing",
+          "label": "YouTube publishing and social post drafts",
+          "source_paths": [
+            "app/admin/social-media/page.tsx",
+            "app/api/admin/social-media/route.ts",
+            "docs/social-media/youtube-setup.md"
+          ]
+        }
+      ]
+    },
+    {
+      "service_id": "eixon",
+      "repository": "neweix24/eixon",
+      "ownership": "financial_ledger_and_rewards",
+      "implementation_status": "source_extracted_not_standalone_deployable",
+      "supreme_integration_status": "registry_only_no_execution_adapter",
+      "capabilities": [
+        {
+          "id": "eixpay.wallet-ledger",
+          "label": "EixPay wallet and ledger foundations",
+          "source_paths": [
+            "features/eixpay/eixpay-wallet.tsx",
+            "supabase/migrations/20261031023558_eixpay_eixverse_neweix_plus.sql"
+          ]
+        },
+        {
+          "id": "eixpay.transfers",
+          "label": "Transfer requests",
+          "source_paths": [
+            "features/eixpay/transfer-request-form.tsx",
+            "app/api/eixpay/transfers/route.ts"
+          ]
+        },
+        {
+          "id": "eixpay.referrals",
+          "label": "Referral rewards",
+          "source_paths": [
+            "app/api/eixpay/referral/apply/route.ts",
+            "supabase/migrations/20261031035000_eixpay_referral_rewards.sql"
+          ]
+        },
+        {
+          "id": "eixpay.integrity",
+          "label": "Ledger integrity chain and watchdog",
+          "source_paths": [
+            "supabase/migrations/20261031180000_eixpay_cryptographic_integrity_chain.sql",
+            "supabase/migrations/20261103050000_eixpay_daily_integrity_watchdog.sql"
+          ]
+        },
+        {
+          "id": "eixverse.missions",
+          "label": "EixVerse missions and campaigns",
+          "source_paths": [
+            "features/eixverse/eixverse-missions.tsx",
+            "supabase/migrations/20261031170000_eixverse_campaigns_missions.sql"
+          ]
+        },
+        {
+          "id": "neweix-plus.membership",
+          "label": "Neweix+ membership status and UI",
+          "source_paths": [
+            "features/eixpay/neweix-plus.tsx",
+            "app/api/neweix-plus/status/route.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "service_id": "neweix-account",
+      "repository": "neweix24/account",
+      "ownership": "central_identity_and_sessions",
+      "implementation_status": "implemented_in_source_and_existing_shared_supabase",
+      "supreme_integration_status": "shared_identity_contract_not_full_sso_adapter",
+      "capabilities": [
+        {
+          "id": "identity.signup-login",
+          "label": "Email/password signup and username-or-email login",
+          "source_paths": [
+            "app/signup/page.tsx",
+            "app/login/page.tsx",
+            "supabase/functions/neweix-username-login/index.ts"
+          ]
+        },
+        {
+          "id": "identity.mfa-totp",
+          "label": "TOTP authenticator MFA",
+          "source_paths": [
+            "app/mfa/page.tsx",
+            "app/mfa/mfa-panel.tsx",
+            "app/mfa/actions.ts"
+          ]
+        },
+        {
+          "id": "identity.session-management",
+          "label": "Live session validation and session/device revocation",
+          "source_paths": [
+            "app/account/sessions/page.tsx",
+            "app/account/sessions/actions.ts",
+            "supabase/migrations/20261107141656_neweix_account_session_management.sql"
+          ]
+        },
+        {
+          "id": "identity.password-recovery",
+          "label": "Password recovery and update",
+          "source_paths": [
+            "app/reset-password/page.tsx",
+            "app/update-password/page.tsx"
+          ]
+        },
+        {
+          "id": "identity.service-access-foundation",
+          "label": "Central account and service-access data foundation",
+          "source_paths": [
+            "docs/identity-architecture.md",
+            "supabase/migrations/20261107091540_neweix_account_identity_foundation.sql"
+          ]
+        }
+      ],
+      "explicitly_not_ready": [
+        "OAuth 2.1/OIDC service-provider SSO",
+        "Phone/password sign-in",
+        "Passkey enrollment"
+      ]
+    },
+    {
+      "service_id": "supreme",
+      "repository": "neweix24/supreme",
+      "ownership": "ecosystem_control_plane",
+      "implementation_status": "core_foundation_and_imported_supreme_features",
+      "supreme_integration_status": "registry_and_approval_api_deployed; provider_actions_not_enabled",
+      "capabilities": [
+        {
+          "id": "supreme.service-registry",
+          "label": "Service registry and health metadata",
+          "source_paths": [
+            "services/registry/README.md",
+            "supabase/functions/supreme-registry-api/index.ts"
+          ]
+        },
+        {
+          "id": "supreme.control-approvals",
+          "label": "MFA-gated control request decisions",
+          "source_paths": [
+            "supabase/functions/supreme-registry-api/index.ts"
+          ]
+        },
+        {
+          "id": "supreme.android-attestation",
+          "label": "Android Key Attestation verifier source and tests",
+          "source_paths": [
+            "services/android-attestation/README.md"
+          ]
+        },
+        {
+          "id": "supreme.dashboard-import",
+          "label": "Imported dashboard source: audit, finance, notifications, staff, reviews, EixPay and EixVerse panels",
+          "source_paths": [
+            "integrations/neweix-commerce/next-app/app/supreme",
+            "integrations/neweix-commerce/next-app/features/supreme"
+          ]
+        }
+      ]
+    }
+  ]
+}
