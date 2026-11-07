@@ -30,4 +30,4 @@ jobs:
         with:
           deno-version: v2.x
       - name: Type-check registry Edge Function
-        run: deno check supabase/functions/supreme-registry-api/index.ts
+        run: deno check --config supabase/functions/supreme-registry-api/deno.json supabase/functions/supreme-registry-api/index.ts
