@@ -1,18 +1,18 @@
-# NEWEIX Supreme Android app
+# Neweix Supreme Android app
 
 This Android app is a native shell around the existing Supreme workspace. It loads the existing website UI and keeps authentication, role checks, and MFA on the server. It does not create a second admin backend.
 
 ## Build requirements
 
 - Android Studio with JDK 17 and Android SDK Platform 35, or Gradle 8.9+ with the Android SDK installed. Open this directory in Android Studio if Gradle is not installed on your device.
-- The private Supreme path configured on the Cloudflare Worker as `SUPREME_PRIVATE_PATH`.
-- The same path supplied only to the local build environment; never commit it.
+- For a production-connected local build, the private Supreme path configured on the Cloudflare Worker as `SUPREME_PRIVATE_PATH`.
+- Never commit the production path or embed it in a public artifact.
 
-The path must match `/control-` followed by exactly 48 hexadecimal characters.
+The path must match `/control-` followed by exactly 48 hexadecimal characters. CI compile-preview builds use a public, disposable placeholder path and cannot authenticate to the production private route.
 
-## Build a debug APK
+## Build a local debug APK
 
-From this directory, provide the secret without putting it in source control:
+From this directory, provide the configured path without putting it in source control:
 
 ```sh
 export SUPREME_PRIVATE_PATH='/control-<your-48-hex-character-secret>'
@@ -58,7 +58,7 @@ Devices that cannot produce a qualifying attestation chain must not be silently 
 
 ## Remote-first Supreme dashboard (permanent architecture requirement)
 
-The Supreme Android app is a thin, stable native shell. All changeable dashboard experiences must be served by the NEWEIX web application on Cloudflare, not compiled into the APK.
+The Supreme Android app is a thin, stable native shell. All changeable dashboard experiences must be served by the Neweix web application on Cloudflare, not compiled into the APK.
 
 ### Changes that must not require an APK update
 
@@ -79,7 +79,7 @@ Only changes that genuinely need native Android capabilities or a change to the 
 - Never implement security-critical permissions solely as hidden/disabled UI controls or client-side feature flags.
 - Keep stable, versioned API contracts and backward-compatible server changes where possible, so a web deployment remains compatible with the installed shell.
 - If a remote feature needs a new native bridge capability, the web app must detect shell capability/version and fail safely or show a clear minimum-app-version notice; do not silently assume the bridge exists.
-- The native app must remain pinned to the approved NEWEIX origin and approved routes. Remote-first does not mean arbitrary remote URL or script execution.
+- The native app must remain pinned to the approved Neweix origin and approved routes. Remote-first does not mean arbitrary remote URL or script execution.
 - Cloudflare deployment updates the web-delivered experience; it does not automatically update the native APK binary.
 
 **Acceptance criterion:** a dashboard-only feature or design change is implemented and deployed on Cloudflare and becomes available in the already-installed Supreme app after reload/reopen, with no APK rebuild or reinstall.

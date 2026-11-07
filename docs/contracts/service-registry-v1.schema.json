@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:supreme:schema:service-registry:v1",
+  "title": "Supreme Service Registry",
+  "description": "Versioned, non-secret catalogue of services Supreme is authorized to observe or operate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "services"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "services": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/service" }
+    }
+  },
+  "$defs": {
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["service_id", "display_name", "repository", "environments", "capabilities", "integration_secret_refs", "status"],
+      "properties": {
+        "service_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+          "maxLength": 64
+        },
+        "display_name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "repository": { "$ref": "#/$defs/repository" },
+        "environments": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/environment" }
+        },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$",
+            "maxLength": 100
+          }
+        },
+        "integration_secret_refs": {
+          "description": "Opaque server-side secret-manager references only. Never place secret values here.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9/_:.-]{2,180}$" }
+        },
+        "owner": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["team"],
+          "properties": {
+            "team": { "type": "string", "minLength": 1, "maxLength": 100 },
+            "contact_ref": { "type": "string", "maxLength": 160 }
+          }
+        },
+        "data_classification": {
+          "enum": ["public", "internal", "confidential", "restricted"]
+        },
+        "risk_tier": { "enum": ["low", "moderate", "high", "critical"] },
+        "health_check": { "$ref": "#/$defs/healthCheck" },
+        "status": { "enum": ["planned", "active", "suspended", "retired"] },
+        "metadata_version": { "type": "integer", "minimum": 1 },
+        "updated_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "full_name", "default_branch"],
+      "properties": {
+        "provider": { "enum": ["github", "gitlab", "bitbucket", "other"] },
+        "full_name": { "type": "string", "minLength": 3, "maxLength": 200 },
+        "default_branch": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "url": { "type": "string", "format": "uri" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environment_id", "classification"],
+      "properties": {
+        "environment_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,31}$"
+        },
+        "classification": {
+          "enum": ["development", "staging", "production"]
+        },
+        "api_base_url": { "type": "string", "format": "uri" },
+        "contract_version": { "type": "string", "maxLength": 40 },
+        "health_url": { "type": "string", "format": "uri" },
+        "enabled": { "type": "boolean", "default": true }
+      }
+    },
+    "healthCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "timeout_seconds"],
+      "properties": {
+        "kind": { "enum": ["http", "none"] },
+        "path": { "type": "string", "pattern": "^/" },
+        "timeout_seconds": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "expected_status": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 100, "maximum": 599 }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "http" } }, "required": ["kind"] },
+          "then": { "required": ["path"] }
+        }
+      ]
+    }
+  }
+}
