@@ -8,6 +8,8 @@
 - Do not require a `public.neweix_accounts` customer row for Supreme authorization. Future Neweix Employees remain a separate identity/workforce domain.
 - Do not hard-code the identity or credentials into the Android binary.
 - Enforce MFA server-side for privileged sessions.
+- Require a server-signed `supreme_app_session` JWT claim containing an active session ID, registered device ID, and attestation timestamp. The claim may be minted only by a trusted Supabase Auth hook after checking server-side device/session records; never accept user metadata or client headers as proof.
+- Until the device-session registry and Auth hook are deployed, privileged registry API access remains fail-closed.
 - Require re-authentication for sensitive actions and after configurable inactivity.
 
 ## Device verification
