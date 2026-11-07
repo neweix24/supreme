@@ -318,7 +318,7 @@ async function issueDeviceSession(
   }
 
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + 12 * 60 * 60 * 1000).toISOString();
+  const expiresAt = new Date(now.getTime() + 4 * 60 * 60 * 1000).toISOString();
   const registered = await postServiceRpc("register_supreme_attested_device_session", {
     p_user_id: auth.userId,
     p_auth_session_id: auth.authSessionId,
