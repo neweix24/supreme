@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     let queryError: { code?: string } | null = null;
 
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(query)) {
-      const result = await admin.from("customer_profiles").select(columns).eq("user_id", query).eq("public_id", "supreme").limit(1);
+      const result = await admin.from("customer_profiles").select(columns).eq("user_id", query).limit(1);
       rows = result.data ?? [];
       queryError = result.error;
     } else if (query.includes("@")) {
