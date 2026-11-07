@@ -140,15 +140,6 @@ export async function POST(request: Request) {
     const db = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
-    const { data: identity, error: identityError } = await db.schema("supreme")
-      .from("identities")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("public_id", "supreme")
-      .eq("role", "ruler")
-      .eq("is_active", true)
-      .maybeSingle();
-    if (identityError || !identity) return fail("The active Supreme ruler identity is required.", 403);
 
     const requesterIpHash = createHash("sha256").update(sourceIp).digest("hex");
     const verifier = await fetch(supabaseUrl.replace(/\/$/, "") + "/functions/v1/supreme-attestation-verify", {
