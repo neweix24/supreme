@@ -132,6 +132,11 @@ export async function POST(request: Request) {
       return fail("Verified Supreme MFA (AAL2) is required.", 403);
     }
 
+    const productionSigner = runtimeEnv.SUPREME_ANDROID_SIGNING_CERT_SHA256 ?? process.env.SUPREME_ANDROID_SIGNING_CERT_SHA256;
+    if (typeof productionSigner !== "string" || !SHA256.test(productionSigner)) {
+      return fail("Supreme production app signer is not configured.", 503);
+    }
+
     const db = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
@@ -176,7 +181,7 @@ export async function POST(request: Request) {
     }
     if (!verifier.ok || verified.verified !== true || verified.proof_of_possession_verified !== true ||
         typeof verified.device_key_sha256 !== "string" || !SHA256.test(verified.device_key_sha256) ||
-        !["trusted_environment", "strongbox", "software"].includes(String(verified.security_level))) {
+        !["trusted_environment", "strongbox"].includes(String(verified.security_level))) {
       return fail("Android hardware attestation was rejected.", verifier.status >= 500 ? 503 : 403);
     }
 
@@ -187,7 +192,7 @@ export async function POST(request: Request) {
         user_id: userId,
         device_key_sha256: verified.device_key_sha256,
         app_package: "com.neweix.supreme",
-        signing_certificate_sha256: runtimeEnv.SUPREME_ANDROID_SIGNING_CERT_SHA256 ?? process.env.SUPREME_ANDROID_SIGNING_CERT_SHA256,
+        signing_certificate_sha256: productionSigner,
         security_level: verified.security_level,
         attested_at: now.toISOString(),
         last_seen_at: now.toISOString(),
