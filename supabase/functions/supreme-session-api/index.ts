@@ -38,7 +38,7 @@ function bearer(request: Request): string | null {
   return match?.[1] ?? null;
 }
 
-function decodeVerifiedClaims(token: string): Claims {
+function decodeClaimsAfterSupabaseUserVerification(token: string): Claims {
   const part = token.split(".")[1];
   if (!part) throw new Error("Invalid access token.");
   const normalized = part.replace(/-/g, "+").replace(/_/g, "/");
@@ -84,7 +84,7 @@ async function authenticate(request: Request): Promise<AuthContext | null> {
   if (!user || typeof user !== "object" || Array.isArray(user) ||
       !isUuid((user as Record<string, unknown>).id)) return null;
 
-  const claims = decodeVerifiedClaims(token);
+  const claims = decodeClaimsAfterSupabaseUserVerification(token);
   const userId = (user as Record<string, unknown>).id as string;
   const authSessionId = claims.session_id;
   if (claims.sub !== userId || !isUuid(authSessionId)) return null;
