@@ -217,7 +217,7 @@ export async function middleware(request: NextRequest) {
     const { data: mfaProfile, error: mfaProfileError } = await supabase
       .schema("supreme").from("identities")
       .select("role, is_active, public_id")
-      .eq("user_id", userId).eq("public_id", "supreme")
+      .eq("user_id", userId).eq("public_id", "supreme").eq("public_id", "supreme")
       .maybeSingle();
     if (mfaProfileError) {
       return copySessionState(new NextResponse("MFA authorization unavailable.", {
@@ -260,7 +260,7 @@ export async function middleware(request: NextRequest) {
     const { data: customerProfile, error: customerProfileError } = await supabase
       .from("customer_profiles")
       .select("phone, phone_verified_at")
-      .eq("user_id", userId).eq("public_id", "supreme")
+      .eq("user_id", userId).eq("public_id", "supreme").eq("public_id", "supreme")
       .maybeSingle();
 
     if (customerProfileError || !customerProfile?.phone_verified_at || !customerProfile.phone) {
@@ -308,7 +308,7 @@ export async function middleware(request: NextRequest) {
   const { data: profile, error: profileError } = await supabase
     .schema("supreme").from("identities")
     .select("role, is_active, public_id")
-    .eq("user_id", userId).eq("public_id", "supreme")
+    .eq("user_id", userId).eq("public_id", "supreme").eq("public_id", "supreme")
     .maybeSingle();
 
   if (
