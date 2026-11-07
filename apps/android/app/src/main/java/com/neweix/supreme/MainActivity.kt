@@ -3,6 +3,8 @@ package com.neweix.supreme
 import android.app.AlertDialog
 import android.graphics.Color
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
 import android.text.method.PasswordTransformationMethod
 import android.view.Gravity
@@ -34,6 +36,14 @@ import java.util.concurrent.Executors
 
 class MainActivity : FragmentActivity() {
     private val background: ExecutorService = Executors.newSingleThreadExecutor()
+    private val idleHandler = Handler(Looper.getMainLooper())
+    private val idleLockRunnable = Runnable {
+        if (isUnlocked && pendingFactorId == null && !isBusy) {
+            isUnlocked = false
+            if (::lockOverlay.isInitialized) lockOverlay.visibility = View.VISIBLE
+            authenticateToUnlock()
+        }
+    }
     private lateinit var sessionStore: SupremeSessionStore
     private lateinit var screen: LinearLayout
     private lateinit var statusText: TextView
@@ -508,10 +518,12 @@ class MainActivity : FragmentActivity() {
             }
             val reject = Button(this@MainActivity).apply {
                 text = "REJECT"
+                filterTouchesWhenObscured = true
                 setOnClickListener { confirmRequestDecision(request, approve = false) }
             }
             val approve = Button(this@MainActivity).apply {
                 text = "APPROVE"
+                filterTouchesWhenObscured = true
                 setOnClickListener { confirmRequestDecision(request, approve = true) }
             }
             actions.addView(reject, LinearLayout.LayoutParams(0, dp(44), 1f))
@@ -873,7 +885,20 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    private fun resetIdleLockTimer() {
+        idleHandler.removeCallbacks(idleLockRunnable)
+        if (isUnlocked && pendingFactorId == null) {
+            idleHandler.postDelayed(idleLockRunnable, 5 * 60 * 1000L)
+        }
+    }
+
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        resetIdleLockTimer()
+    }
+
     override fun onStop() {
+        idleHandler.removeCallbacks(idleLockRunnable)
         // Opening an authenticator app temporarily backgrounds Supreme. Keep the
         // in-memory, short-lived MFA transaction so the user can return and enter
         // the TOTP code; clear the typed code itself and all state on destruction.
@@ -892,11 +917,13 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
+        resetIdleLockTimer()
         val mfaInProgress = pendingPasswordSession != null && pendingFactorId != null
         if (!isUnlocked && !mfaInProgress && biometricPrompt != null) authenticateToUnlock()
     }
 
     override fun onDestroy() {
+        idleHandler.removeCallbacks(idleLockRunnable)
         clearTransientCredentials()
         background.shutdownNow()
         biometricPrompt = null
