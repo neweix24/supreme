@@ -54,4 +54,6 @@ Logout, lost-device handling, and administrative revocation must mark the releva
 
 ## Current implementation boundary
 
-This migration supplies the database trust boundary and signed-claim hook. The native password + AAL2 MFA flow, attestation-to-device registration transaction, session refresh/revocation API, Auth Hook project configuration, and end-to-end device tests still need implementation before the app can be treated as production-ready.
+The native password + TOTP AAL2 flow, challenge endpoint, verifier call, atomic attestation-to-device registration RPC, session status/revocation API, and live Registry API checks are implemented in the Supreme repository and deployed as Supabase Edge Functions.
+
+The database migrations are applied. The Supabase Custom Access Token Hook itself still requires the explicit project-level activation described above. The production APK signing certificate digest must be configured as the server-side `SUPREME_ANDROID_SIGNING_CERT_SHA256` secret. A physical-device positive/negative test and confirmation that the deployed website does not expose browser Supreme access are still required before production release.
