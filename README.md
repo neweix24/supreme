@@ -52,10 +52,10 @@ The already implemented features in Neweix, Eixon, Neweix Account and Supreme ha
 ## Status
 
 - The Supreme registry database is deployed in the existing Neweix Supabase project under the isolated `supreme` schema. No separate Supabase project was created.
-- The `supreme-registry-api` Edge Function is deployed with JWT verification enabled. Its repository implementation now reuses the existing shared Supabase Auth session and the single active `staff_profiles` Supreme row (`role = supreme`, `public_id = supreme`), without requiring a Neweix Account customer row. This auth-contract correction is committed on the current PR branch but has not yet been deployed; production may still run the previous Account-row check until redeployment.
+- The `supreme-registry-api` Edge Function is deployed with JWT verification enabled. The current PR branch changes its authorization lookup to the Supreme-owned `supreme.identities` table (`role = ruler`, `public_id = supreme`) while retaining the existing shared Supabase Auth credentials/session. A new migration copies the existing Supreme Auth user UUID into that table; it has not been applied to production. The registry function change is also not yet deployed.
 - The registry currently contains six known services: Neweix, Neweix Shop, Eixon, Neweix Account, Neweix Message, and Supreme. Only the existing Neweix website is marked active; the others remain planned until their deployment and integration boundaries are verified.
 - No provider capabilities are enabled yet. GitHub, Cloudflare, Supabase administration, and service-specific execution adapters still require implementation, scoped credentials, and end-to-end tests.
-- The Android shell, imported Supreme feature source, and Android attestation verifier are present. Imported Neweix Commerce routes remain a reference snapshot and must not be treated as a production-ready standalone backend.
+- The Android shell, imported Supreme feature source, and Android attestation verifier are present. Some imported Neweix Commerce route snapshots still contain legacy `staff_profiles` authorization checks; they must be converted to `supreme.identities` before those routes can be enabled as Supreme-owned runtime code.
 
 ## Standalone control-plane completion plan
 
