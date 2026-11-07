@@ -66,6 +66,21 @@ function decodeJwtClaims(token: string): JsonObject {
   return JSON.parse(decoded) as JsonObject;
 }
 
+function hasVerifiedSupremeAppSession(claims: JsonObject): boolean {
+  // This must be a server-signed custom access-token claim populated only by
+  // the Supabase Auth hook after checking an active, attested device session.
+  // User-editable metadata, request headers, User-Agent, and Origin are not proof.
+  const binding = claims.supreme_app_session;
+  if (!binding || typeof binding !== "object" || Array.isArray(binding)) return false;
+  const session = binding as JsonObject;
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return session.status === "active" &&
+    typeof session.session_id === "string" && uuid.test(session.session_id) &&
+    typeof session.device_id === "string" && uuid.test(session.device_id) &&
+    typeof session.attested_at === "number" && Number.isFinite(session.attested_at) &&
+    session.attested_at > 0 && session.attested_at <= Date.now() / 1000 + 30;
+}
+
 function isFreshAal2(claims: JsonObject): boolean {
   if (claims.aal !== "aal2") return false;
   const authTime = typeof claims.auth_time === "number" ? claims.auth_time : 0;
@@ -291,7 +306,11 @@ async function authenticate(request: Request): Promise<{
   if (!ruler || ruler.user_id !== user.id || count?.active_count !== 1) {
     throw new Response("Forbidden", { status: 403 });
   }
-  return { userId: user.id, claims: decodeJwtClaims(token) };
+  const claims = decodeJwtClaims(token);
+  if (!hasVerifiedSupremeAppSession(claims)) {
+    throw new Response("Supreme app attestation is required.", { status: 403 });
+  }
+  return { userId: user.id, claims };
 }
 
 async function audit(input: {
