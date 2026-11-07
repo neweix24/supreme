@@ -1,4 +1,6 @@
 # Secrets and local environment
+*.jks
+*.keystore
 .env
 .env.*
 !.env.example
