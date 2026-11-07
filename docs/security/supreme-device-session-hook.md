@@ -6,10 +6,12 @@
 
 The hook adds a server-signed `supreme_app_session` claim only when all of these are true:
 
+- The incoming Auth token has `aal2`.
 - The Auth user maps to the single active `supreme.identities` principal (`public_id=supreme`, `role=ruler`).
 - The current Supabase Auth `session_id` has an active, unexpired row in `supreme.app_sessions`.
 - That session belongs to an active row in `supreme.devices` owned by the same Auth user.
 - The device package is exactly `com.neweix.supreme`.
+- The device security level is `trusted_environment` or `strongbox`.
 - The attestation timestamp is no older than 30 days and is not in the future.
 
 All client roles are denied direct access to the device/session tables. Only the service role can manage them; `supabase_auth_admin` receives read-only access for the token hook.
