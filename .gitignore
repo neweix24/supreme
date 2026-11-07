@@ -1,0 +1,32 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# Android / Gradle
+.gradle/
+**/build/
+local.properties
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Node / tooling
+node_modules/
+dist/
+coverage/
+.turbo/
+.cache/
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.vscode/
