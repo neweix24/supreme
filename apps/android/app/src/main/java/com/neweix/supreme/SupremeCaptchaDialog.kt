@@ -42,7 +42,7 @@ internal object SupremeCaptchaDialog {
         )
         webView.settings.apply {
             javaScriptEnabled = true
-            domStorageEnabled = false
+            domStorageEnabled = true
             allowFileAccess = false
             allowContentAccess = false
             javaScriptCanOpenWindowsAutomatically = false
@@ -50,6 +50,7 @@ internal object SupremeCaptchaDialog {
             safeBrowsingEnabled = true
             mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
         }
+        CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
         lateinit var dialog: AlertDialog
@@ -103,6 +104,11 @@ internal object SupremeCaptchaDialog {
                 request: WebResourceRequest,
             ): Boolean {
                 val uri = request.url
+                if (uri.scheme == "about" &&
+                    (uri.toString() == "about:blank" || uri.toString() == "about:srcdoc")
+                ) {
+                    return false
+                }
                 return uri.scheme != "https" ||
                     (uri.host != "neweix.com" && uri.host != "challenges.cloudflare.com")
             }
