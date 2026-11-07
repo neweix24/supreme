@@ -175,9 +175,9 @@
     {
       "service_id": "neweix-account",
       "repository": "neweix24/account",
-      "ownership": "central_identity_and_sessions",
-      "implementation_status": "implemented_in_source_and_existing_shared_supabase",
-      "supreme_integration_status": "shared_identity_contract_not_full_sso_adapter",
+      "ownership": "customer_identity_and_sessions",
+      "implementation_status": "customer_identity_service",
+      "supreme_integration_status": "not_used_for_supreme_authentication",
       "capabilities": [
         {
           "id": "identity.signup-login",
