@@ -10,7 +10,7 @@ A service remains responsible for its own runtime, data, authentication boundary
 
 ## Identity and authorization
 
-- The only Supreme ruler identity is the existing active `public.staff_profiles` row with `role = 'supreme'` and `public_id = 'supreme'`.
+- The only Supreme ruler identity is the single active `supreme.identities` row with `role = 'ruler'` and `public_id = 'supreme'.
 - Authentication uses the existing shared Supabase Auth project; authorization does not require a Neweix Account customer row.
 - Future Neweix Employees use a separate identity/workforce domain and cannot inherit Supreme privileges.
 - A request must carry a valid Supreme session. The backend—not the Android client—resolves the principal and evaluates authorization.
