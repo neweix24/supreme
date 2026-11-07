@@ -10,7 +10,7 @@ Supreme is the private, central control platform for the Neweix ecosystem. It is
 - **Human approval:** sensitive operations such as production deployments, permission changes, and destructive actions require explicit authorization.
 - **Auditable operations:** privileged actions must record actor, target, action, timestamp, result, and correlation ID.
 - **Remote configuration:** supported screens, feature availability, and safe operational settings can be changed server-side without an app release. Native capability and security changes still require an app update.
-- **Secure access:** the single Supreme identity uses strong server-side authentication, MFA, and device-level PIN/biometric re-verification.
+- **Secure access:** the single Supreme principal reuses the existing Supabase Auth identity with Supreme-specific server-side authorization, MFA, and verified Android app/device attestation.
 
 ## Initial architecture
 
@@ -21,7 +21,7 @@ Supreme Android App
         v
 Supreme Core Backend
         |
-        +-- Identity & session policy
+        +-- Existing Supabase Auth + Supreme principal/session policy
         +-- Service registry
         +-- Authorization / approvals
         +-- Remote configuration
@@ -52,7 +52,7 @@ The already implemented features in Neweix, Eixon, Neweix Account and Supreme ha
 ## Status
 
 - The Supreme registry database is deployed in the existing Neweix Supabase project under the isolated `supreme` schema. No separate Supabase project was created.
-- The authenticated `supreme-registry-api` Edge Function is deployed with JWT verification enabled. It validates the existing Neweix Auth session, Neweix Account customer service row, and the single active `supreme` ruler identity.
+- The authenticated `supreme-registry-api` Edge Function is deployed with JWT verification enabled. It validates the existing shared Supabase Auth session and the single active `staff_profiles` Supreme row (`role = supreme`, `public_id = supreme`). It does not require a Neweix Account customer row.
 - The registry currently contains six known services: Neweix, Neweix Shop, Eixon, Neweix Account, Neweix Message, and Supreme. Only the existing Neweix website is marked active; the others remain planned until their deployment and integration boundaries are verified.
 - No provider capabilities are enabled yet. GitHub, Cloudflare, Supabase administration, and service-specific execution adapters still require implementation, scoped credentials, and end-to-end tests.
 - The Android shell, imported Supreme feature source, and Android attestation verifier are present. Imported Neweix Commerce routes remain a reference snapshot and must not be treated as a production-ready standalone backend.
