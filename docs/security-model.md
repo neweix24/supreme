@@ -2,8 +2,10 @@
 
 ## Identity
 - Exactly one Supreme principal is provisioned for the ruler role.
-- The principal identifier is `supreme`; it is not a Neweix Account customer or a Neweix Employee.
-- Supreme has its own credential lifecycle and authorization mapping in `supreme.identities`; it must not depend on customer or employee profile tables.
+- The principal identifier is `supreme`; it is neither a Neweix Account customer nor an employee identity.
+- Reuse the existing shared Supabase Auth project and the already-provisioned `public.staff_profiles` Supreme row (`role = 'supreme'`, `public_id = 'supreme'`, `is_active = true`).
+- The existing unique index `staff_profiles_single_supreme_uidx` guarantees one Supreme role row. Do not create a duplicate `supreme.identities` table or a second Supabase project.
+- Do not require a `public.neweix_accounts` customer row for Supreme authorization. Future Neweix Employees remain a separate identity/workforce domain.
 - Do not hard-code the identity or credentials into the Android binary.
 - Enforce MFA server-side for privileged sessions.
 - Require re-authentication for sensitive actions and after configurable inactivity.
