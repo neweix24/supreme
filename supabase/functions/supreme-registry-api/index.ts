@@ -284,26 +284,25 @@ async function authenticate(request: Request): Promise<{
     throw new Response("Unauthorized", { status: 401 });
   }
 
-  // Reuse the Supreme principal already provisioned by NEWEIX in the
-  // shared Supabase project. Neweix Account customer rows are not consulted.
-  // Future Neweix Employees remain a separate identity/workforce domain.
-  const [ruler] = await db`
+  // Supreme authorization is owned by supreme.identities. Supabase Auth
+  // supplies credentials only; Neweix Account and staff_profiles are not used.
+  const [principal] = await db`
     select user_id::text
-    from public.staff_profiles
+    from supreme.identities
     where user_id = ${user.id}::uuid
-      and role = 'supreme'
+      and role = 'ruler'
       and is_active = true
       and public_id = 'supreme'
     limit 2
   `;
   const [count] = await db`
     select count(*)::integer as active_count
-    from public.staff_profiles
-    where role = 'supreme'
+    from supreme.identities
+    where role = 'ruler'
       and is_active = true
       and public_id = 'supreme'
   `;
-  if (!ruler || ruler.user_id !== user.id || count?.active_count !== 1) {
+  if (!principal || principal.user_id !== user.id || count?.active_count !== 1) {
     throw new Response("Forbidden", { status: 403 });
   }
   const claims = decodeJwtClaims(token);
