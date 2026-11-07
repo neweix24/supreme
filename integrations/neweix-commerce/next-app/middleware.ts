@@ -88,6 +88,13 @@ export async function middleware(request: NextRequest) {
     pathname === "/manager" || pathname.startsWith("/manager/") ||
     pathname === "/employee" || pathname.startsWith("/employee/");
   const isApiPath = pathname.startsWith("/api/");
+  const isSupremeApiPath = pathname.startsWith("/api/supreme/");
+  // These routes establish the device-bound session and therefore cannot
+  // require an already-existing device-session claim.
+  const isSupremeDeviceBootstrapApi =
+    pathname === "/api/supreme/session/issue" ||
+    pathname === "/api/supreme/attestation/challenge" ||
+    pathname === "/api/supreme/attestation/verify";
   const isCustomerApi =
     (pathname.startsWith("/api/account/") &&
       pathname !== "/api/account/phone/send-otp" &&
@@ -231,6 +238,67 @@ export async function middleware(request: NextRequest) {
   // The remaining public routes do not need authorization checks.
   if (!isAdminPath && !isSupremePath && !isCustomerProtected) {
     return response;
+  }
+
+  // Protect every Supreme JSON API centrally. Ordinary Supabase cookies and
+  // AAL2 alone are insufficient: the access token must carry the signed,
+  // server-issued device-session claim and the session API must confirm that
+  // the corresponding device/session row is still active.
+  if (isSupremeApiPath && !isSupremeDeviceBootstrapApi) {
+    if (claimsError || typeof userId !== "string" || !userId) {
+      return copySessionState(NextResponse.json(
+        { error: "Supreme authentication required.", code: "AUTHENTICATION_REQUIRED" },
+        { status: 401, headers: { "Cache-Control": "private, no-store, max-age=0" } },
+      ));
+    }
+    const claims = claimsData?.claims as Record<string, unknown> | undefined;
+    if (claims?.aal !== "aal2") {
+      return copySessionState(NextResponse.json(
+        { error: "Supreme MFA verification required.", code: "AAL2_REQUIRED" },
+        { status: 403, headers: { "Cache-Control": "private, no-store, max-age=0" } },
+      ));
+    }
+    const { data: isSupremeIdentity, error: identityError } =
+      await supabase.rpc("is_current_supreme_ruler");
+    if (identityError || isSupremeIdentity !== true) {
+      return copySessionState(NextResponse.json(
+        { error: "Active Supreme identity required.", code: "SUPREME_IDENTITY_REQUIRED" },
+        { status: 403, headers: { "Cache-Control": "private, no-store, max-age=0" } },
+      ));
+    }
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (sessionError || !accessToken || sessionData.session?.user.id !== userId) {
+      return copySessionState(NextResponse.json(
+        { error: "Supreme session could not be verified.", code: "SESSION_INVALID" },
+        { status: 401, headers: { "Cache-Control": "private, no-store, max-age=0" } },
+      ));
+    }
+    try {
+      const deviceCheck = await fetch(url.replace(/\\/$/, "") + "/functions/v1/supreme-session-api", {
+        method: "GET",
+        headers: { apikey: anonKey, Authorization: "Bearer " + accessToken },
+        cache: "no-store",
+        redirect: "error",
+        signal: AbortSignal.timeout(8_000),
+      });
+      const deviceResult: unknown = await deviceCheck.json();
+      const valid = deviceCheck.ok && !!deviceResult && typeof deviceResult === "object" &&
+        !Array.isArray(deviceResult) &&
+        (deviceResult as Record<string, unknown>).authenticated === true &&
+        (deviceResult as Record<string, unknown>).device_session_active === true;
+      if (!valid) {
+        return copySessionState(NextResponse.json(
+          { error: "Verified Supreme device session required.", code: "DEVICE_SESSION_REQUIRED" },
+          { status: 403, headers: { "Cache-Control": "private, no-store, max-age=0" } },
+        ));
+      }
+    } catch {
+      return copySessionState(NextResponse.json(
+        { error: "Supreme device verification is temporarily unavailable.", code: "DEVICE_VERIFICATION_UNAVAILABLE" },
+        { status: 503, headers: { "Cache-Control": "private, no-store, max-age=0" } },
+      ));
+    }
   }
 
   // Require verified customer phone numbers before protected account features are accessible.
