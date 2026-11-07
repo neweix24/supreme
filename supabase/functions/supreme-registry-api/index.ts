@@ -74,8 +74,10 @@ function hasVerifiedSupremeAppSession(claims: JsonObject): boolean {
   if (!binding || typeof binding !== "object" || Array.isArray(binding)) return false;
   const session = binding as JsonObject;
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const tokenSessionId = claims.session_id;
   return session.status === "active" &&
-    typeof session.session_id === "string" && uuid.test(session.session_id) &&
+    typeof tokenSessionId === "string" && uuid.test(tokenSessionId) &&
+    typeof session.session_id === "string" && session.session_id === tokenSessionId &&
     typeof session.device_id === "string" && uuid.test(session.device_id) &&
     typeof session.attested_at === "number" && Number.isFinite(session.attested_at) &&
     session.attested_at > 0 && session.attested_at <= Date.now() / 1000 + 30;

@@ -3,13 +3,12 @@ name: Build Supreme Android preview APK
 on:
   push:
     branches:
-      - main
+      - feat/supreme-native-android-login
     paths:
       - "apps/android/**"
       - ".github/workflows/supreme-android-preview.yml"
   pull_request:
-    branches:
-      - main
+    branches: [main]
     paths:
       - "apps/android/**"
       - ".github/workflows/supreme-android-preview.yml"
@@ -19,48 +18,38 @@ permissions:
   contents: read
 
 concurrency:
-  group: supreme-android-preview
+  group: supreme-android-preview-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build-preview:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout source under test
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-
-      # This value is deliberately public and disposable. It only satisfies the
-      # Android BuildConfig input for a compile-preview artifact; it is not a
-      # credential and cannot authenticate to the production private route.
-      - name: Configure non-production preview path
-        run: echo "SUPREME_PRIVATE_PATH=/control-0123456789abcdef0123456789abcdef0123456789abcdef" >> "$GITHUB_ENV"
-
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
           packages: "platform-tools platforms;android-35"
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-
-      - name: Assemble internal debug APK
+      - name: Assemble internal test APK
         working-directory: apps/android
         run: gradle --no-daemon :app:assembleDebug
-
       - name: Upload internal test APK
         uses: actions/upload-artifact@v4
         with:
-          name: supreme-android-debug-preview-${{ github.run_number }}
+          name: supreme-android-native-preview-${{ github.run_number }}
           path: apps/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7

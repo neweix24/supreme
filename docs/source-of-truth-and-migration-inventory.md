@@ -44,7 +44,7 @@ Of these, 99 mapped files had identical Git blob SHAs in the destination. The re
 ## Explicitly not done
 
 - No changes were pushed to `neweix24/neweix`.
-- No production database migrations were applied.
+- The Supreme identity handoff and `public.staff_profiles` cleanup migration was applied to production and verified on 2026-11-07. No device-session or Custom Access Token Hook migration has been deployed.
 - No secrets, signing keys, API tokens, or environment files were copied.
 - No production deployment or APK release was performed.
 - No claim is made that the imported Next.js modules build independently.
