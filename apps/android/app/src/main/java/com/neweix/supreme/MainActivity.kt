@@ -1,5 +1,6 @@
 package com.neweix.supreme
 
+import android.app.AlertDialog
 import android.graphics.Color
 import android.os.Bundle
 import android.text.InputType
@@ -37,6 +38,7 @@ class MainActivity : FragmentActivity() {
     private var isUnlocked = false
     private var isBusy = false
     private var resumeSessionCheck = false
+    private var currentAccessToken: String? = null
     private var pendingFactorId: String? = null
     private var pendingChallengeId: String? = null
     private var pendingPasswordSession: SupremeAuthClient.AuthSession? = null
@@ -258,14 +260,16 @@ class MainActivity : FragmentActivity() {
                 // The registry API is the server-side authority for whether
                 // this attested device is bound to the current AAL2 Auth session.
                 val services = SupremeAuthClient.listServices(session.accessToken)
+                val requests = SupremeAuthClient.listPendingRequests(session.accessToken)
                 sessionStore.saveRefreshToken(session.refreshToken)
 
                 runOnUiThread {
+                    currentAccessToken = session.accessToken
                     pendingPasswordSession = null
                     pendingFactorId = null
                     pendingChallengeId = null
                     codeInput.text.clear()
-                    renderDashboard(services)
+                    renderDashboard(services, requests)
                     setBusy(false, "Supreme device and session checks passed.")
                 }
             } catch (error: Exception) {
@@ -285,7 +289,10 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    private fun renderDashboard(services: List<SupremeAuthClient.Service>) {
+    private fun renderDashboard(
+        services: List<SupremeAuthClient.Service>,
+        requests: List<SupremeAuthClient.ControlRequest>,
+    ) {
         screen.removeAllViews()
         screen.addView(TextView(this).apply {
             text = "SUPREME"
@@ -310,6 +317,71 @@ class MainActivity : FragmentActivity() {
             setPadding(0, 0, 0, dp(18))
         }
         screen.addView(statusText, matchWrap())
+        screen.addView(TextView(this).apply {
+            text = "PENDING APPROVALS · ${requests.size}"
+            textSize = 12f
+            setTextColor(Color.rgb(229, 197, 120))
+            setPadding(0, dp(8), 0, dp(8))
+        }, matchWrap())
+
+        screen.addView(TextView(this).apply {
+            text = "An approval records the governance decision only. It does not deploy or execute a provider operation."
+            textSize = 11f
+            setTextColor(Color.rgb(145, 145, 145))
+            setPadding(0, 0, 0, dp(8))
+        }, matchWrap())
+
+        if (requests.isEmpty()) {
+            screen.addView(TextView(this).apply {
+                text = "No pending approvals."
+                textSize = 12f
+                setTextColor(Color.LTGRAY)
+                setPadding(0, 0, 0, dp(14))
+            }, matchWrap())
+        }
+
+        for (request in requests) {
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                setBackgroundColor(Color.rgb(24, 24, 24))
+            }
+            item.addView(TextView(this@MainActivity).apply {
+                text = request.action.replace('.', ' ').replace('_', ' ').uppercase()
+                textSize = 14f
+                setTextColor(Color.WHITE)
+            }, matchWrap())
+            item.addView(TextView(this@MainActivity).apply {
+                text = "Request ${request.id.take(8)} · ${request.requestType} · ${request.serviceId ?: "system"}"
+                textSize = 11f
+                setTextColor(Color.rgb(210, 180, 110))
+                setPadding(0, dp(6), 0, dp(4))
+            }, matchWrap())
+            item.addView(TextView(this@MainActivity).apply {
+                text = "Created: ${request.createdAt}\nExpires: ${request.expiresAt}"
+                textSize = 10f
+                setTextColor(Color.rgb(150, 150, 150))
+            }, matchWrap())
+            val actions = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END
+            }
+            val reject = Button(this@MainActivity).apply {
+                text = "REJECT"
+                setOnClickListener { confirmRequestDecision(request, approve = false) }
+            }
+            val approve = Button(this@MainActivity).apply {
+                text = "APPROVE"
+                setOnClickListener { confirmRequestDecision(request, approve = true) }
+            }
+            actions.addView(reject, LinearLayout.LayoutParams(0, dp(44), 1f))
+            actions.addView(approve, LinearLayout.LayoutParams(0, dp(44), 1f))
+            item.addView(actions, matchWrap())
+            val params = matchWrap()
+            params.topMargin = dp(10)
+            screen.addView(item, params)
+        }
+
         screen.addView(TextView(this).apply {
             text = "REGISTERED SERVICES"
             textSize = 12f
@@ -356,6 +428,85 @@ class MainActivity : FragmentActivity() {
         screen.addView(signOut, params)
     }
 
+    private fun confirmRequestDecision(
+        request: SupremeAuthClient.ControlRequest,
+        approve: Boolean,
+    ) {
+        if (approve) {
+            AlertDialog.Builder(this)
+                .setTitle("Approve control request?")
+                .setMessage(
+                    "Approve ${request.action} for ${request.serviceId ?: "the Supreme system"}? " +
+                        "This records the decision only; it does not deploy or execute the operation.",
+                )
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Approve") { _, _ ->
+                    submitRequestDecision(request, "approve", null)
+                }
+                .show()
+            return
+        }
+
+        val reason = EditText(this).apply {
+            hint = "Reason (at least 8 characters)"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minLines = 2
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Reject control request?")
+            .setMessage("A reason is required and will be written to the audit log.")
+            .setView(reason)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Reject") { _, _ ->
+                val value = reason.text.toString().trim()
+                if (value.length < 8) {
+                    statusText.text = "Enter a rejection reason of at least 8 characters."
+                } else {
+                    submitRequestDecision(request, "reject", value)
+                }
+            }
+            .show()
+    }
+
+    private fun submitRequestDecision(
+        request: SupremeAuthClient.ControlRequest,
+        decision: String,
+        reason: String?,
+    ) {
+        val accessToken = currentAccessToken
+        if (accessToken.isNullOrBlank()) {
+            statusText.text = "Supreme session is unavailable. Sign in again."
+            return
+        }
+        if (isBusy) return
+        setBusy(true, "Recording Supreme approval decision…")
+        background.execute {
+            try {
+                SupremeAuthClient.decideControlRequest(
+                    accessToken = accessToken,
+                    requestId = request.id,
+                    decision = decision,
+                    reason = reason,
+                )
+                val services = SupremeAuthClient.listServices(accessToken)
+                val requests = SupremeAuthClient.listPendingRequests(accessToken)
+                runOnUiThread {
+                    renderDashboard(services, requests)
+                    setBusy(false, if (decision == "approve") {
+                        "Approval recorded. Provider execution has not been triggered."
+                    } else {
+                        "Rejection recorded in the Supreme audit log."
+                    })
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    setBusy(false, safeMessage(error))
+                }
+            }
+        }
+    }
+
     private fun resumeStoredSession() {
         if (resumeSessionCheck || pendingFactorId != null) return
         val refreshToken = sessionStore.readRefreshToken() ?: return
@@ -368,10 +519,12 @@ class MainActivity : FragmentActivity() {
                     throw IllegalStateException("Supreme session has fallen below AAL2. Sign in again.")
                 }
                 val services = SupremeAuthClient.listServices(session.accessToken)
+                val requests = SupremeAuthClient.listPendingRequests(session.accessToken)
                 sessionStore.saveRefreshToken(session.refreshToken)
                 runOnUiThread {
+                    currentAccessToken = session.accessToken
                     resumeSessionCheck = false
-                    renderDashboard(services)
+                    renderDashboard(services, requests)
                     setBusy(false, "Supreme session restored.")
                 }
             } catch (error: Exception) {
@@ -393,6 +546,7 @@ class MainActivity : FragmentActivity() {
     private fun signOut() {
         val refresh = sessionStore.readRefreshToken()
         sessionStore.clear()
+        currentAccessToken = null
         if (refresh == null) {
             showSignIn()
             return
@@ -413,6 +567,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun showSignIn() {
+        currentAccessToken = null
         buildInterface()
         lockOverlay.visibility = View.GONE
         isUnlocked = true
