@@ -40,7 +40,7 @@ Provider integrations are backend-only adapters. Start with narrow scopes and re
 
 1. User opens the Android app and completes local device verification.
 2. Client establishes or refreshes an authenticated backend session.
-3. Backend validates the Supreme identity and MFA/session assurance.
+3. Backend validates the existing shared Supabase Auth session, the one active `staff_profiles` Supreme principal (`role = supreme`, `public_id = supreme`), MFA/session assurance, and verified Android app/device binding. Neweix Account customer records are not part of Supreme authorization.
 4. Backend loads the requested resource and evaluates server-side policy.
 5. For sensitive operations, backend creates an approval request rather than executing immediately.
 6. After approval, an isolated worker executes the operation with a narrowly scoped credential.
