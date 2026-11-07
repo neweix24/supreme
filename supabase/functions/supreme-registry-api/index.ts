@@ -157,18 +157,22 @@ function validateServicePayload(body: JsonObject): void {
   if (body.risk_tier !== undefined && !["low", "moderate", "high", "critical"].includes(String(body.risk_tier))) {
     throw new TypeError("Invalid risk tier.");
   }
-  if (!body.repository || typeof body.repository !== "object" || Array.isArray(body.repository)) {
-    throw new TypeError("repository is required.");
-  }
-  const repo = body.repository as JsonObject;
-  assertOnlyKeys(repo, ["provider", "full_name", "default_branch", "url"], "repository");
-  if (!["github", "gitlab", "bitbucket", "other"].includes(requireString(repo.provider, "repository.provider", 20))) {
-    throw new TypeError("Unsupported repository provider.");
-  }
-  requireString(repo.full_name, "repository.full_name", 200);
-  requireString(repo.default_branch, "repository.default_branch", 100);
-  if (repo.url !== undefined && (typeof repo.url !== "string" || !repo.url.startsWith("https://"))) {
-    throw new TypeError("Repository URL must use HTTPS.");
+  if (body.repository === undefined) {
+    if (body.status !== "planned") throw new TypeError("A service without a repository must remain planned.");
+  } else {
+    if (!body.repository || typeof body.repository !== "object" || Array.isArray(body.repository)) {
+      throw new TypeError("Invalid repository.");
+    }
+    const repo = body.repository as JsonObject;
+    assertOnlyKeys(repo, ["provider", "full_name", "default_branch", "url"], "repository");
+    if (!["github", "gitlab", "bitbucket", "other"].includes(requireString(repo.provider, "repository.provider", 20))) {
+      throw new TypeError("Unsupported repository provider.");
+    }
+    requireString(repo.full_name, "repository.full_name", 200);
+    requireString(repo.default_branch, "repository.default_branch", 100);
+    if (repo.url !== undefined && (typeof repo.url !== "string" || !repo.url.startsWith("https://"))) {
+      throw new TypeError("Repository URL must use HTTPS.");
+    }
   }
   if (!Array.isArray(body.environments) || body.environments.length < 1 || body.environments.length > 10) {
     throw new TypeError("At least one and at most ten environments are required.");
@@ -281,7 +285,13 @@ async function authenticate(request: Request): Promise<{
       and is_active = true
       and public_id = 'supreme'
   `;
-  if (!ruler || ruler.user_id !== user.id || count?.active_count !== 1) {
+  const [centralAccount] = await db`
+    select user_id::text
+    from public.neweix_accounts
+    where user_id = ${user.id}::uuid
+    limit 1
+  `;
+  if (!ruler || ruler.user_id !== user.id || !centralAccount || centralAccount.user_id !== user.id || count?.active_count !== 1) {
     throw new Response("Forbidden", { status: 403 });
   }
   return { userId: user.id, claims: decodeJwtClaims(token) };
@@ -312,12 +322,12 @@ async function serviceRows(cursor: string | null, limit: number, onlyId?: string
   return await db`
     select
       s.service_id, s.display_name, s.description,
-      jsonb_build_object(
+      case when s.repository_provider is null then null else jsonb_build_object(
         'provider', s.repository_provider,
         'full_name', s.repository_full_name,
         'default_branch', s.repository_default_branch,
         'url', s.repository_url
-      ) as repository,
+      ) end as repository,
       coalesce((
         select jsonb_agg(jsonb_build_object(
           'environment_id', e.environment_id,
@@ -507,18 +517,20 @@ async function handle(request: Request): Promise<Response> {
       const environmentId = requireString(url.searchParams.get("environment_id"), "environment_id", 32);
       const [target] = await db`
         select e.health_url, e.api_base_url, e.enabled, s.health_check_kind,
-               s.health_check_timeout_seconds, s.health_check_expected_status
+               s.health_check_path, s.health_check_timeout_seconds, s.health_check_expected_status
         from supreme.service_environments e
         join supreme.services s on s.service_id = e.service_id
         where e.service_id = ${id} and e.environment_id = ${environmentId}
         limit 1
       `;
       if (!target || !target.enabled) return errorResponse("ENVIRONMENT_DISABLED", "Environment is not available.", 404, requestId);
-      if (target.health_check_kind !== "http" || !target.health_url || !target.api_base_url) {
+      if (target.health_check_kind !== "http" || !target.api_base_url || (!target.health_url && !target.health_check_path)) {
         return errorResponse("HEALTH_CHECK_NOT_CONFIGURED", "Health check is not configured.", 409, requestId);
       }
-      const healthUrl = new URL(target.health_url);
       const apiUrl = new URL(target.api_base_url);
+      const healthUrl = target.health_url
+        ? new URL(target.health_url)
+        : new URL(target.health_check_path, apiUrl);
       if (healthUrl.protocol !== "https:" || healthUrl.origin !== apiUrl.origin) {
         return errorResponse("HEALTH_TARGET_REJECTED", "Health target is outside the registered origin.", 400, requestId);
       }
