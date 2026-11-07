@@ -26,17 +26,11 @@ jobs:
           ref: main
           persist-credentials: false
 
-      - name: Validate private path secret
-        env:
-          SUPREME_PRIVATE_PATH: ${{ secrets.SUPREME_PRIVATE_PATH }}
-        run: |
-          if [[ "$SUPREME_PRIVATE_PATH" =~ ^[A-Fa-f0-9]{48}$ ]]; then
-            SUPREME_PRIVATE_PATH="/control-$SUPREME_PRIVATE_PATH"
-          elif [[ ! "$SUPREME_PRIVATE_PATH" =~ ^/control-[A-Fa-f0-9]{48}$ ]]; then
-            echo "::error::SUPREME_PRIVATE_PATH must be 48 hex characters, optionally prefixed with /control-."
-            exit 1
-          fi
-          echo "SUPREME_PRIVATE_PATH=$SUPREME_PRIVATE_PATH" >> "$GITHUB_ENV"
+      # This value is deliberately public and disposable. It only satisfies the
+      # Android BuildConfig input for a compile-preview artifact; it is not a
+      # credential and cannot authenticate to the production private route.
+      - name: Configure non-production preview path
+        run: echo "SUPREME_PRIVATE_PATH=/control-0123456789abcdef0123456789abcdef0123456789abcdef" >> "$GITHUB_ENV"
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -61,7 +55,7 @@ jobs:
       - name: Upload internal test APK
         uses: actions/upload-artifact@v4
         with:
-          name: supreme-android-debug-${{ github.run_number }}
+          name: supreme-android-debug-preview-${{ github.run_number }}
           path: apps/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
