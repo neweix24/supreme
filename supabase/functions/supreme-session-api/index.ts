@@ -109,6 +109,15 @@ async function handle(request: Request): Promise<Response> {
       return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId);
     }
 
+    if (auth.claims.aal !== "aal2") {
+      return response({ error: { code: "MFA_REQUIRED", request_id: requestId } }, 403, requestId);
+    }
+    const signedSession = auth.claims.supreme_app_session;
+    if (!signedSession || typeof signedSession !== "object" ||
+        (signedSession as Record<string, unknown>).status !== "active") {
+      return response({ error: { code: "DEVICE_SESSION_CLAIM_REQUIRED", request_id: requestId } }, 403, requestId);
+    }
+
     const [identity] = await db`
       select id::text
       from supreme.identities
