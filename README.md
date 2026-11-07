@@ -36,16 +36,16 @@ Supreme Core Backend
 
 ## Repository layout
 
-- `apps/android/` — Supreme Android client (planned)
-- `services/api/` — Supreme Core API (planned)
-- `services/registry/` — service and repository registry contracts
-- `packages/contracts/` — shared API and event contracts (planned)
+- `apps/android/` — existing native Android shell and device-security foundation
+- `services/android-attestation/` — Android Key Attestation verifier source and tests
+- `services/registry/` — versioned service registry contracts
+- `integrations/neweix-commerce/` — preserved source snapshot of Supreme features previously embedded in Neweix; not a standalone backend
 - `config/` — safe, non-secret example configuration
 - `docs/` — architecture, security, operations, and development notes
 
 ## Status
 
-This repository currently contains the initial architecture and governance foundation. Application and backend implementation will be added incrementally after the contracts and security boundaries are reviewed.
+This repository contains the Android shell, imported Supreme feature source, Android attestation verifier source, and architecture/security contracts. The independent Supreme Core API, registry database, production identity configuration, and live provider integrations are not yet deployed. Imported Neweix Commerce routes remain a reference snapshot and must not be treated as a production-ready standalone backend.
 
 ## Getting started
 
