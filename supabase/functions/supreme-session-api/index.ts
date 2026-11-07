@@ -8,7 +8,6 @@ const SUPABASE_ANON_KEY =
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const DATABASE_URL = Deno.env.get("SUPABASE_DB_URL") ?? "";
 const SIGNING_CERT_SHA256 = (Deno.env.get("SUPREME_ANDROID_SIGNING_CERT_SHA256") ?? "").toLowerCase();
-const MINIMUM_PACKAGE_VERSION = Deno.env.get("SUPREME_ANDROID_MIN_VERSION_CODE") ?? "";
 const db = DATABASE_URL
   ? postgres(DATABASE_URL, { max: 2, prepare: false, ssl: "require" })
   : null;
@@ -235,7 +234,7 @@ async function issueDeviceSession(
   if (!isFreshAal2(auth.claims) || !(await assertSupremeIdentity(auth.userId))) {
     return response({ error: { code: "SUPREME_AAL2_REQUIRED", request_id: requestId } }, 403, requestId);
   }
-  if (!SHA256.test(SIGNING_CERT_SHA256) || !/^[1-9]\d{0,9}$/.test(MINIMUM_PACKAGE_VERSION)) {
+  if (!SHA256.test(SIGNING_CERT_SHA256)) {
     return response({ error: { code: "PRODUCTION_SIGNER_NOT_CONFIGURED", request_id: requestId } }, 503, requestId);
   }
 
