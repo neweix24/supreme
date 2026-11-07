@@ -29,7 +29,7 @@ export async function getCurrentStaff() {
   const { data: profile, error: profileError } = await supabase
     .schema("supreme").from("identities")
     .select("role, is_active, public_id")
-    .eq("user_id", userId).eq("public_id", "supreme")
+    .eq("user_id", userId).eq("public_id", "supreme").eq("public_id", "supreme")
     .maybeSingle();
 
   if (
