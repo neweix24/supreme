@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "services": [
+    {
+      "service_id": "neweix-commerce",
+      "display_name": "NEWEIX Commerce",
+      "repository": {
+        "provider": "github",
+        "full_name": "neweix24/neweix",
+        "default_branch": "main"
+      },
+      "environments": [
+        {
+          "environment_id": "production",
+          "classification": "production"
+        }
+      ],
+      "capabilities": [
+        "repository.read",
+        "deployment.status.read",
+        "service.health.read"
+      ],
+      "integration_secret_refs": [],
+      "status": "planned"
+    }
+  ]
+}
