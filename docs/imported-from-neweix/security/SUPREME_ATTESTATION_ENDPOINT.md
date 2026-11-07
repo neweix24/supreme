@@ -21,10 +21,11 @@ The Supreme login UI and middleware therefore remain fail-closed until a separat
 3. The app posts the challenge ID, base64url challenge, base64 certificate chain, and DER ECDSA proof signature to `POST /api/supreme/attestation/verify`.
 4. The Next.js route applies a strict 96 KiB body limit and proxies the request to the Supabase Edge Function. It adds the service-role credential server-side; it never forwards that credential to the app.
 5. The Edge Function requires the exact server-side service-role credential and rejects all other callers.
-6. The handler validates the request shape and sizes, hashes the challenge, and checks that the matching challenge row is present, unconsumed, and unexpired before doing expensive cryptographic work.
-7. The verifier fetches Google's current root and status feeds, validates freshness, validates the Android-specific X.509 chain and revocation status, enforces the package and production APK signer policy, validates hardware-backed KeyDescription and RootOfTrust, and verifies proof of possession.
-8. Only after every cryptographic and policy check succeeds does the handler call `consume_supreme_app_attestation_challenge`. The database conditional update is the replay fence.
-9. A successful response reports verification facts only. It is not a login token.
+6. The handler validates the request shape and sizes, hashes the challenge, and reserves a verification attempt through a database RPC before fetching external metadata or doing expensive cryptographic work.
+7. The reservation is an atomic row update bound to the challenge ID, challenge hash, original requester IP hash, unconsumed state, and expiry. A challenge allows at most three verification attempts, including concurrent requests. Failed attempts do not consume the challenge, preserving a small retry window for transient upstream failures.
+8. The verifier fetches Google's current root and status feeds, validates freshness, validates the Android-specific X.509 chain and revocation status, enforces the package and production APK signer policy, validates hardware-backed KeyDescription and RootOfTrust, and verifies proof of possession.
+9. Only after every cryptographic and policy check succeeds does the handler call `consume_supreme_app_attestation_challenge`. The database conditional update is the replay fence.
+10. A successful response reports verification facts only. It is not a login token.
 
 ## Required server configuration
 
@@ -42,29 +43,29 @@ If either Supreme policy value is absent or invalid, the endpoint returns 503 an
 
 The function uses `verify_jwt = true` at the Supabase gateway and also checks that both the Authorization bearer and apikey headers match the server-side service-role key. The public Next.js proxy is the only intended caller.
 
-## Database dependencies
+## Database dependencies and production status
 
-The function depends on these migrations being applied to the target Supabase database:
+The verifier depends on these three migrations, which have now been applied to the production Supabase project and verified against the live schema:
 
-- `20261107030000_supreme_android_attestation_challenges.sql`
-- `20261107043000_supreme_android_attestation_challenge_consume.sql`
+- `20261107073200_20261107030000_supreme_android_attestation_challenges.sql`
+- `20261107073201_20261107043000_supreme_android_attestation_challenge_consume.sql`
+- `20261107073203_20261107080000_supreme_attestation_verification_attempt_budget.sql`
 
-The production project has not yet been migrated with these tables/RPCs. Until the migrations are separately reviewed and applied, the endpoint cannot complete verification. This PR does not apply any production database migration.
+The migration version prefixes intentionally match the versions recorded by Supabase production when the migrations were applied through the management API. This keeps the repository migration history aligned and prevents a later CLI migration push from trying to reapply already-applied DDL.
 
-Challenge issuance is rate-limited to 10 challenges per source-IP hash per rolling 10-minute window. This endpoint also rejects expired, mismatched, and already-consumed challenges before certificate parsing. A separate per-challenge failed-verification attempt budget is not yet implemented; add that control or an equivalent verified edge rate limit before public production enablement.
+The challenge table has RLS enabled and no client-facing policies. Table access and all three RPCs are restricted to `service_role`; the verification-attempt RPC atomically caps each challenge at three attempts and checks the original requester IP hash. Challenge issuance is rate-limited to 10 challenges per source-IP hash per rolling 10-minute window. Challenge consumption remains a separate atomic operation that occurs only after successful verification.
 
 ## Runtime and release gates
 
 The verifier runs in Supabase Edge Functions rather than on the Cloudflare Worker CPU budget. Supabase currently documents a 256 MB memory limit, 2 seconds of CPU time per request, and a 150-second Free-plan wall-clock limit. The existing benchmark numbers were collected on GitHub-hosted runners only; they are not proof of Supabase Edge Runtime compliance.
 
-Before deployment or login enablement:
+Before login enablement:
 
 1. Run the full verifier under the actual Supabase Edge Runtime and record CPU/memory behavior.
-2. Apply and verify the two challenge migrations in production.
-3. Configure the permanent production APK signer digest and minimum version code.
-4. Wire a short-lived attested-device session to the same Supabase user and AAL2 session.
-5. Implement native app attestation transport and test on a real Android device.
-6. Keep Supreme login disabled until all gates pass.
+2. Configure the permanent production APK signer digest and minimum version code.
+3. Wire a short-lived attested-device session to the same Supabase user and AAL2 session.
+4. Verify the native transport on a real production-signed Android device.
+5. Keep Supreme login disabled until all gates pass.
 
 ## Failure behavior
 
