@@ -14,6 +14,7 @@ Never place service-role credentials, database URLs or signing configuration in 
 
 All endpoints require a valid Supabase bearer access token. Challenge creation and registration additionally require the one active Supreme identity, AAL2 and a recent authentication time.
 
+- `GET /functions/v1/supreme-session-api/factors`: lists only the signed-in Supreme ruler's verified MFA factor metadata; it is used before AAL2 and never returns factor secrets or credentials.
 - `POST /functions/v1/supreme-session-api/challenge`: creates a five-minute server nonce. Its rate-limit binding is derived from the authenticated user and exact Supabase Auth session; client-provided IP headers are not trusted.
 - `POST /functions/v1/supreme-session-api/issue`: calls the deployed Android verifier, then registers the verifier-returned hardware key against the exact AAL2 Auth session using the service-role-only registration RPC.
 - `GET /functions/v1/supreme-session-api`: returns the current Auth session's device-bound status. It does not treat a valid Supabase user session as sufficient Supreme authorization.

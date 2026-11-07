@@ -91,6 +91,21 @@ async function authenticate(request: Request): Promise<AuthContext | null> {
   return { userId, authSessionId, claims };
 }
 
+async function listMfaFactors(auth: AuthContext, requestId: string): Promise<Response> {
+  if (!db) {
+    return response({ error: { code: "SERVICE_NOT_CONFIGURED", request_id: requestId } }, 503, requestId);
+  }
+  // This endpoint is used between password sign-in and TOTP verification.
+  // Return only factor metadata for the authenticated Supreme ruler.
+  if (!(await assertSupremeIdentity(auth.userId))) {
+    return response({ error: { code: "SUPREME_IDENTITY_REQUIRED", request_id: requestId } }, 403, requestId);
+  }
+  const factors = await db.unsafe(
+    "select id::text as id, factor_type::text as factor_type, status::text as status, friendly_name from auth.mfa_factors where user_id = $1::uuid and status::text = $2 order by created_at desc limit 10",
+    [auth.userId, "verified"],
+  );
+  return response({ factors, request_id: requestId }, 200, requestId);
+}
 async function assertSupremeIdentity(userId: string): Promise<boolean> {
   if (!db) return false;
   const principals = await db.unsafe(
@@ -454,6 +469,9 @@ async function handle(request: Request): Promise<Response> {
     }
     if (request.method === "POST" && operation === "issue") {
       return await issueDeviceSession(auth, request, requestId);
+    }
+    if (request.method === "GET" && suffix === "factors") {
+      return await listMfaFactors(auth, requestId);
     }
     return await readOrRevokeSession(auth, request, requestId);
   } catch (error) {
