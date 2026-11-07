@@ -47,6 +47,8 @@ export type SupremeAttestationVerificationInput = {
 export type SupremeAttestationVerificationResult = {
   chain: X509PathValidationResult;
   keyPolicy: SupremeAndroidKeyPolicyResult;
+  /** SHA-256 fingerprint of the verified leaf SubjectPublicKeyInfo DER. */
+  deviceKeySha256: string;
   proofOfPossessionVerified: true;
 };
 
@@ -158,5 +160,12 @@ export async function verifySupremeAndroidAttestation(
     throw new TypeError("Supreme Android challenge proof-of-possession is invalid.");
   }
 
-  return { chain, keyPolicy, proofOfPossessionVerified: true };
+  const keyDigest = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", toArrayBuffer(leaf.subjectPublicKeyInfo)),
+  );
+  const deviceKeySha256 = Array.from(keyDigest, (byte) =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+
+  return { chain, keyPolicy, deviceKeySha256, proofOfPossessionVerified: true };
 }
