@@ -106,7 +106,7 @@ begin
   where s.user_id = event_user_id
     and s.auth_session_id = event_session_id
     and s.status = 'active'
-    and s.expires_at > now()
+    and s.expires_at > now() and s.expires_at <= s.created_at + interval '4 hours'
     and d.user_id = event_user_id
     and d.status = 'active'
     and d.app_package = 'com.neweix.supreme'
