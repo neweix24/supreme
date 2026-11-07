@@ -4,7 +4,7 @@ plugins {
 }
 
 fun buildConfigString(value: String): String =
-    "\""${value.replace("\\", "\\\\").replace("\"", "\\\"")}\"""
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 val supremePrivatePath = providers.gradleProperty("supremePrivatePath")
     .orElse(providers.environmentVariable("SUPREME_PRIVATE_PATH"))
