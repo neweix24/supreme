@@ -26,12 +26,12 @@ async function getSupremeActor(): Promise<SupremeActorResult> {
   }
 
   const { data: profile, error } = await session
-    .from("staff_profiles")
-    .select("role, is_active")
-    .eq("user_id", user.id)
+    .schema("supreme").from("identities")
+    .select("role, is_active, public_id")
+    .eq("user_id", user.id).eq("public_id", "supreme")
     .maybeSingle();
 
-  if (error || !profile || profile.is_active !== true || profile.role !== "supreme") {
+  if (error || !profile || profile.is_active !== true || profile.role !== "ruler" || profile.public_id !== "supreme") {
     return { ok: false, error: "Only an active Supreme account can view this dashboard.", status: 403 };
   }
 
