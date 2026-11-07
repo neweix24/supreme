@@ -46,6 +46,10 @@ jobs:
           gradle-version: "8.9"
       - name: Assemble internal test APK
         working-directory: apps/android
+        env:
+          # Keep preview version codes increasing so Android does not reject
+          # a build as an older version when the signing certificate matches.
+          SUPREME_VERSION_CODE: ${{ 1000 + github.run_number }}
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload internal test APK
         uses: actions/upload-artifact@v4
