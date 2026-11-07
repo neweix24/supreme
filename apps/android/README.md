@@ -5,7 +5,7 @@ The Supreme Android app is the only supported sign-in client. Supreme has one se
 ## Build requirements
 
 - Android Studio with JDK 17 and Android SDK Platform 35, or Gradle 8.9+ with the Android SDK installed. Open this directory in Android Studio if Gradle is not installed on your device.
-- The native app build must use the Supreme-owned authentication/API configuration. A private URL/path is not an authentication factor and must not be used to grant access.
+- The native app must use the existing shared Supabase project and the Supreme-specific authentication/API contract. It must not use Neweix Account customer login. A private URL/path is not an authentication factor and must not be used to grant access.
 - Never commit the production path or embed it in a public artifact.
 
 The native app must not require or embed a secret web path. Browser login and browser dashboard access must be denied server-side.
@@ -32,7 +32,7 @@ gradle :app:assembleDebug
 - File/content access and cleartext HTTP are disabled; TLS certificate errors are rejected.
 - A hidden/private route is never proof of app authenticity and must never authorize a session.
 - The website must continue enforcing Supreme role authorization and AAL2 MFA on every protected page and API.
-- Google OAuth and Cloudflare Turnstile behavior inside Android WebView still require device testing. Google may require external-browser OAuth handoff; do not treat this initial shell as release-ready until login and MFA flows are verified.
+- The production login flow must not rely on Google/Facebook OAuth. Verify the native username/password and TOTP MFA flow on a physical device before release.
 - Do not distribute this debug APK as a production release.
 
 This project does not modify storefront routes or customer-facing navigation.
@@ -46,7 +46,7 @@ This is only the Android-side key-generation primitive. It is not currently wire
 Devices that cannot produce a qualifying attestation chain must not be silently downgraded to an unverified Supreme login once enforcement is enabled.
 
 
-## Private Supreme-only navigation and temporary authentication lock
+## App-only Supreme authentication and temporary access lock
 
 - Supreme login must be implemented as a native Android screen and authenticated by the existing shared Supabase Auth identity plus server-verified Supreme app attestation.
 - Browser-based Supreme sign-in and dashboard access must be denied server-side.
@@ -56,7 +56,7 @@ Devices that cannot produce a qualifying attestation chain must not be silently 
 
 ## Remote-first Supreme dashboard (permanent architecture requirement)
 
-The Supreme Android app is a thin, stable native shell. All changeable dashboard experiences must be served by the Neweix web application on Cloudflare, not compiled into the APK.
+The Supreme Android app is a thin, stable native shell. Native app authentication is mandatory; after a verified app-bound session is established, dashboard experiences may be served remotely from the approved Cloudflare origin. Browser sessions must never receive Supreme access.
 
 ### Changes that must not require an APK update
 
@@ -77,7 +77,7 @@ Only changes that genuinely need native Android capabilities or a change to the 
 - Never implement security-critical permissions solely as hidden/disabled UI controls or client-side feature flags.
 - Keep stable, versioned API contracts and backward-compatible server changes where possible, so a web deployment remains compatible with the installed shell.
 - If a remote feature needs a new native bridge capability, the web app must detect shell capability/version and fail safely or show a clear minimum-app-version notice; do not silently assume the bridge exists.
-- The native app must remain pinned to the approved Neweix origin and approved routes. Remote-first does not mean arbitrary remote URL or script execution.
+- The native app must remain pinned to the approved Supreme API/dashboard origin and approved routes. Remote-first does not mean arbitrary remote URL or script execution.
 - Cloudflare deployment updates the web-delivered experience; it does not automatically update the native APK binary.
 
 **Acceptance criterion:** a dashboard-only feature or design change is implemented and deployed on Cloudflare and becomes available in the already-installed Supreme app after reload/reopen, with no APK rebuild or reinstall.
