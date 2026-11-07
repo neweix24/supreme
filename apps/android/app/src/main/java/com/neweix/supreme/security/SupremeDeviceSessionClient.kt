@@ -67,10 +67,18 @@ internal class SupremeDeviceSessionClient {
             val status = connection.responseCode
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
                 ?: return status to ""
-            val body = stream.use {
-                val bytes = it.readNBytes(MAX_RESPONSE_BYTES + 1)
-                require(bytes.size <= MAX_RESPONSE_BYTES) { "Supreme session response was too large." }
-                String(bytes, StandardCharsets.UTF_8)
+            val body = stream.use { input ->
+                val output = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(2048)
+                var total = 0
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    total += count
+                    require(total <= MAX_RESPONSE_BYTES) { "Supreme session response was too large." }
+                    output.write(buffer, 0, count)
+                }
+                output.toString(StandardCharsets.UTF_8.name())
             }
             return status to body
         } finally {
