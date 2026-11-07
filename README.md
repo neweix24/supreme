@@ -66,6 +66,10 @@ The already implemented features in Neweix, Eixon, Neweix Account and Supreme ha
 - The permanent production APK signing key/fingerprint is not configured in the server verifier. The downloadable APK is debug-signed for UI/testing only; it must never be accepted as a production app.
 - Native challenge issuance and device-session registration run through the Supreme-owned `supreme-session-api` Supabase Edge Function. The Android app no longer depends on a Neweix website API route or Neweix Account identity.
 - Live registry currently contains six service entries but zero capabilities and zero secret references. GitHub, Cloudflare, Supabase administration and each service's operations still need scoped adapters and approval/execution tests. The standalone web dashboard is not deployed.
+## Production Android release
+
+The protected [production APK release workflow](.github/workflows/supreme-android-production-release.yml) builds only after the permanent keystore and server-approved signer fingerprint are configured. Follow [Production Android release setup](docs/production-android-release.md); never commit or share the keystore.
+
 ## Standalone control-plane completion plan
 
 See [Standalone control-plane implementation and migration gates](docs/standalone-control-plane-implementation.md) for the required app capabilities, current gaps, safe Neweix source cleanup gates, and completion criteria.
