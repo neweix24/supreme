@@ -1,6 +1,7 @@
 package com.neweix.supreme.security
 
 import android.os.Looper
+import com.neweix.supreme.BuildConfig
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -21,7 +22,8 @@ internal object SupremeAttestationClient {
     private const val READ_TIMEOUT_MS = 25_000
     private const val MAX_RESPONSE_BYTES = 16 * 1024
     private const val MAX_CERTIFICATES = 10
-    private const val ORIGIN = "https://neweix.com"
+    private val ORIGIN = BuildConfig.SUPABASE_URL.trimEnd('/')
+    private const val APPROVED_HOST = "grhybvlhdnzlopwbaqun.supabase.co"
 
     data class Verification(
         val securityLevel: String,
@@ -38,7 +40,7 @@ internal object SupremeAttestationClient {
             "Supreme attestation must run off the main thread."
         }
 
-        val challengeResponse = postJson("/api/supreme/attestation/challenge", null)
+        val challengeResponse = postJson("/functions/v1/supreme-session-api/challenge", null, accessToken)
         if (challengeResponse.first != HttpURLConnection.HTTP_OK) {
             throw IllegalStateException("Supreme device challenge could not be issued.")
         }
@@ -79,7 +81,7 @@ internal object SupremeAttestationClient {
 
         require(accessToken.isNotBlank()) { "Supreme AAL2 access token is required." }
         val verificationResponse = postJson(
-            "/api/supreme/session/issue",
+            "/functions/v1/supreme-session-api/issue",
             verifyPayload.toString().toByteArray(StandardCharsets.UTF_8),
             accessToken,
         )
@@ -107,7 +109,12 @@ internal object SupremeAttestationClient {
 
     private fun postJson(path: String, body: ByteArray?, accessToken: String? = null): Pair<Int, String> {
         val url = URL(ORIGIN + path)
-        require(url.protocol == "https" && url.host == "neweix.com" && url.port == -1) {
+        require(
+            url.protocol == "https" &&
+                url.host == APPROVED_HOST &&
+                url.port == -1 &&
+                url.userInfo == null
+        ) {
             "Supreme attestation endpoint origin is invalid."
         }
 
@@ -121,6 +128,7 @@ internal object SupremeAttestationClient {
             doOutput = body != null
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Cache-Control", "no-store")
+            setRequestProperty("apikey", BuildConfig.SUPABASE_PUBLISHABLE_KEY)
             accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
             if (body != null) {
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
