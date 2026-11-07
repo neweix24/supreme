@@ -95,7 +95,11 @@ internal object SupremeAttestationClient {
         }
 
         return Verification(
-            securityLevel = result.optString("security_level", "unknown"),
+            securityLevel = when (result.optString("security_level")) {
+                "strongbox" -> "STRONG_BOX"
+                "trusted_environment" -> "TRUSTED_ENVIRONMENT"
+                else -> "unknown"
+            },
             provisioningMethod = result.optString("provisioning_method", "unknown"),
             proofOfPossessionVerified = true,
         )
