@@ -14,6 +14,8 @@ A service remains responsible for its own runtime, data, authentication boundary
 - Authentication uses the existing shared Supabase Auth project; authorization does not require a Neweix Account customer row.
 - Future Neweix Employees use a separate identity/workforce domain and cannot inherit Supreme privileges.
 - A request must carry a valid Supreme session. The backend—not the Android client—resolves the principal and evaluates authorization.
+- Registry requests additionally require a server-signed `supreme_app_session` JWT claim bound to an active attested device/session record. The claim must be issued by a trusted Supabase Auth hook, never supplied through client-editable metadata or headers.
+- Until the device/session registry and Auth hook are deployed, the API implementation fails closed and denies all requests without this claim.
 - Local PIN/biometric verification is a device-unlock step; it is not a substitute for server authentication or MFA.
 - Registry read operations require `services.read`.
 - Register/update/suspend operations require `services.manage` and a recorded approval. Production-impacting changes require fresh MFA.
