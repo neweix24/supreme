@@ -512,6 +512,93 @@ async function handle(request: Request): Promise<Response> {
       return json({ control_request: result, request_id: requestId }, result.duplicate ? 200 : 202, requestId, cors);
     }
 
+
+    if (request.method === "GET" && parts.length === 2 && parts[0] === "v1" && parts[1] === "control-requests") {
+      const requestedStatus = url.searchParams.get("status") ?? "pending";
+      const allowedStatuses = ["pending", "approved", "rejected", "cancelled", "expired", "executed", "failed"];
+      if (requestedStatus !== "all" && !allowedStatuses.includes(requestedStatus)) {
+        throw new TypeError("Invalid control request status.");
+      }
+      const limitRaw = Number(url.searchParams.get("limit") ?? "50");
+      const limit = Number.isInteger(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 50;
+      const rows = await db`
+        select id::text, request_type, service_id, environment_id, action,
+               normalized_parameters, requester_user_id::text, status,
+               approval_required, approved_by::text, approved_at,
+               expires_at, created_at, updated_at
+        from supreme.control_requests
+        where (${requestedStatus} = 'all' or status = ${requestedStatus})
+        order by created_at desc, id desc
+        limit ${limit}
+      `;
+      await audit({ actor: userId, action: "control_requests.list", outcome: "success", requestId,
+        details: { status: requestedStatus, count: rows.length } });
+      return json({ control_requests: rows, request_id: requestId }, 200, requestId, cors);
+    }
+
+    if (request.method === "POST" && parts.length === 4 &&
+        parts[0] === "v1" && parts[1] === "control-requests" && parts[3] === "decision") {
+      if (!isFreshAal2(claims)) {
+        await audit({ actor: userId, action: "control_requests.decision.denied", outcome: "denied",
+          requestId, details: { reason: "fresh_aal2_required", control_request_id: parts[2] } });
+        return errorResponse("MFA_REQUIRED", "Fresh MFA (AAL2) is required to approve or reject a request.", 403, requestId);
+      }
+      const id = parts[2];
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+        throw new TypeError("Invalid control request ID.");
+      }
+      const body = await readJson(request, 8 * 1024);
+      assertOnlyKeys(body, ["decision", "reason"], "decision");
+      const decision = requireString(body.decision, "decision", 16);
+      if (decision !== "approve" && decision !== "reject") throw new TypeError("Decision must be approve or reject.");
+      const reason = body.reason === undefined ? null : requireString(body.reason, "reason", 500);
+      if (decision === "reject" && (!reason || reason.length < 8)) {
+        throw new TypeError("A rejection reason of at least 8 characters is required.");
+      }
+      const nextStatus = decision === "approve" ? "approved" : "rejected";
+      const [changed] = await db`
+        update supreme.control_requests
+        set status = ${nextStatus},
+            approved_by = case when ${decision} = 'approve' then ${userId}::uuid else null end,
+            approved_at = case when ${decision} = 'approve' then now() else null end,
+            updated_at = now()
+        where id = ${id}::uuid
+          and status = 'pending'
+          and approval_required = true
+          and expires_at > now()
+        returning id::text, request_type, service_id, environment_id, action,
+                  status, approved_by::text, approved_at, expires_at, updated_at
+      `;
+      if (!changed) {
+        const [existing] = await db`
+          select id::text, status, requester_user_id::text, expires_at
+          from supreme.control_requests where id = ${id}::uuid limit 1
+        `;
+        if (!existing) return errorResponse("CONTROL_REQUEST_NOT_FOUND", "Control request not found.", 404, requestId);
+        if (new Date(existing.expires_at).getTime() <= Date.now() && existing.status === "pending") {
+          await db`update supreme.control_requests set status = 'expired', updated_at = now()
+            where id = ${id}::uuid and status = 'pending' and expires_at <= now()`;
+          await audit({ actor: userId, action: "control_requests.expire", outcome: "success",
+            requestId, details: { control_request_id: id } });
+          return errorResponse("CONTROL_REQUEST_EXPIRED", "The control request has expired.", 410, requestId);
+        }
+        if (existing.status === nextStatus && existing.requester_user_id === userId) {
+          return json({ control_request: { id, status: nextStatus, duplicate: true }, request_id: requestId }, 200, requestId, cors);
+        }
+        return errorResponse("CONTROL_REQUEST_NOT_PENDING", "Only pending control requests can be decided.", 409, requestId);
+      }
+      await audit({
+        actor: userId,
+        action: decision === "approve" ? "control_requests.approve" : "control_requests.reject",
+        serviceId: changed.service_id,
+        environmentId: changed.environment_id,
+        outcome: "success",
+        requestId,
+        details: { control_request_id: id, decision, reason, approved_at: changed.approved_at },
+      });
+      return json({ control_request: { ...changed, decision, duplicate: false }, request_id: requestId }, 200, requestId, cors);
+    }
+
     if (request.method === "GET" && parts.length === 4 && parts[0] === "v1" && parts[1] === "services" && parts[3] === "health") {
       const id = serviceId(parts[2]);
       const environmentId = requireString(url.searchParams.get("environment_id"), "environment_id", 32);
