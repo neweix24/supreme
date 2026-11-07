@@ -313,8 +313,9 @@ export async function handleSupremeAttestationVerify(
 
   return json({
     verified: true,
-    security_level: verification.keyPolicy.securityLevel,
+    security_level: verification.keyPolicy.securityLevel === "STRONG_BOX" ? "strongbox" : "trusted_environment",
     provisioning_method: verification.chain.provisioningMethod,
     proof_of_possession_verified: verification.proofOfPossessionVerified,
+    device_key_sha256: verification.deviceKeySha256,
   }, 200);
 }

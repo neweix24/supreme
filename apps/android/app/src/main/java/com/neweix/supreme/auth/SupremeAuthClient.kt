@@ -119,6 +119,37 @@ internal object SupremeAuthClient {
         request("POST", "/auth/v1/logout?scope=global", accessToken, JSONObject())
     }
 
+    fun verifyDeviceSession(accessToken: String) {
+        val response = request(
+            "GET",
+            "/functions/v1/supreme-session-api",
+            accessToken = accessToken,
+        )
+        require(response.optBoolean("authenticated", false) &&
+            response.optBoolean("device_session_active", false)
+        ) {
+            "The server has not authorized this Supreme device session."
+        }
+        val session = response.optJSONObject("session")
+            ?: throw IllegalStateException("Supreme device session details are missing.")
+        val claims = decodeClaims(accessToken).optJSONObject("supreme_app_session")
+            ?: throw IllegalStateException("The signed Supreme device-session claim is missing.")
+        require(claims.optString("status") == "active" &&
+            claims.optString("session_id") == session.optString("session_id") &&
+            claims.optString("device_id") == session.optString("device_id")
+        ) {
+            "The signed Supreme device-session claim does not match the active server session."
+        }
+    }
+
+    fun revokeDeviceSession(accessToken: String) {
+        request(
+            "DELETE",
+            "/functions/v1/supreme-session-api",
+            accessToken = accessToken,
+        )
+    }
+
     fun listServices(accessToken: String): List<Service> {
         val response = request(
             "GET",

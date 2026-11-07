@@ -47,7 +47,7 @@ Devices that cannot produce a qualifying attestation chain must not be silently 
 - Supreme login is implemented as a native Android screen with Supreme-specific Supabase Auth password sign-in, verified TOTP MFA, fresh AAL2 checks, and server-verified Android app attestation.
 - Browser-based Supreme sign-in and dashboard access must be denied server-side.
 - Supreme authorization must consult the single active `supreme.identities` principal with `role = ruler` and `public_id = supreme`; it must not require `neweix_accounts`.
-- The registry API also requires a server-signed `supreme_app_session` claim for an active device-bound attested session. The current verifier proves device-key possession only; the Supabase Auth hook/session issuer is still pending, so registry access remains denied until wired end-to-end.
+- The registry API requires a server-signed `supreme_app_session` claim for an active device-bound attested session. The native flow submits the hardware-attestation proof to the server-side issuer, which verifies the production package signer, records the device, and binds the row to the exact AAL2 Supabase Auth session. The app refreshes the token and verifies the signed claim and live session record before loading registry data.
 - **The native debug app is not a production login release.** Keep privileged operations fail-closed until the Auth Hook, persistent device/session binding, production APK signer allowlist, and real-device/browser-denial tests pass.
 - The diamond emblem is the temporary app mark and can be replaced later without changing the application ID.
 
@@ -91,11 +91,12 @@ Only changes that genuinely need native Android capabilities or a change to the 
 
 ## Production release gates
 
-1. Persist a verified pending attestation public key and register it to the exact Supabase user/session with a signed proof-of-possession request.
-2. Create and enable a Supabase Custom Access Token Hook that emits `supreme_app_session` only from active server-side device/session records.
-3. Deploy the strict Registry API, verify current-session/device revocation on each request, and test all allow/deny paths.
-4. Generate the permanent production APK signing key in the chosen secure signing environment, configure its SHA-256 digest as a server-side secret, and test on a physical Android device.
-5. Move or confirm the attestation challenge/verification proxy hosting endpoint; the current native code calls the Neweix-hosted proxy without using Neweix Account identity.
+1. Apply `20261107200000_supreme_device_bound_auth_sessions.sql` and `20261107210000_supreme_attested_session_issuer.sql` after the Supreme identity and registry migrations.
+2. Deploy `supreme-session-api` with the Supabase project URL, public API key, and server-only database connection string.
+3. Deploy the Cloudflare `/api/supreme/session/issue` route with service-role credentials and the production signing-certificate digest.
+4. Enable `public.supreme_custom_access_token_hook` under Supabase Authentication → Hooks → Custom Access Token.
+5. Configure the attestation verifier's production signer digest and minimum package version; build and sign the APK with that same permanent key.
+6. Deploy and verify the complete flow on a physical production-signed Android device, including session refresh, device revocation, and browser-denial cases.
 ## Production signing identity — not configured yet
 
 The production signer certificate digest is a security input to Android Key Attestation's

@@ -250,21 +250,30 @@ class MainActivity : FragmentActivity() {
                     throw IllegalStateException("Supreme MFA verification is no longer fresh. Sign in again.")
                 }
 
-                val device = SupremeAttestationClient.verifyDevice()
+                val device = SupremeAttestationClient.verifyAndRegister(session.accessToken)
                 if (!device.proofOfPossessionVerified ||
                     (device.securityLevel != "TRUSTED_ENVIRONMENT" && device.securityLevel != "STRONG_BOX")
                 ) {
                     throw IllegalStateException("This device did not pass Supreme hardware security verification.")
                 }
 
-                // The registry API is the server-side authority for whether
-                // this attested device is bound to the current AAL2 Auth session.
-                val services = SupremeAuthClient.listServices(session.accessToken)
-                val requests = SupremeAuthClient.listPendingRequests(session.accessToken)
-                sessionStore.saveRefreshToken(session.refreshToken)
+                // The access-token hook signs the newly registered device session
+                // only after refresh. Verify that claim against the live server row
+                // before any registry data or control actions are loaded.
+                val refreshed = SupremeAuthClient.refresh(session.refreshToken)
+                if (refreshed.userId != session.userId ||
+                    refreshed.sessionId != session.sessionId ||
+                    refreshed.assuranceLevel != "aal2"
+                ) {
+                    throw IllegalStateException("Supreme AAL2 session continuity could not be confirmed.")
+                }
+                SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
+                val services = SupremeAuthClient.listServices(refreshed.accessToken)
+                val requests = SupremeAuthClient.listPendingRequests(refreshed.accessToken)
+                sessionStore.saveRefreshToken(refreshed.refreshToken)
 
                 runOnUiThread {
-                    currentAccessToken = session.accessToken
+                    currentAccessToken = refreshed.accessToken
                     pendingPasswordSession = null
                     pendingFactorId = null
                     pendingChallengeId = null
@@ -518,6 +527,7 @@ class MainActivity : FragmentActivity() {
                 if (session.assuranceLevel != "aal2") {
                     throw IllegalStateException("Supreme session has fallen below AAL2. Sign in again.")
                 }
+                SupremeAuthClient.verifyDeviceSession(session.accessToken)
                 val services = SupremeAuthClient.listServices(session.accessToken)
                 val requests = SupremeAuthClient.listPendingRequests(session.accessToken)
                 sessionStore.saveRefreshToken(session.refreshToken)
@@ -555,6 +565,9 @@ class MainActivity : FragmentActivity() {
         background.execute {
             try {
                 val session = SupremeAuthClient.refresh(refresh)
+                if (session.assuranceLevel == "aal2") {
+                    try { SupremeAuthClient.revokeDeviceSession(session.accessToken) } catch (_: Exception) { }
+                }
                 SupremeAuthClient.signOut(session.accessToken)
             } catch (_: Exception) {
                 // Local credential deletion remains mandatory if the server is offline.

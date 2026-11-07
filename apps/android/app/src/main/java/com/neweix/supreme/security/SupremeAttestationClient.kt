@@ -33,7 +33,7 @@ internal object SupremeAttestationClient {
      * Performs challenge issuance, hardware-backed key creation, and server
      * verification. Call from a worker thread; never from the Android UI thread.
      */
-    fun verifyDevice(): Verification {
+    fun verifyAndRegister(accessToken: String): Verification {
         check(Looper.myLooper() != Looper.getMainLooper()) {
             "Supreme attestation must run off the main thread."
         }
@@ -77,9 +77,11 @@ internal object SupremeAttestationClient {
             .put("certificate_chain", certificateArray)
             .put("proof_signature", material.challengeProofBase64)
 
+        require(accessToken.isNotBlank()) { "Supreme AAL2 access token is required." }
         val verificationResponse = postJson(
-            "/api/supreme/attestation/verify",
+            "/api/supreme/session/issue",
             verifyPayload.toString().toByteArray(StandardCharsets.UTF_8),
+            accessToken,
         )
         if (verificationResponse.first != HttpURLConnection.HTTP_OK) {
             throw IllegalStateException(
@@ -88,21 +90,22 @@ internal object SupremeAttestationClient {
         }
 
         val result = JSONObject(verificationResponse.second)
-        check(result.optBoolean("verified", false)) {
-            "Supreme device verification was not confirmed."
-        }
-        check(result.optBoolean("proof_of_possession_verified", false)) {
-            "Supreme device key possession was not confirmed."
+        check(result.optBoolean("registered", false)) {
+            "Supreme device-bound session registration was not confirmed."
         }
 
         return Verification(
-            securityLevel = result.optString("security_level", "unknown"),
+            securityLevel = when (result.optString("security_level")) {
+                "strongbox" -> "STRONG_BOX"
+                "trusted_environment" -> "TRUSTED_ENVIRONMENT"
+                else -> "unknown"
+            },
             provisioningMethod = result.optString("provisioning_method", "unknown"),
             proofOfPossessionVerified = true,
         )
     }
 
-    private fun postJson(path: String, body: ByteArray?): Pair<Int, String> {
+    private fun postJson(path: String, body: ByteArray?, accessToken: String? = null): Pair<Int, String> {
         val url = URL(ORIGIN + path)
         require(url.protocol == "https" && url.host == "neweix.com" && url.port == -1) {
             "Supreme attestation endpoint origin is invalid."
@@ -118,6 +121,7 @@ internal object SupremeAttestationClient {
             doOutput = body != null
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Cache-Control", "no-store")
+            accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
             if (body != null) {
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setFixedLengthStreamingMode(body.size)
