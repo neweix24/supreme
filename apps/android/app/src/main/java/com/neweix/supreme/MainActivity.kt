@@ -407,7 +407,7 @@ class MainActivity : FragmentActivity() {
                     codeInput.visibility = View.GONE
                     primaryButton.text = "SIGN IN"
                     val message = if (error is SupremeAuthException &&
-                        error.statusCode in 400..422
+                        error.statusCode == 400 || error.statusCode == 422
                     ) {
                         "Authenticator code was rejected. Wait for a fresh six-digit code and try again."
                     } else {
