@@ -24,6 +24,8 @@ The registry is the authoritative catalogue of ecosystem services Supreme is per
 - `POST /v1/services` — submit a service registration request; it remains pending.
 - `PATCH /v1/services/{service_id}` — submit a versioned metadata update request.
 - `GET /v1/services/{service_id}/health?environment_id={id}` — run a bounded HTTPS health check against a registered same-origin target.
+- `GET /v1/control-requests?status=pending` — list pending or filtered approval requests.
+- `POST /v1/control-requests/{request_id}/decision` — approve or reject a pending request; fresh AAL2 is required and rejection requires a reason.
 
 The Edge Function requires a valid Supabase JWT and confirms the user is the one active `supreme` ruler identity linked to a central Neweix Account. The function uses server-side database access; the Android app never receives database credentials.
 
@@ -31,4 +33,4 @@ The Edge Function requires a valid Supabase JWT and confirms the user is the one
 
 The registry database and API are deployed in the existing Neweix Supabase project, under the isolated `supreme` schema. The schema is not exposed to `anon` or `authenticated` roles. The initial registry contains Neweix, Neweix Shop, Eixon, Neweix Account, Neweix Message, and Supreme. No service capabilities or provider secret references are enabled yet.
 
-Provider-specific GitHub, Cloudflare, Supabase administration, and service execution adapters are not deployed. Registration/update requests can be queued, but approval-decision and execution endpoints remain future implementation work. Do not treat a listed service as controllable until its adapter is implemented, authorized, and tested.
+Provider-specific GitHub, Cloudflare, Supabase administration, and service execution adapters are not deployed. Registration/update requests can be queued and decided through the MFA-protected approval endpoint. Approval only changes the request state; it does not execute the requested operation. Provider-specific execution endpoints remain future implementation work. Do not treat a listed service as controllable until its adapter is implemented, authorized, and tested.
