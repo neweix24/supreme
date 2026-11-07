@@ -7,6 +7,8 @@ on:
     paths:
       - "supabase/functions/supreme-registry-api/**"
       - "supabase/functions/supreme-neweix-api/**"
+      - "supabase/functions/supreme-session-api/**"
+      - "services/android-attestation/supabase/functions/**"
       - ".github/workflows/supreme-registry-check.yml"
   push:
     branches: [main]
@@ -36,3 +38,7 @@ jobs:
         run: deno check --config supabase/functions/supreme-registry-api/deno.json supabase/functions/supreme-registry-api/index.ts
       - name: Type-check Neweix control-plane Edge Function
         run: deno check supabase/functions/supreme-neweix-api/index.ts
+      - name: Type-check Supreme session Edge Function
+        run: deno check supabase/functions/supreme-session-api/index.ts
+      - name: Run Android attestation parser and verifier tests
+        run: deno test --allow-env --allow-read services/android-attestation/supabase/functions
