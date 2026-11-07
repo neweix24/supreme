@@ -403,7 +403,7 @@ async function createControlRequest(
         and action = ${action}
         and service_id is not distinct from ${targetServiceId}
         and environment_id is not distinct from ${environmentId}
-        and normalized_parameters = ${db.json(parameters)}
+        and normalized_parameters = ${db.json(JSON.parse(JSON.stringify(parameters)))}
       ) as same_request
     from supreme.control_requests
     where requester_user_id = ${actor}::uuid and idempotency_key = ${idempotencyKey}
