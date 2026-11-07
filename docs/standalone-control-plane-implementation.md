@@ -61,8 +61,8 @@ Supreme is a control plane, not a replacement for the business applications it m
 - Provide operation status, logs, result, rollback guidance, and emergency disable/revoke controls.
 
 ### G. Access, identity, and device security
-- Preserve exactly one Supreme ruler identity: `public.staff_profiles.role = 'supreme'`, `public_id = 'supreme'`, active.
-- Reuse the existing Supabase Auth session and NEWEIX Supreme identity row; do not require a `neweix_accounts` customer record.
+- Preserve exactly one Supreme ruler identity in `supreme.identities`: `role = 'ruler'`, `public_id = 'supreme'`, active.
+- Reuse the existing Supabase Auth session and the Supreme-owned `supreme.identities` row; do not require a `neweix_accounts` customer record or a `staff_profiles` row.
 - Keep future Neweix Employees identity and workforce permissions separate from the Supreme ruler principal.
 - Enforce MFA/AAL2 on privileged server operations.
 - Require a server-signed, device-bound `supreme_app_session` claim on every registry request. The Auth hook and session/device registry must be implemented before enabling the app flow.
