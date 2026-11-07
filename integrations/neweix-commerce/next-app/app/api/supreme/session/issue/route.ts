@@ -187,48 +187,28 @@ export async function POST(request: Request) {
 
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 12 * 60 * 60 * 1000).toISOString();
-    const { data: device, error: deviceError } = await db.schema("supreme").from("devices")
-      .upsert({
-        user_id: userId,
-        device_key_sha256: verified.device_key_sha256,
-        app_package: "com.neweix.supreme",
-        signing_certificate_sha256: productionSigner,
-        security_level: verified.security_level,
-        attested_at: now.toISOString(),
-        last_seen_at: now.toISOString(),
-        status: "active",
-        updated_at: now.toISOString(),
-      }, { onConflict: "user_id,device_key_sha256" })
-      .select("id")
-      .single();
-    if (deviceError || !device?.id) {
-      console.error("Supreme device registration failed", deviceError?.message);
-      return fail("Supreme device registration could not be saved.", 503);
-    }
-
-    const { data: session, error: sessionError } = await db.schema("supreme").from("app_sessions")
-      .upsert({
-        user_id: userId,
-        device_id: device.id,
-        auth_session_id: authSessionId,
-        status: "active",
-        attested_at: now.toISOString(),
-        expires_at: expiresAt,
-        revoked_at: null,
-        updated_at: now.toISOString(),
-      }, { onConflict: "auth_session_id" })
-      .select("id,device_id,expires_at")
-      .single();
-    if (sessionError || !session?.id) {
-      console.error("Supreme app session registration failed", sessionError?.message);
+    const { data: registered, error: registrationError } = await db.rpc(
+      "register_supreme_attested_device_session",
+      {
+        p_user_id: userId,
+        p_auth_session_id: authSessionId,
+        p_device_key_sha256: verified.device_key_sha256,
+        p_signing_certificate_sha256: productionSigner,
+        p_security_level: verified.security_level,
+        p_attested_at: now.toISOString(),
+        p_expires_at: expiresAt,
+      },
+    );
+    if (registrationError || !registered || registered.registered !== true) {
+      console.error("Supreme device session registration failed", registrationError?.message);
       return fail("Supreme device session could not be created.", 503);
     }
 
     return NextResponse.json({
       registered: true,
-      session_id: session.id,
-      device_id: session.device_id,
-      expires_at: session.expires_at,
+      session_id: registered.session_id,
+      device_id: registered.device_id,
+      expires_at: registered.expires_at,
       security_level: verified.security_level,
     }, { headers: NO_STORE });
   } catch (error) {
