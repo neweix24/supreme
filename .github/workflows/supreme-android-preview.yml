@@ -7,6 +7,12 @@ on:
     paths:
       - "apps/android/**"
       - ".github/workflows/supreme-android-preview.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "apps/android/**"
+      - ".github/workflows/supreme-android-preview.yml"
   workflow_dispatch:
 
 permissions:
@@ -20,10 +26,9 @@ jobs:
   build-preview:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout merged Android app source
+      - name: Checkout source under test
         uses: actions/checkout@v4
         with:
-          ref: main
           persist-credentials: false
 
       # This value is deliberately public and disposable. It only satisfies the
