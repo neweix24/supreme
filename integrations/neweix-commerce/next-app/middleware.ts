@@ -217,7 +217,7 @@ export async function middleware(request: NextRequest) {
     const { data: mfaProfile, error: mfaProfileError } = await supabase
       .schema("supreme").from("identities")
       .select("role, is_active, public_id")
-      .eq("user_id", userId).eq("public_id", "supreme").eq("public_id", "supreme")
+      .eq("user_id", userId)
       .maybeSingle();
     if (mfaProfileError) {
       return copySessionState(new NextResponse("MFA authorization unavailable.", {
@@ -225,7 +225,7 @@ export async function middleware(request: NextRequest) {
         headers: { "Cache-Control": "private, no-store, max-age=0" },
       }));
     }
-    if (mfaProfile?.role === "supreme") {
+    if (mfaProfile?.role === "ruler" && mfaProfile.public_id === "supreme") {
       return copySessionState(new NextResponse(
         "Supreme MFA is locked until verified Android app attestation is available.",
         { status: 503, headers: { "Cache-Control": "private, no-store, max-age=0", "X-Robots-Tag": "noindex, nofollow" } },
@@ -322,7 +322,7 @@ export async function middleware(request: NextRequest) {
 
   // The Supreme identity is not a general workforce/admin login. Even an
   // existing Supreme session must never enter the browser-based /admin area.
-  if (isAdminPath && profile.role === "supreme") {
+  if (isAdminPath && profile.role === "ruler" && profile.public_id === "supreme") {
     return redirectWithCookies("/unauthorized");
   }
 
