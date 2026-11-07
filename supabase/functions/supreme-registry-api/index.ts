@@ -74,10 +74,8 @@ function hasVerifiedSupremeAppSession(claims: JsonObject): boolean {
   if (!binding || typeof binding !== "object" || Array.isArray(binding)) return false;
   const session = binding as JsonObject;
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  const tokenSessionId = claims.session_id;
   return session.status === "active" &&
-    typeof tokenSessionId === "string" && uuid.test(tokenSessionId) &&
-    typeof session.session_id === "string" && session.session_id === tokenSessionId &&
+    typeof session.session_id === "string" && uuid.test(session.session_id) &&
     typeof session.device_id === "string" && uuid.test(session.device_id) &&
     typeof session.attested_at === "number" && Number.isFinite(session.attested_at) &&
     session.attested_at > 0 && session.attested_at <= Date.now() / 1000 + 30;
@@ -317,6 +315,47 @@ async function authenticate(request: Request): Promise<{
   if (!hasVerifiedSupremeAppSession(claims)) {
     throw new Response("Supreme app attestation is required.", { status: 403 });
   }
+
+  // The JWT session_id is the Supabase Auth session. The signed custom claim's
+  // session_id is the separate supreme.app_sessions row ID. Bind both to the
+  // same active device row on every API request so revocation is immediate.
+  const binding = claims.supreme_app_session as JsonObject;
+  const authSessionId = claims.session_id;
+  const appSessionId = binding.session_id;
+  const deviceId = binding.device_id;
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (
+    typeof authSessionId !== "string" || !uuid.test(authSessionId) ||
+    typeof appSessionId !== "string" || !uuid.test(appSessionId) ||
+    typeof deviceId !== "string" || !uuid.test(deviceId)
+  ) {
+    throw new Response("Supreme device session is invalid.", { status: 403 });
+  }
+  const [activeSession] = await db`
+    select s.id::text as session_id, s.device_id::text as device_id
+    from supreme.app_sessions s
+    join supreme.devices d on d.id = s.device_id
+    where s.id = ${appSessionId}::uuid
+      and s.auth_session_id = ${authSessionId}::uuid
+      and s.user_id = ${user.id}::uuid
+      and s.status = 'active'
+      and s.expires_at > now()
+      and d.id = ${deviceId}::uuid
+      and d.user_id = ${user.id}::uuid
+      and d.status = 'active'
+      and d.app_package = 'com.neweix.supreme'
+      and d.attested_at > now() - interval '30 days'
+      and d.attested_at <= now()
+    limit 1
+  `;
+  if (!activeSession || activeSession.session_id !== appSessionId || activeSession.device_id !== deviceId) {
+    throw new Response("Supreme device session is revoked or expired.", { status: 403 });
+  }
+  await db`
+    update supreme.devices
+    set last_seen_at = now(), updated_at = now()
+    where id = ${deviceId}::uuid and status = 'active'
+  `;
   return { userId: user.id, claims };
 }
 
