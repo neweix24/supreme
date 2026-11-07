@@ -44,12 +44,15 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+      - name: Calculate preview version code
+        id: preview_version
+        shell: bash
+        run: echo "version_code=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
       - name: Assemble internal test APK
         working-directory: apps/android
         env:
-          # Keep preview version codes increasing so Android does not reject
-          # a build as an older version when the signing certificate matches.
-          SUPREME_VERSION_CODE: ${{ 1000 + github.run_number }}
+          # Keep preview version codes increasing across workflow runs.
+          SUPREME_VERSION_CODE: ${{ steps.preview_version.outputs.version_code }}
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload internal test APK
         uses: actions/upload-artifact@v4
