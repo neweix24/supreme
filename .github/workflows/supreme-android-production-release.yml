@@ -41,6 +41,18 @@ jobs:
         with:
           packages: "platform-tools platforms;android-35"
 
+      - name: Install Android build-tools and expose apksigner
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager "build-tools;35.0.0"
+          apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          if [[ ! -x "$apksigner" ]]; then
+            echo "Android build-tools installed but apksigner is missing: $apksigner" >&2
+            exit 1
+          fi
+          echo "APKSIGNER=$apksigner" >> "$GITHUB_ENV"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -92,7 +104,7 @@ jobs:
           apk="apps/android/app/build/outputs/apk/release/app-release.apk"
           test -s "$apk"
           output="$(bash services/android-attestation/scripts/security/print-android-signing-cert.sh "$apk")"
-          printf '%s\n' "$output"
+          printf '%s\\n' "$output"
           expected="${SUPREME_ANDROID_SIGNING_CERT_SHA256,,}"
           grep -Fq "$expected" <<< "$output"
 
