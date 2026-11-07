@@ -95,14 +95,14 @@ class MainActivity : FragmentActivity() {
         screen = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(26), dp(50), dp(26), dp(36))
+            setPadding(dp(26), dp(28), dp(26), dp(36))
         }
 
         screen.addView(ImageView(this).apply {
             setImageResource(R.drawable.supreme_icon)
             scaleType = ImageView.ScaleType.FIT_CENTER
             contentDescription = "Supreme crown and S emblem"
-        }, LinearLayout.LayoutParams(dp(104), dp(104)).apply {
+        }, LinearLayout.LayoutParams(dp(176), dp(176)).apply {
             bottomMargin = dp(8)
         })
 
@@ -239,7 +239,7 @@ class MainActivity : FragmentActivity() {
                 setImageResource(R.drawable.supreme_icon)
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 contentDescription = "Supreme crown and S emblem"
-            }, LinearLayout.LayoutParams(dp(116), dp(116)).apply {
+            }, LinearLayout.LayoutParams(dp(160), dp(160)).apply {
                 bottomMargin = dp(14)
             })
             addView(TextView(this@MainActivity).apply {
@@ -278,53 +278,40 @@ class MainActivity : FragmentActivity() {
             return
         }
 
-        setBusy(true, "Complete the security verification…")
-        SupremeCaptchaDialog.show(
-            activity = this,
-            onToken = { captchaToken ->
-                if (!isFinishing && !isDestroyed) {
-                    setBusy(true, "Authenticating Supreme Account…")
-                    background.execute {
-                        try {
-                            val session = SupremeAuthClient.signIn(email, password, captchaToken)
-                            val factors = SupremeAuthClient.verifiedTotpFactors(session.accessToken)
-                            if (factors.isEmpty()) {
-                                runOnUiThread {
-                                    passwordInput.text.clear()
-                                    setBusy(false, "TOTP MFA is not enrolled on the Supreme Account. Access remains locked.")
-                                }
-                                return@execute
-                            }
-                            val factor = factors.first()
-                            val challenge = SupremeAuthClient.createTotpChallenge(session.accessToken, factor.id)
-                            runOnUiThread {
-                                pendingPasswordSession = session
-                                pendingFactorId = factor.id
-                                pendingChallengeId = challenge
-                                passwordInput.text.clear()
-                                emailInput.isEnabled = false
-                                passwordInput.visibility = View.GONE
-                                codeInput.visibility = View.VISIBLE
-                                primaryButton.text = "VERIFY MFA"
-                                statusText.text = "Enter the current code from your authenticator app."
-                                setBusy(false, null)
-                                codeInput.requestFocus()
-                            }
-                        } catch (error: Exception) {
-                            runOnUiThread {
-                                passwordInput.text.clear()
-                                setBusy(false, safeMessage(error))
-                            }
-                        }
+        setBusy(true, "Authenticating Supreme Account…")
+        background.execute {
+            try {
+                val session = SupremeAuthClient.signIn(email, password)
+                val factors = SupremeAuthClient.verifiedTotpFactors(session.accessToken)
+                if (factors.isEmpty()) {
+                    runOnUiThread {
+                        passwordInput.text.clear()
+                        setBusy(false, "TOTP MFA is not enrolled on the Supreme Account. Access remains locked.")
                     }
+                    return@execute
                 }
-            },
-            onError = { message ->
-                if (!isFinishing && !isDestroyed) {
-                    setBusy(false, message)
+                val factor = factors.first()
+                val challenge = SupremeAuthClient.createTotpChallenge(session.accessToken, factor.id)
+                runOnUiThread {
+                    pendingPasswordSession = session
+                    pendingFactorId = factor.id
+                    pendingChallengeId = challenge
+                    passwordInput.text.clear()
+                    emailInput.isEnabled = false
+                    passwordInput.visibility = View.GONE
+                    codeInput.visibility = View.VISIBLE
+                    primaryButton.text = "VERIFY MFA"
+                    statusText.text = "Enter the current code from your authenticator app."
+                    setBusy(false, null)
+                    codeInput.requestFocus()
                 }
-            },
-        )
+            } catch (error: Exception) {
+                runOnUiThread {
+                    passwordInput.text.clear()
+                    setBusy(false, safeMessage(error))
+                }
+            }
+        }
     }
 
     private fun verifyMfaCode() {
@@ -408,7 +395,7 @@ class MainActivity : FragmentActivity() {
             setImageResource(R.drawable.supreme_icon)
             scaleType = ImageView.ScaleType.FIT_CENTER
             contentDescription = "Supreme crown and S emblem"
-        }, LinearLayout.LayoutParams(dp(100), dp(100)).apply {
+        }, LinearLayout.LayoutParams(dp(144), dp(144)).apply {
             bottomMargin = dp(8)
         })
         screen.addView(TextView(this).apply {
