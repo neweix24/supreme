@@ -142,6 +142,14 @@ internal object SupremeAuthClient {
         }
     }
 
+    fun revokeDeviceSession(accessToken: String) {
+        request(
+            "DELETE",
+            "/functions/v1/supreme-session-api",
+            accessToken = accessToken,
+        )
+    }
+
     fun listServices(accessToken: String): List<Service> {
         val response = request(
             "GET",
