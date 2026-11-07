@@ -660,7 +660,7 @@ class MainActivity : FragmentActivity() {
     private fun safeMessage(error: Exception): String {
         return when (error) {
             is SupremeAuthException -> when (error.statusCode) {
-                400, 401, 422 -> if (error.message.contains("captcha", ignoreCase = true)) {
+                400, 401, 422 -> if (error.message?.contains("captcha", ignoreCase = true) == true) {
                     "Security verification was rejected. Complete the check and try again."
                 } else {
                     "Supreme sign-in could not be verified. Check the account credentials."
