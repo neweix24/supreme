@@ -16,6 +16,7 @@ A service remains responsible for its own runtime, data, authentication boundary
 - Registry read operations require `services.read`.
 - Register/update/suspend operations require `services.manage` and a recorded approval. Production-impacting changes require fresh MFA.
 - A service capability is an upper bound on what Supreme may request. It never overrides the caller's own authorization.
+- Planned services may be registered before a repository exists; such records must remain `planned` until a repository and integration adapter are registered.
 - Unknown capabilities, unknown service IDs, and disabled environments fail closed.
 
 ## Routes
@@ -26,7 +27,7 @@ A service remains responsible for its own runtime, data, authentication boundary
 | GET | `/v1/services/{service_id}` | Read one service's metadata. |
 | POST | `/v1/services` | Submit a registration request; approval required before activation. |
 | PATCH | `/v1/services/{service_id}` | Submit a versioned metadata change; audited and approval-gated. |
-| GET | `/v1/services/{service_id}/health` | Read a bounded health summary for an enabled environment. |
+| GET | `/v1/services/{service_id}/health?environment_id={id}` | Read a bounded health summary for an enabled environment. |
 
 All routes are HTTPS-only and versioned. List responses use cursor pagination and return only metadata safe for the caller's scope. Secrets and secret-manager values are never returned.
 
@@ -87,4 +88,4 @@ The initial JSON Schema is `service-registry-v1.schema.json`. Additive optional 
 
 ## Explicitly not implemented by this contract
 
-This document does not claim that the routes, identity provider, database, worker, approval engine, or provider integrations are deployed. Those are implementation milestones and must have independent tests and deployment evidence.
+The initial database schema and authenticated registry Edge Function are implemented in the existing Neweix Supabase project. Provider-specific execution adapters, approval-decision endpoints, and production operation execution remain separate implementation milestones and must have independent tests and deployment evidence.
