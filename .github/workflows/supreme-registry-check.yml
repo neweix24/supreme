@@ -1,3 +1,4 @@
+# Run strict type checks against the exact function-local Deno configuration.
 name: Supreme registry function check
 
 on:
