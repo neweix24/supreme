@@ -86,6 +86,17 @@ Append an audit event for every registration request, metadata change, health ch
 
 The initial JSON Schema is `service-registry-v1.schema.json`. Additive optional fields may be introduced only when consumers safely ignore unknown fields; breaking changes require a new schema/API major version. Registry records are validated before persistence and again when loaded by an executor.
 
+## Control request approval routes
+
+| Method | Route | Behavior |
+|---|---|---|
+| GET | `/v1/control-requests?status=pending&limit=50` | List pending requests; supported status filters are pending, approved, rejected, cancelled, expired, executed, failed, or all. |
+| POST | `/v1/control-requests/{request_id}/decision` | Body `{"decision":"approve"}` or `{"decision":"reject","reason":"..."}`. |
+
+Every decision requires a fresh AAL2 session (authentication within the previous five minutes). Rejections require a reason of at least eight characters. Decisions are conditional on the request still being pending and unexpired; repeated identical decisions return an idempotent result. All decisions are audited.
+
+**Approval is not execution.** An approved request remains a record of authorization. No GitHub, Cloudflare, Supabase project mutation, deployment, or service operation is triggered by this endpoint. Provider adapters must independently enforce the approved request, target, environment, capability, and expiry before execution.
+
 ## Implementation status
 
 The registry database and authenticated Edge Function are deployed in the existing Neweix Supabase project. The deployed routes currently support service listing/detail, approval-gated registration/update request submission, ETag and idempotency checks, and bounded same-origin HTTPS health checks. Approval-decision endpoints and provider-specific execution adapters remain unimplemented; no provider operation is currently enabled.
