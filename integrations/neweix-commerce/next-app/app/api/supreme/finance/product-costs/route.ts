@@ -18,9 +18,8 @@ async function authorize(): Promise<SupremeActorResult> {
   const session = await createServerSupabaseClient();
   const { data: { user }, error } = await session.auth.getUser();
   if (error || !user) return { ok: false, error: "Authentication required.", status: 401 };
-  const { data: profile, error: profileError } = await session
-    .schema("supreme").from("identities").select("role, is_active, public_id").eq("user_id", user.id).eq("public_id", "supreme").maybeSingle();
-  if (profileError || !profile || profile.role !== "ruler" || profile.public_id !== "supreme" || profile.is_active !== true) {
+  const { data: isSupremeIdentity, error: profileError } = await session.rpc("is_current_supreme_ruler");
+  if (profileError || isSupremeIdentity !== true) {
     return { ok: false, error: "Only an active Supreme account can manage product costs.", status: 403 };
   }
   const { data: assurance, error: mfaError } = await session.auth.mfa.getAuthenticatorAssuranceLevel();

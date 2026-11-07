@@ -22,23 +22,13 @@ export async function getCurrentStaff() {
     email: typeof claims.email === "string" ? claims.email : undefined,
   };
 
-  const { data: profile, error: profileError } = await supabase
-    .schema("supreme").from("identities")
-    .select("role, is_active, public_id")
-    .eq("user_id", userId).eq("public_id", "supreme")
-    .maybeSingle();
+  const { data: isSupremeIdentity, error: profileError } =
+    await supabase.rpc("is_current_supreme_ruler");
 
-  if (
-    profileError ||
-    !profile ||
-    profile.is_active !== true ||
-    (profile.role !== "ruler" || profile.public_id !== "supreme")
-  ) {
-    return null;
-  }
+  if (profileError || isSupremeIdentity !== true) return null;
 
   // Supreme must complete MFA before accessing protected pages.
-  if (profile.role === "ruler" && profile.public_id === "supreme") {
+  if (isSupremeIdentity === true) {
     const { data: assurance, error: assuranceError } =
       await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
 
@@ -53,7 +43,7 @@ export async function getCurrentStaff() {
 
   return {
     user,
-    role: profile.role as StaffRole,
+    role: "supreme" as StaffRole,
     mfaRequired: false,
   };
 }

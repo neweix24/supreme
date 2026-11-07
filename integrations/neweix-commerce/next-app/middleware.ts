@@ -201,9 +201,8 @@ export async function middleware(request: NextRequest) {
     return copySessionState(redirectResponse);
   }
 
-  // MFA pages must not become an alternate browser entry for Supreme. The
-  // dedicated Supreme app flow will be enabled only after server-verified
-  // Android attestation is integrated; until then deny Supreme MFA here too.
+  // Supreme authentication is native-app-only. Browser MFA routes must never
+  // become an alternate entry point, even for an otherwise valid Supreme user.
   if (isSupremeMfaPath) {
     if (claimsError || typeof userId !== "string" || !userId) {
       const destination = request.nextUrl.clone();
@@ -214,20 +213,17 @@ export async function middleware(request: NextRequest) {
       const redirectResponse = NextResponse.redirect(destination);
       return copySessionState(redirectResponse);
     }
-    const { data: mfaProfile, error: mfaProfileError } = await supabase
-      .schema("supreme").from("identities")
-      .select("role, is_active, public_id")
-      .eq("user_id", userId)
-      .maybeSingle();
+    const { data: isSupremeIdentity, error: mfaProfileError } =
+      await supabase.rpc("is_current_supreme_ruler");
     if (mfaProfileError) {
       return copySessionState(new NextResponse("MFA authorization unavailable.", {
         status: 503,
         headers: { "Cache-Control": "private, no-store, max-age=0" },
       }));
     }
-    if (mfaProfile?.role === "ruler" && mfaProfile.public_id === "supreme") {
+    if (isSupremeIdentity === true) {
       return copySessionState(new NextResponse(
-        "Supreme MFA is locked until verified Android app attestation is available.",
+        "Supreme authentication is available only in the verified Android app.",
         { status: 503, headers: { "Cache-Control": "private, no-store, max-age=0", "X-Robots-Tag": "noindex, nofollow" } },
       ));
     }
@@ -305,35 +301,26 @@ export async function middleware(request: NextRequest) {
     return copySessionState(redirectResponse);
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .schema("supreme").from("identities")
-    .select("role, is_active, public_id")
-    .eq("user_id", userId).eq("public_id", "supreme")
-    .maybeSingle();
+  const { data: isSupremeIdentity, error: profileError } =
+    await supabase.rpc("is_current_supreme_ruler");
 
-  if (
-    profileError ||
-    !profile ||
-    profile.is_active !== true ||
-    (profile.role !== "ruler" || profile.public_id !== "supreme")
-  ) {
+  if (profileError || isSupremeIdentity !== true) {
     return redirectWithCookies("/unauthorized");
   }
 
   // The Supreme identity is not a general workforce/admin login. Even an
   // existing Supreme session must never enter the browser-based /admin area.
-  if (isAdminPath && profile.role === "ruler" && profile.public_id === "supreme") {
+  if (isAdminPath && isSupremeIdentity === true) {
     return redirectWithCookies("/unauthorized");
   }
 
   if (isSupremePath) {
-    if (profile.role !== "ruler" || profile.public_id !== "supreme") return redirectWithCookies("/unauthorized");
+    if (isSupremeIdentity !== true) return redirectWithCookies("/unauthorized");
 
-    // Fail closed until the complete Google Android Key Attestation verifier,
-    // revocation checks, replay protection and server-side app proof are wired
-    // into this request path. A private URL or WebView header is not app proof.
+    // Supreme control access is native-app-only. The Android app completes
+    // hardware attestation and server-side device-session verification.
     return copySessionState(new NextResponse(
-      "Supreme sign-in is temporarily locked while verified Android device attestation is completed.",
+      "Supreme browser access is disabled. Use the verified Supreme Android app.",
       { status: 503, headers: { "Cache-Control": "private, no-store, max-age=0", "X-Robots-Tag": "noindex, nofollow" } },
     ));
   }
