@@ -28,7 +28,7 @@ async function getSupremeAccess(): Promise<SupremeAccess> {
   const { data: profile, error: profileError } = await session
     .schema("supreme").from("identities")
     .select("role, is_active, public_id")
-    .eq("user_id", user.id).eq("public_id", "supreme").eq("public_id", "supreme")
+    .eq("user_id", user.id).eq("public_id", "supreme")
     .maybeSingle();
 
   if (profileError || !profile || profile.role !== "ruler" || profile.public_id !== "supreme" || profile.is_active !== true) {
