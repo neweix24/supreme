@@ -104,3 +104,26 @@ The repository intentionally does not contain a production keystore, signing pas
 or release-signing workflow secrets. Do not create or upload a signing key to GitHub,
 commit a keystore, or use the CI debug signer as the production identity. The app
 package ID is `com.neweix.supreme`; the package ID alone is not a trusted signer identity.
+
+
+## Native authentication implementation status
+
+The native source now contains:
+
+- `security/SupremeAuthClient.kt`: password sign-in, verified TOTP factor discovery, TOTP challenge/verification, token refresh, and sign-out using Supabase Auth REST endpoints.
+- `security/SupremeSecureSessionStore.kt`: AES-GCM encrypted token storage backed by an Android Keystore AES key.
+- `security/SupremeDeviceSessionClient.kt`: server-authoritative current device-session check and current-session revocation.
+- `security/SupremeAttestationClient.kt`: hardware attestation transport; the verifier now returns a server-computed SHA-256 fingerprint of the verified leaf public-key info.
+
+Configure the public Supabase project URL and publishable/anon key at build time (these are client configuration values, not service-role secrets):
+
+```sh
+export SUPABASE_URL="https://<project-ref>.supabase.co"
+export SUPABASE_ANON_KEY="<publishable-or-legacy-anon-key>"
+export SUPREME_PRIVATE_PATH="/control-<48-hex-characters>"
+gradle :app:assembleDebug
+```
+
+Never set `SUPABASE_SERVICE_ROLE_KEY` in Android or any `BuildConfig` field.
+
+**Integration still pending:** the native login/MFA client is not yet wired into `MainActivity`; attestation challenges are not yet bound to the authenticated Auth session; there is not yet a server endpoint that atomically consumes a verified attestation receipt to register the device and mint `supreme.app_sessions`. Therefore the app must not open the protected workspace based only on password/MFA or attestation success. The signed Auth Hook and session API must be connected before release.
