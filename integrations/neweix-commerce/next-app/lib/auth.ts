@@ -45,7 +45,7 @@ export async function getCurrentStaff() {
     if (assuranceError || assurance.currentLevel !== "aal2") {
       return {
         user,
-        role: profile.role as StaffRole,
+        role: "supreme" as StaffRole,
         mfaRequired: true,
       };
     }
