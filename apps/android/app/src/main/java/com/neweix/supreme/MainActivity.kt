@@ -114,7 +114,7 @@ class MainActivity : FragmentActivity() {
         }
 
         screen.addView(ImageView(this).apply {
-            setImageResource(R.drawable.supreme_emblem)
+            setImageResource(R.drawable.supreme_logo)
             scaleType = ImageView.ScaleType.FIT_CENTER
             contentDescription = "Supreme gold S emblem"
         }, LinearLayout.LayoutParams(dp(84), dp(84)).apply {
@@ -269,7 +269,7 @@ class MainActivity : FragmentActivity() {
             setPadding(dp(30), dp(30), dp(30), dp(30))
             setBackgroundColor(Color.rgb(7, 7, 7))
             addView(ImageView(this@MainActivity).apply {
-                setImageResource(R.drawable.supreme_emblem)
+                setImageResource(R.drawable.supreme_logo)
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 contentDescription = "Supreme gold S emblem"
             }, LinearLayout.LayoutParams(dp(96), dp(96)).apply {
@@ -438,7 +438,7 @@ class MainActivity : FragmentActivity() {
     ) {
         screen.removeAllViews()
         screen.addView(ImageView(this).apply {
-            setImageResource(R.drawable.supreme_emblem)
+            setImageResource(R.drawable.supreme_logo)
             scaleType = ImageView.ScaleType.FIT_CENTER
             contentDescription = "Supreme gold S emblem"
         }, LinearLayout.LayoutParams(dp(96), dp(96)).apply {
