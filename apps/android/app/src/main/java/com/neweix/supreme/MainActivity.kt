@@ -623,14 +623,37 @@ class MainActivity : FragmentActivity() {
         setBusy(true, "Recording Supreme approval decision…")
         background.execute {
             try {
-                SupremeAuthClient.decideControlRequest(
-                    accessToken = accessToken,
-                    requestId = request.id,
-                    decision = decision,
-                    reason = reason,
-                )
-                val services = SupremeAuthClient.listServices(accessToken)
-                val requests = SupremeAuthClient.listPendingRequests(accessToken)
+                var activeAccessToken = accessToken
+                try {
+                    SupremeAuthClient.decideControlRequest(
+                        accessToken = activeAccessToken,
+                        requestId = request.id,
+                        decision = decision,
+                        reason = reason,
+                    )
+                } catch (error: SupremeAuthException) {
+                    if (error.statusCode != 401) throw error
+                    // A stale access token must be refreshed once, then the
+                    // decision is retried exactly once with the same request ID.
+                    val storedRefreshToken = sessionStore.readRefreshToken()
+                        ?: throw IllegalStateException("Supreme session expired. Sign in again.")
+                    val refreshed = SupremeAuthClient.refresh(storedRefreshToken)
+                    if (refreshed.assuranceLevel != "aal2") {
+                        throw IllegalStateException("Supreme MFA session expired. Sign in again.")
+                    }
+                    SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
+                    sessionStore.saveRefreshToken(refreshed.refreshToken)
+                    activeAccessToken = refreshed.accessToken
+                    currentAccessToken = refreshed.accessToken
+                    SupremeAuthClient.decideControlRequest(
+                        accessToken = activeAccessToken,
+                        requestId = request.id,
+                        decision = decision,
+                        reason = reason,
+                    )
+                }
+                val services = SupremeAuthClient.listServices(activeAccessToken)
+                val requests = SupremeAuthClient.listPendingRequests(activeAccessToken)
                 runOnUiThread {
                     renderDashboard(services, requests)
                     setBusy(false, if (decision == "approve") {
@@ -775,11 +798,12 @@ class MainActivity : FragmentActivity() {
     private fun safeMessage(error: Exception): String {
         return when (error) {
             is SupremeAuthException -> when (error.statusCode) {
-                400, 401, 422 -> if (error.message?.contains("captcha", ignoreCase = true) == true) {
+                400, 422 -> if (error.message?.contains("captcha", ignoreCase = true) == true) {
                     "Security verification was rejected. Complete the check and try again."
                 } else {
                     "Supreme sign-in could not be verified. Check the account credentials."
                 }
+                401 -> "Supreme session expired or is no longer valid. Sign in again."
                 403 -> "Supreme access is denied. The account or verified device is not authorized."
                 429 -> "Too many attempts. Wait before trying again."
                 503 -> "Supreme security verification is not configured yet. Access remains locked."
