@@ -23,7 +23,7 @@ The Supreme registry is stored in the existing Neweix Supabase project, but in a
 
 ## Identity
 
-The registry does not create another Supreme account or identity table. The API validates the signed-in user in the existing shared Supabase Auth project and confirms the single active `public.staff_profiles` row (`role = 'supreme'`, `public_id = 'supreme'`, `is_active = true`). It does not require a Neweix Account customer row. Future Neweix Employees remain a separate identity/workforce domain. Android PIN/biometric unlock is not server authorization. Android PIN/biometric unlock is not server authorization or MFA.
+The registry does not create another Supreme account or identity table. The API validates the signed-in user in the existing shared Supabase Auth project and confirms the single active `supreme.identities` row (`role = 'ruler'`, `public_id = 'supreme'`, `is_active = true`). It does not require a Neweix Account customer row. Future Neweix Employees remain a separate identity/workforce domain. Android PIN/biometric unlock is not server authorization. Android PIN/biometric unlock is not server authorization or MFA.
 
 ## Migration
 
