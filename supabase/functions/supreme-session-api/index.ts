@@ -19,7 +19,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA256 = /^[a-f0-9]{64}$/;
 
-function response(body: unknown, status = 200, requestId = crypto.randomUUID()): Response {
+function response(body: unknown, status = 200, requestId: string = crypto.randomUUID()): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
