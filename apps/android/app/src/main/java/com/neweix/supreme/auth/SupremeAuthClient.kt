@@ -142,6 +142,66 @@ internal object SupremeAuthClient {
         return result
     }
 
+    data class ControlRequest(
+        val id: String,
+        val requestType: String,
+        val serviceId: String?,
+        val action: String,
+        val status: String,
+        val createdAt: String,
+        val expiresAt: String,
+    )
+
+    fun listPendingRequests(accessToken: String): List<ControlRequest> {
+        val response = request(
+            "GET",
+            "/functions/v1/supreme-registry-api/v1/control-requests?status=pending&limit=50",
+            accessToken = accessToken,
+        )
+        val rows = response.optJSONArray("control_requests") ?: JSONArray()
+        val result = ArrayList<ControlRequest>()
+        for (i in 0 until rows.length()) {
+            val row = rows.optJSONObject(i) ?: continue
+            val id = row.optString("id")
+            if (!UUID_PATTERN.matches(id)) continue
+            result.add(
+                ControlRequest(
+                    id = id,
+                    requestType = row.optString("request_type", "operation"),
+                    serviceId = row.optString("service_id").takeIf { it.isNotBlank() && it != "null" },
+                    action = row.optString("action", "unknown"),
+                    status = row.optString("status", "unknown"),
+                    createdAt = row.optString("created_at", ""),
+                    expiresAt = row.optString("expires_at", ""),
+                ),
+            )
+        }
+        return result
+    }
+
+    fun decideControlRequest(
+        accessToken: String,
+        requestId: String,
+        decision: String,
+        reason: String? = null,
+    ) {
+        require(UUID_PATTERN.matches(requestId)) { "Invalid Supreme request ID." }
+        require(decision == "approve" || decision == "reject") { "Invalid Supreme decision." }
+        if (decision == "reject") {
+            require(!reason.isNullOrBlank() && reason.length in 8..500) {
+                "A rejection reason of at least 8 characters is required."
+            }
+        }
+        request(
+            "POST",
+            "/functions/v1/supreme-registry-api/v1/control-requests/$requestId/decision",
+            accessToken,
+            JSONObject().put("decision", decision).apply {
+                if (!reason.isNullOrBlank()) put("reason", reason)
+            },
+        )
+    }
+
     private fun parseSession(response: JSONObject): AuthSession {
         val access = response.optString("access_token")
         val refresh = response.optString("refresh_token")
