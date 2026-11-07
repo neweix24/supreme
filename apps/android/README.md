@@ -118,3 +118,17 @@ The repository intentionally does not contain a production keystore, signing pas
 or release-signing workflow secrets. Do not create or upload a signing key to GitHub,
 commit a keystore, or use the CI debug signer as the production identity. The app
 package ID is `com.neweix.supreme`; the package ID alone is not a trusted signer identity.
+
+
+## Download an installable debug APK
+
+Every successful run of the **Supreme Android app build** workflow uploads
+`supreme-android-debug-apk` as a GitHub Actions artifact. Open the workflow
+run for the target commit, download the artifact ZIP, extract it, and install
+`app-debug.apk` on an Android device (Android 8.0 / API 26 or newer).
+
+This is a debug-signed preview build. It is not the production-signed release
+APK required by the hardware-attestation policy. A release APK must be signed
+with the permanent production key whose SHA-256 certificate digest is configured
+server-side; the private signing key must never be committed to this repository
+or embedded in the app.
