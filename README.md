@@ -40,8 +40,14 @@ Supreme Core Backend
 - `services/android-attestation/` — Android Key Attestation verifier source and tests
 - `services/registry/` — versioned service registry contracts
 - `integrations/neweix-commerce/` — preserved source snapshot of Supreme features previously embedded in Neweix; not a standalone backend
-- `config/` — safe, non-secret example configuration
+- `config/` — safe, non-secret configuration and ecosystem capability catalog
 - `docs/` — architecture, security, operations, and development notes
+
+## Existing ecosystem features
+
+The already implemented features in Neweix, Eixon, Neweix Account and Supreme have been inventoried with their source ownership and migration readiness. See [Ecosystem feature inventory](docs/ecosystem-feature-inventory.md) and the machine-readable [capability catalog](config/ecosystem-capabilities.json).
+
+**Important:** a feature listed in the catalog is not automatically executable from Supreme. The owning service remains the source of truth; Supreme must use a tested, service-scoped adapter rather than duplicate that service's business logic.
 
 ## Status
 
@@ -57,6 +63,7 @@ Read:
 1. [Architecture](docs/architecture.md)
 2. [Security model](docs/security-model.md)
 3. [Service registry](services/registry/README.md)
+4. [Ecosystem feature inventory](docs/ecosystem-feature-inventory.md)
 
 ## Security
 
