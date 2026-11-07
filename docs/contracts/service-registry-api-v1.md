@@ -86,6 +86,6 @@ Append an audit event for every registration request, metadata change, health ch
 
 The initial JSON Schema is `service-registry-v1.schema.json`. Additive optional fields may be introduced only when consumers safely ignore unknown fields; breaking changes require a new schema/API major version. Registry records are validated before persistence and again when loaded by an executor.
 
-## Explicitly not implemented by this contract
+## Implementation status
 
-The initial database schema and authenticated registry Edge Function are implemented in the existing Neweix Supabase project. Provider-specific execution adapters, approval-decision endpoints, and production operation execution remain separate implementation milestones and must have independent tests and deployment evidence.
+The registry database and authenticated Edge Function are deployed in the existing Neweix Supabase project. The deployed routes currently support service listing/detail, approval-gated registration/update request submission, ETag and idempotency checks, and bounded same-origin HTTPS health checks. Approval-decision endpoints and provider-specific execution adapters remain unimplemented; no provider operation is currently enabled.

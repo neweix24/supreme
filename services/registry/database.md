@@ -12,7 +12,7 @@ The Supreme registry is stored in the existing Neweix Supabase project, but in a
 - `service_secret_refs` stores opaque references only, never secret values.
 - `audit_events` is append-only for ordinary database operations.
 
-## Tables
+## Registered services\n\nThe initial registry bootstrap includes:\n\n| Service | Repository | State | Notes |\n|---|---|---|---|\n| Neweix | `neweix24/neweix` | active | Existing production website; read-only observation only until adapters exist. |\n| Neweix Shop | `neweix24/shop` | planned | Standalone Shop extraction and migration are in progress. |\n| Eixon | `neweix24/eixon` | planned | Source extraction only; not yet a standalone deployable application. |\n| Neweix Account | `neweix24/account` | planned | Central identity system; uses the existing Neweix Supabase Auth project. |\n| Neweix Message | Not registered yet | planned | Repository and adapter have not been identified. |\n| Supreme | `neweix24/supreme` | planned | Central control plane is still being built. |\n\nNo service capabilities or provider secret references are enabled in the initial seed. This prevents the registry from implying that an adapter can already execute operations.\n\n## Tables
 
 - `services`: canonical service/repository metadata and risk classification.
 - `service_environments`: development, staging, and production endpoints and enablement.
