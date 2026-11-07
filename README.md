@@ -61,3 +61,14 @@ Never commit credentials, access tokens, private keys, recovery codes, productio
 ## License
 
 All rights reserved. This is a private project.
+
+## Imported Supreme work
+
+Existing Supreme implementation work from `neweix24/neweix` has been copied into this repository for separation and continued development.
+
+- Android app: `apps/android/`
+- Commerce-coupled dashboard and API source: `integrations/neweix-commerce/`
+- Android Key Attestation service source: `services/android-attestation/`
+- Extraction notes: [docs/migration-from-neweix.md](docs/migration-from-neweix.md)
+
+**Important:** imported commerce API/UI modules still depend on the original NEWEIX application and are preserved as a source snapshot. SQL files under `migrations-reference` are not safe to apply directly to a fresh database. The original `neweix` repository remains unchanged.
