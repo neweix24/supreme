@@ -15,10 +15,12 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
@@ -39,6 +41,9 @@ class MainActivity : FragmentActivity() {
     private var isUnlocked = false
     private var authInProgress = false
     private var hasLoadedPrivatePage = false
+    private val authClient by lazy { com.neweix.supreme.security.SupremeAuthClient() }
+    private val sessionStore by lazy { com.neweix.supreme.security.SupremeSecureSessionStore(this) }
+    private val deviceSessionClient by lazy { com.neweix.supreme.security.SupremeDeviceSessionClient() }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -328,18 +333,91 @@ class MainActivity : FragmentActivity() {
 
     private fun authenticateToUnlock() {
         if (isUnlocked || authInProgress) return
+        val stored = sessionStore.load()
+        if (stored == null) { showNativeSignIn(); return }
+        authInProgress = true
+        lockOverlay?.visibility = View.VISIBLE
+        Thread {
+            try {
+                val refreshed = authClient.refresh(stored)
+                val status = deviceSessionClient.getStatus(refreshed.accessToken)
+                if (!status.authenticated || !status.deviceSessionActive) throw IllegalStateException("Supreme device session is no longer active. Sign in again.")
+                sessionStore.save(refreshed)
+                runOnUiThread { authInProgress = false; promptLocalUnlock() }
+            } catch (error: Exception) {
+                sessionStore.clear()
+                runOnUiThread { authInProgress = false; lockMessage?.text = error.message ?: "Supreme session verification failed."; showNativeSignIn() }
+            }
+        }.start()
+    }
+
+    private fun promptLocalUnlock() {
+        if (isUnlocked || authInProgress) return
         val prompt = biometricPrompt ?: return
         authInProgress = true
         lockOverlay?.visibility = View.VISIBLE
-        val promptInfo = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Unlock Supreme")
-            .setSubtitle("Use your fingerprint or your phone's screen lock PIN")
-            .setDescription("Your device credential stays on your phone.")
-            .setDeviceCredentialAllowed(true)
-            .build()
-        prompt.authenticate(promptInfo)
+        val info = BiometricPrompt.PromptInfo.Builder().setTitle("Unlock Supreme").setSubtitle("Verify this device to open your active Supreme session").setDescription("This local check does not replace server-side authentication.").setDeviceCredentialAllowed(true).build()
+        prompt.authenticate(info)
     }
 
+    private fun showNativeSignIn() {
+        if (isFinishing || isDestroyed || authInProgress) return
+        val email = EditText(this).apply { hint = "Supreme email"; inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS; setSingleLine(true) }
+        val password = EditText(this).apply { hint = "Password"; inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD; setSingleLine(true) }
+        val form = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(24), dp(8), dp(24), 0); addView(email); addView(password) }
+        val dialog = AlertDialog.Builder(this).setTitle("Supreme Sign In").setMessage("Sign in with your standalone Supreme credentials.").setView(form).setCancelable(false).setNegativeButton("Exit") { _, _ -> finish() }.setPositiveButton("Continue", null).create()
+        dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val e = email.text.toString().trim(); val p = password.text.toString()
+            if (e.isBlank() || p.isBlank()) { password.error = "Enter your password"; return@setOnClickListener }
+            dialog.dismiss(); beginPasswordSignIn(e, p)
+        } }
+        dialog.show()
+    }
+
+    private fun beginPasswordSignIn(email: String, password: String) {
+        if (authInProgress) return
+        authInProgress = true; lockMessage?.text = "Verifying Supreme credentials…"
+        Thread {
+            try {
+                val result = authClient.signInWithPassword(email, password)
+                if (result !is com.neweix.supreme.security.SupremeAuthClient.PasswordResult.MfaRequired) throw IllegalStateException("Supreme MFA challenge was not enforced.")
+                val factor = result.factors.firstOrNull() ?: throw IllegalStateException("No verified Supreme authenticator is enrolled.")
+                val challenge = authClient.createTotpChallenge(result.accessToken, factor.id)
+                runOnUiThread { authInProgress = false; showTotpDialog(result, challenge) }
+            } catch (error: Exception) {
+                runOnUiThread { authInProgress = false; lockMessage?.text = error.message ?: "Supreme sign-in failed."; showNativeSignIn() }
+            }
+        }.start()
+    }
+
+    private fun showTotpDialog(pending: com.neweix.supreme.security.SupremeAuthClient.PasswordResult.MfaRequired, challenge: com.neweix.supreme.security.SupremeAuthClient.MfaChallenge) {
+        if (isFinishing || isDestroyed) return
+        val code = EditText(this).apply { hint = "Authenticator code"; inputType = android.text.InputType.TYPE_CLASS_NUMBER; setSingleLine(true) }
+        val dialog = AlertDialog.Builder(this).setTitle("Verify Supreme MFA").setMessage("Enter the current code from your enrolled authenticator.").setView(code).setCancelable(false).setNegativeButton("Cancel") { _, _ -> showNativeSignIn() }.setPositiveButton("Verify", null).create()
+        dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val value = code.text.toString().trim(); if (!value.matches(Regex("^[0-9]{6,8}$"))) { code.error = "Enter the current authenticator code"; return@setOnClickListener }
+            dialog.dismiss(); completeNativeMfa(pending, challenge, value)
+        } }
+        dialog.show()
+    }
+
+    private fun completeNativeMfa(pending: com.neweix.supreme.security.SupremeAuthClient.PasswordResult.MfaRequired, challenge: com.neweix.supreme.security.SupremeAuthClient.MfaChallenge, code: String) {
+        authInProgress = true; lockMessage?.text = "Verifying MFA and registering this Android device…"
+        Thread {
+            try {
+                val mfaSession = authClient.verifyTotp(pending.accessToken, pending.refreshToken, pending.userId, challenge, code)
+                val registration = com.neweix.supreme.security.SupremeAttestationClient.verifyAndRegister(mfaSession.accessToken)
+                val refreshed = authClient.refresh(mfaSession)
+                val status = deviceSessionClient.getStatus(refreshed.accessToken)
+                if (!status.authenticated || !status.deviceSessionActive) throw IllegalStateException("The server did not authorize this device session.")
+                sessionStore.save(refreshed)
+                runOnUiThread { authInProgress = false; lockMessage?.text = "Device verified (" + registration.securityLevel + ")."; promptLocalUnlock() }
+            } catch (error: Exception) {
+                sessionStore.clear()
+                runOnUiThread { authInProgress = false; lockMessage?.text = error.message ?: "Supreme device verification failed."; showNativeSignIn() }
+            }
+        }.start()
+    }
     override fun onStop() {
         super.onStop()
         if (!isChangingConfigurations) {
