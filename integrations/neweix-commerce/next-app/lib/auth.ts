@@ -27,16 +27,16 @@ export async function getCurrentStaff() {
   };
 
   const { data: profile, error: profileError } = await supabase
-    .from("staff_profiles")
-    .select("role, is_active")
-    .eq("user_id", userId)
+    .schema("supreme").from("identities")
+    .select("role, is_active, public_id")
+    .eq("user_id", userId).eq("public_id", "supreme")
     .maybeSingle();
 
   if (
     profileError ||
     !profile ||
     profile.is_active !== true ||
-    !ACTIVE_STAFF_ROLES.includes(profile.role as StaffRole)
+    (profile.role !== "ruler" || profile.public_id !== "supreme")
   ) {
     return null;
   }
