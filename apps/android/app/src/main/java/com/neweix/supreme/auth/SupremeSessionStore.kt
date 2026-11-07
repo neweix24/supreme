@@ -20,7 +20,7 @@ internal class SupremeSessionStore(context: Context) {
 
     @Synchronized
     fun saveRefreshToken(token: String) {
-        require(token.length in 20..8192) { "Invalid Supreme refresh token." }
+        require(token.isNotBlank() && token.length <= 8192 && token != "null") { "Invalid Supreme refresh token." }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
         val encrypted = cipher.doFinal(token.toByteArray(Charsets.UTF_8))
@@ -45,7 +45,7 @@ internal class SupremeSessionStore(context: Context) {
             val ciphertext = input.copyOfRange(1 + ivLength, input.size)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(128, iv))
-            String(cipher.doFinal(ciphertext), Charsets.UTF_8).takeIf { it.length in 20..8192 }
+            String(cipher.doFinal(ciphertext), Charsets.UTF_8).takeIf { it.isNotBlank() && it.length <= 8192 && it != "null" }
         } catch (_: Exception) {
             clear()
             null
