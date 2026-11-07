@@ -215,9 +215,9 @@ export async function middleware(request: NextRequest) {
       return copySessionState(redirectResponse);
     }
     const { data: mfaProfile, error: mfaProfileError } = await supabase
-      .from("staff_profiles")
-      .select("role, is_active")
-      .eq("user_id", userId)
+      .schema("supreme").from("identities")
+      .select("role, is_active, public_id")
+      .eq("user_id", userId).eq("public_id", "supreme")
       .maybeSingle();
     if (mfaProfileError) {
       return copySessionState(new NextResponse("MFA authorization unavailable.", {
@@ -260,7 +260,7 @@ export async function middleware(request: NextRequest) {
     const { data: customerProfile, error: customerProfileError } = await supabase
       .from("customer_profiles")
       .select("phone, phone_verified_at")
-      .eq("user_id", userId)
+      .eq("user_id", userId).eq("public_id", "supreme")
       .maybeSingle();
 
     if (customerProfileError || !customerProfile?.phone_verified_at || !customerProfile.phone) {
@@ -306,16 +306,16 @@ export async function middleware(request: NextRequest) {
   }
 
   const { data: profile, error: profileError } = await supabase
-    .from("staff_profiles")
-    .select("role, is_active")
-    .eq("user_id", userId)
+    .schema("supreme").from("identities")
+    .select("role, is_active, public_id")
+    .eq("user_id", userId).eq("public_id", "supreme")
     .maybeSingle();
 
   if (
     profileError ||
     !profile ||
     profile.is_active !== true ||
-    !["supreme", "admin", "staff"].includes(profile.role)
+    (profile.role !== "ruler" || profile.public_id !== "supreme")
   ) {
     return redirectWithCookies("/unauthorized");
   }
@@ -327,7 +327,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isSupremePath) {
-    if (profile.role !== "supreme") return redirectWithCookies("/unauthorized");
+    if (profile.role !== "ruler" || profile.public_id !== "supreme") return redirectWithCookies("/unauthorized");
 
     // Fail closed until the complete Google Android Key Attestation verifier,
     // revocation checks, replay protection and server-side app proof are wired
