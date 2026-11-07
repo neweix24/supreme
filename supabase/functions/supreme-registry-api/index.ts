@@ -1,4 +1,4 @@
-import postgres from "postgres";
+import postgres from "npm:postgres@3.4.7";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_ANON_KEY =
@@ -22,7 +22,7 @@ type JsonObject = Record<string, unknown>;
 function json(
   body: unknown,
   status = 200,
-  requestId = crypto.randomUUID(),
+  requestId: string = crypto.randomUUID(),
   extraHeaders: Record<string, string> = {},
 ): Response {
   return new Response(JSON.stringify(body), {
@@ -500,7 +500,7 @@ async function handle(request: Request): Promise<Response> {
       `;
       const highImpact = hasProductionImpact(body) ||
         current.risk_tier === "high" || current.risk_tier === "critical" ||
-        envRows.some((row) => row.classification === "production");
+        envRows.some((row: { classification: string }) => row.classification === "production");
       if (highImpact && !isFreshAal2(claims)) {
         await audit({ actor: userId, action: "services.update.denied", serviceId: id, outcome: "denied", requestId, details: { reason: "fresh_aal2_required" } });
         return errorResponse("MFA_REQUIRED", "Fresh MFA (AAL2) is required for production-impacting changes.", 403, requestId);
