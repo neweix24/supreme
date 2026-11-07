@@ -23,7 +23,7 @@ function json(
   body: unknown,
   status = 200,
   requestId = crypto.randomUUID(),
-  extraHeaders: HeadersInit = {},
+  extraHeaders: Record<string, string> = {},
 ): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -47,7 +47,7 @@ function errorResponse(
   return json({ error: { code, message, request_id: requestId } }, status, requestId);
 }
 
-function corsHeaders(origin: string | null): HeadersInit {
+function corsHeaders(origin: string | null): Record<string, string> {
   const headers: Record<string, string> = {
     "access-control-allow-headers": "authorization, apikey, content-type, idempotency-key, if-match",
     "access-control-allow-methods": "GET, POST, PATCH, OPTIONS",
@@ -130,6 +130,107 @@ function serviceId(value: string): string {
     throw new TypeError("Invalid service ID.");
   }
   return value;
+}
+
+function assertOnlyKeys(value: JsonObject, allowed: string[], label: string): void {
+  const unknown = Object.keys(value).filter((key) => !allowed.includes(key));
+  if (unknown.length > 0) throw new TypeError(`Unknown ${label} field.`);
+}
+
+function validateServicePayload(body: JsonObject): void {
+  assertOnlyKeys(body, [
+    "service_id", "display_name", "description", "repository", "environments",
+    "capabilities", "integration_secret_refs", "owner", "data_classification",
+    "risk_tier", "health_check", "status", "metadata_version", "updated_at"
+  ], "service");
+  requireString(body.service_id, "service_id", 64);
+  requireString(body.display_name, "display_name", 120);
+  if (body.description !== undefined && (typeof body.description !== "string" || body.description.length > 1000)) {
+    throw new TypeError("Invalid description.");
+  }
+  if (body.status !== undefined && !["planned", "active", "suspended", "retired"].includes(String(body.status))) {
+    throw new TypeError("Invalid service status.");
+  }
+  if (body.data_classification !== undefined && !["public", "internal", "confidential", "restricted"].includes(String(body.data_classification))) {
+    throw new TypeError("Invalid data classification.");
+  }
+  if (body.risk_tier !== undefined && !["low", "moderate", "high", "critical"].includes(String(body.risk_tier))) {
+    throw new TypeError("Invalid risk tier.");
+  }
+  if (!body.repository || typeof body.repository !== "object" || Array.isArray(body.repository)) {
+    throw new TypeError("repository is required.");
+  }
+  const repo = body.repository as JsonObject;
+  assertOnlyKeys(repo, ["provider", "full_name", "default_branch", "url"], "repository");
+  if (!["github", "gitlab", "bitbucket", "other"].includes(requireString(repo.provider, "repository.provider", 20))) {
+    throw new TypeError("Unsupported repository provider.");
+  }
+  requireString(repo.full_name, "repository.full_name", 200);
+  requireString(repo.default_branch, "repository.default_branch", 100);
+  if (repo.url !== undefined && (typeof repo.url !== "string" || !repo.url.startsWith("https://"))) {
+    throw new TypeError("Repository URL must use HTTPS.");
+  }
+  if (!Array.isArray(body.environments) || body.environments.length < 1 || body.environments.length > 10) {
+    throw new TypeError("At least one and at most ten environments are required.");
+  }
+  const environmentIds = new Set<string>();
+  for (const item of body.environments) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new TypeError("Invalid environment.");
+    const env = item as JsonObject;
+    assertOnlyKeys(env, ["environment_id", "classification", "api_base_url", "contract_version", "health_url", "enabled"], "environment");
+    const envId = requireString(env.environment_id, "environment_id", 32);
+    if (environmentIds.has(envId)) throw new TypeError("Duplicate environment ID.");
+    environmentIds.add(envId);
+    if (!/^[a-z][a-z0-9-]{1,31}$/.test(envId)) throw new TypeError("Invalid environment ID.");
+    if (!["development", "staging", "production"].includes(String(env.classification))) throw new TypeError("Invalid environment classification.");
+    for (const key of ["api_base_url", "health_url"]) {
+      if (env[key] !== undefined && env[key] !== null) {
+        if (typeof env[key] !== "string") throw new TypeError(`Invalid ${key}.`);
+        const parsed = new URL(env[key] as string);
+        if (parsed.protocol !== "https:") throw new TypeError(`${key} must use HTTPS.`);
+      }
+    }
+    if (env.health_url && env.api_base_url && new URL(env.health_url as string).origin !== new URL(env.api_base_url as string).origin) {
+      throw new TypeError("Health URL must use the registered API origin.");
+    }
+    if (env.enabled !== undefined && typeof env.enabled !== "boolean") throw new TypeError("Invalid environment enabled flag.");
+  }
+  if (!Array.isArray(body.capabilities) || body.capabilities.length > 100) throw new TypeError("capabilities must be an array.");
+  const capabilities = new Set<string>();
+  for (const value of body.capabilities) {
+    const capability = requireString(value, "capability", 100);
+    if (!/^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$/.test(capability) || ["*", "admin", "write.all"].includes(capability)) {
+      throw new TypeError("Invalid or overly broad capability.");
+    }
+    if (capabilities.has(capability)) throw new TypeError("Duplicate capability.");
+    capabilities.add(capability);
+  }
+  if (body.integration_secret_refs !== undefined) {
+    if (!Array.isArray(body.integration_secret_refs) || body.integration_secret_refs.length > 50) throw new TypeError("Invalid secret reference list.");
+    for (const ref of body.integration_secret_refs) {
+      if (typeof ref !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9/_:.-]{2,180}$/.test(ref)) {
+        throw new TypeError("Secret references must be opaque identifiers, never secret values.");
+      }
+    }
+  }
+  if (body.owner !== undefined) {
+    if (!body.owner || typeof body.owner !== "object" || Array.isArray(body.owner)) throw new TypeError("Invalid owner.");
+    const owner = body.owner as JsonObject;
+    assertOnlyKeys(owner, ["team", "contact_ref"], "owner");
+    requireString(owner.team, "owner.team", 100);
+    if (owner.contact_ref !== undefined && (typeof owner.contact_ref !== "string" || owner.contact_ref.length > 160)) {
+      throw new TypeError("Invalid owner contact reference.");
+    }
+  }
+  if (body.health_check !== undefined) {
+    if (!body.health_check || typeof body.health_check !== "object" || Array.isArray(body.health_check)) throw new TypeError("Invalid health check.");
+    const health = body.health_check as JsonObject;
+    assertOnlyKeys(health, ["kind", "path", "timeout_seconds", "expected_status"], "health check");
+    if (!["http", "none"].includes(String(health.kind))) throw new TypeError("Invalid health check kind.");
+    if (health.kind === "http" && (typeof health.path !== "string" || !health.path.startsWith("/"))) throw new TypeError("HTTP health check requires an absolute path.");
+    if (health.timeout_seconds !== undefined && (!Number.isInteger(health.timeout_seconds) || Number(health.timeout_seconds) < 1 || Number(health.timeout_seconds) > 30)) throw new TypeError("Invalid health check timeout.");
+    if (health.expected_status !== undefined && (!Array.isArray(health.expected_status) || health.expected_status.length === 0 || health.expected_status.some((n) => !Number.isInteger(n) || Number(n) < 100 || Number(n) > 599))) throw new TypeError("Invalid health check status list.");
+  }
 }
 
 function hasProductionImpact(value: JsonObject): boolean {
@@ -286,13 +387,21 @@ async function createControlRequest(
     return { ...created, duplicate: false };
   }
   const [existing] = await db`
-    select id::text, status, created_at
+    select id::text, status, created_at,
+      (
+        request_type = ${requestType}
+        and action = ${action}
+        and service_id is not distinct from ${targetServiceId}
+        and environment_id is not distinct from ${environmentId}
+        and normalized_parameters = ${db.json(parameters)}
+      ) as same_request
     from supreme.control_requests
     where requester_user_id = ${actor}::uuid and idempotency_key = ${idempotencyKey}
     limit 1
   `;
   if (!existing) throw new Error("Idempotency lookup failed.");
-  return { ...existing, duplicate: true };
+  if (!existing.same_request) throw new TypeError("IDEMPOTENCY_KEY_REUSED");
+  return { id: existing.id, status: existing.status, created_at: existing.created_at, duplicate: true };
 }
 
 async function handle(request: Request): Promise<Response> {
@@ -346,22 +455,8 @@ async function handle(request: Request): Promise<Response> {
       const idempotencyKey = requireString(request.headers.get("idempotency-key"), "Idempotency-Key", 128);
       if (idempotencyKey.length < 8) throw new TypeError("Idempotency-Key must contain at least 8 characters.");
       const body = await readJson(request);
+      validateServicePayload(body);
       const id = serviceId(requireString(body.service_id, "service_id", 64));
-      const displayName = requireString(body.display_name, "display_name", 120);
-      const repository = body.repository;
-      if (!repository || typeof repository !== "object" || Array.isArray(repository)) {
-        throw new TypeError("repository is required.");
-      }
-      const repo = repository as JsonObject;
-      requireString(repo.provider, "repository.provider", 20);
-      requireString(repo.full_name, "repository.full_name", 200);
-      requireString(repo.default_branch, "repository.default_branch", 100);
-      if (!Array.isArray(body.environments) || body.environments.length < 1 || body.environments.length > 10) {
-        throw new TypeError("At least one and at most ten environments are required.");
-      }
-      if (!Array.isArray(body.capabilities) || body.capabilities.length > 100) {
-        throw new TypeError("capabilities must be an array.");
-      }
       const highImpact = hasProductionImpact(body);
       if (highImpact && !isFreshAal2(claims)) {
         await audit({ actor: userId, action: "services.register.denied", serviceId: id, outcome: "denied", requestId, details: { reason: "fresh_aal2_required" } });
@@ -393,7 +488,8 @@ async function handle(request: Request): Promise<Response> {
       const envRows = await db`
         select classification from supreme.service_environments where service_id = ${id}
       `;
-      const highImpact = current.risk_tier === "high" || current.risk_tier === "critical" ||
+      const highImpact = hasProductionImpact(body) ||
+        current.risk_tier === "high" || current.risk_tier === "critical" ||
         envRows.some((row) => row.classification === "production");
       if (highImpact && !isFreshAal2(claims)) {
         await audit({ actor: userId, action: "services.update.denied", serviceId: id, outcome: "denied", requestId, details: { reason: "fresh_aal2_required" } });
@@ -469,6 +565,9 @@ async function handle(request: Request): Promise<Response> {
       );
     }
     if (error instanceof TypeError || error instanceof RangeError || error instanceof SyntaxError) {
+      if (error.message === "IDEMPOTENCY_KEY_REUSED") {
+        return errorResponse("IDEMPOTENCY_KEY_REUSED", "The idempotency key was already used for a different request.", 409, requestId);
+      }
       return errorResponse("INVALID_REQUEST", error.message, 400, requestId);
     }
     console.error("Supreme registry request failed", { requestId, error: String(error) });
