@@ -1,6 +1,6 @@
 # Supreme Service Registry API — v1
 
-**Status:** Contract specification; not yet a deployed API.
+**Status:** v1 database and authenticated Edge Function implementation are being brought online. Provider-specific execution adapters and approval decisions remain separate implementation work.
 
 ## Purpose and boundary
 
