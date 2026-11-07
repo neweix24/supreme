@@ -342,8 +342,13 @@ class MainActivity : FragmentActivity() {
                 val refreshed = authClient.refresh(stored)
                 val status = deviceSessionClient.getStatus(refreshed.accessToken)
                 if (!status.authenticated || !status.deviceSessionActive) throw IllegalStateException("Supreme device session is no longer active. Sign in again.")
+                val webCookies = authClient.establishWebSession(refreshed)
                 sessionStore.save(refreshed)
-                runOnUiThread { authInProgress = false; promptLocalUnlock() }
+                runOnUiThread {
+                    applyWebSessionCookies(webCookies)
+                    authInProgress = false
+                    promptLocalUnlock()
+                }
             } catch (error: Exception) {
                 sessionStore.clear()
                 runOnUiThread { authInProgress = false; lockMessage?.text = error.message ?: "Supreme session verification failed."; showNativeSignIn() }
@@ -358,6 +363,14 @@ class MainActivity : FragmentActivity() {
         lockOverlay?.visibility = View.VISIBLE
         val info = BiometricPrompt.PromptInfo.Builder().setTitle("Unlock Supreme").setSubtitle("Verify this device to open your active Supreme session").setDescription("This local check does not replace server-side authentication.").setDeviceCredentialAllowed(true).build()
         prompt.authenticate(info)
+    }
+
+    private fun applyWebSessionCookies(values: List<String>) {
+        val manager = CookieManager.getInstance()
+        values.forEach { cookie ->
+            manager.setCookie(BuildConfig.SITE_ORIGIN, cookie)
+        }
+        manager.flush()
     }
 
     private fun showNativeSignIn() {
@@ -410,8 +423,14 @@ class MainActivity : FragmentActivity() {
                 val refreshed = authClient.refresh(mfaSession)
                 val status = deviceSessionClient.getStatus(refreshed.accessToken)
                 if (!status.authenticated || !status.deviceSessionActive) throw IllegalStateException("The server did not authorize this device session.")
+                val webCookies = authClient.establishWebSession(refreshed)
                 sessionStore.save(refreshed)
-                runOnUiThread { authInProgress = false; lockMessage?.text = "Device verified (" + registration.securityLevel + ")."; promptLocalUnlock() }
+                runOnUiThread {
+                    applyWebSessionCookies(webCookies)
+                    authInProgress = false
+                    lockMessage?.text = "Device verified (" + registration.securityLevel + ")."
+                    promptLocalUnlock()
+                }
             } catch (error: Exception) {
                 sessionStore.clear()
                 runOnUiThread { authInProgress = false; lockMessage?.text = error.message ?: "Supreme device verification failed."; showNativeSignIn() }
