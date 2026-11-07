@@ -47,7 +47,7 @@ begin
     raise exception 'SUPREME_IDENTITY_SOURCE_NOT_FOUND';
   end if;
 
-  select count(*)::integer, min(user_id)
+  select count(*)::integer, (array_agg(user_id))[1]
     into source_count, source_user_id
   from public.staff_profiles
   where role = 'supreme'
@@ -67,3 +67,21 @@ begin
         updated_at = now();
 end;
 $$;
+
+-- Record the initial registry bootstrap under the newly migrated principal.
+insert into supreme.audit_events (
+  actor_user_id, action, outcome, policy_version, details
+)
+select
+  i.user_id,
+  'registry.bootstrap',
+  'success',
+  'v1',
+  jsonb_build_object(
+    'services_registered', array['neweix', 'neweix-shop', 'eixon', 'neweix-account', 'neweix-message', 'supreme'],
+    'capabilities_enabled', false,
+    'note', 'Initial registry metadata only; no provider operation adapters are enabled.'
+  )
+from supreme.identities i
+where i.role = 'ruler' and i.is_active = true and i.public_id = 'supreme'
+on conflict do nothing;
