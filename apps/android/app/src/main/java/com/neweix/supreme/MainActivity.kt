@@ -752,6 +752,7 @@ class MainActivity : FragmentActivity() {
         buildInterface()
         lockOverlay.visibility = View.GONE
         isUnlocked = true
+        resetIdleLockTimer()
     }
 
     private fun configureAppLock() {
@@ -763,6 +764,7 @@ class MainActivity : FragmentActivity() {
                     authInProgress = false
                     isUnlocked = true
                     lockOverlay.visibility = View.GONE
+                    resetIdleLockTimer()
                     resumeStoredSession()
                 }
 
