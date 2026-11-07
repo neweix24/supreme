@@ -5,9 +5,5 @@
             <solid android:color="#050505" />
         </shape>
     </item>
-    <item
-        android:drawable="@drawable/supreme_emblem"
-        android:width="136dp"
-        android:height="136dp"
-        android:gravity="center" />
+    <item android:drawable="@drawable/supreme_logo" android:width="136dp" android:height="136dp" android:gravity="center" />
 </layer-list>
