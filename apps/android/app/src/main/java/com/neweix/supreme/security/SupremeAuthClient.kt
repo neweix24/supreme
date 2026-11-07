@@ -68,19 +68,6 @@ internal class SupremeAuthClient {
             throw AuthException("No verified Supreme TOTP factor is enrolled. Access remains locked.")
         }
         return PasswordResult.MfaRequired(accessToken, factors)
-
-        /* Password-only sign-in can never be considered a completed Supreme login.
-        val aal = readAal(accessToken)
-        if (aal != "aal2") {
-            throw AuthException("A verified Supreme TOTP factor is required. No app session was granted.")
-        }
-
-        return PasswordResult.Complete(
-            AuthSession(
-                accessToken, refreshToken, payload.optLong("expires_in", 0),
-                payload.optString("token_type", "bearer"), userId, aal,
-            ),
-        ) */
     }
 
     fun createTotpChallenge(accessToken: String, factorId: String): MfaChallenge {
