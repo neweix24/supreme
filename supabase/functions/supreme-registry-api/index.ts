@@ -269,21 +269,24 @@ async function authenticate(request: Request): Promise<{
     throw new Response("Unauthorized", { status: 401 });
   }
 
-  // Supreme has its own principal registry. It deliberately does not depend on
-  // Neweix Account customer rows or Neweix Employees/staff profiles.
+  // Reuse the Supreme principal already provisioned by NEWEIX in the
+  // shared Supabase project. Neweix Account customer rows are not consulted.
+  // Future Neweix Employees remain a separate identity/workforce domain.
   const [ruler] = await db`
     select user_id::text
-    from supreme.identities
+    from public.staff_profiles
     where user_id = ${user.id}::uuid
-      and principal_id = 'supreme'
+      and role = 'supreme'
       and is_active = true
+      and public_id = 'supreme'
     limit 2
   `;
   const [count] = await db`
     select count(*)::integer as active_count
-    from supreme.identities
-    where principal_id = 'supreme'
+    from public.staff_profiles
+    where role = 'supreme'
       and is_active = true
+      and public_id = 'supreme'
   `;
   if (!ruler || ruler.user_id !== user.id || count?.active_count !== 1) {
     throw new Response("Forbidden", { status: 403 });
