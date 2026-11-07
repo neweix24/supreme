@@ -13,6 +13,7 @@ import android.view.WindowManager.LayoutParams
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -93,6 +94,14 @@ class MainActivity : FragmentActivity() {
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(26), dp(50), dp(26), dp(36))
         }
+
+        screen.addView(ImageView(this).apply {
+            setImageResource(R.drawable.supreme_icon)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = "Supreme crown and S emblem"
+        }, LinearLayout.LayoutParams(dp(104), dp(104)).apply {
+            bottomMargin = dp(8)
+        })
 
         val brand = TextView(this).apply {
             text = "SUPREME"
@@ -187,6 +196,13 @@ class MainActivity : FragmentActivity() {
             gravity = Gravity.CENTER
             setPadding(dp(30), dp(30), dp(30), dp(30))
             setBackgroundColor(Color.rgb(7, 7, 7))
+            addView(ImageView(this@MainActivity).apply {
+                setImageResource(R.drawable.supreme_icon)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                contentDescription = "Supreme crown and S emblem"
+            }, LinearLayout.LayoutParams(dp(116), dp(116)).apply {
+                bottomMargin = dp(14)
+            })
             addView(TextView(this@MainActivity).apply {
                 text = "SUPREME"
                 textSize = 28f
@@ -349,6 +365,13 @@ class MainActivity : FragmentActivity() {
         requests: List<SupremeAuthClient.ControlRequest>,
     ) {
         screen.removeAllViews()
+        screen.addView(ImageView(this).apply {
+            setImageResource(R.drawable.supreme_icon)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            contentDescription = "Supreme crown and S emblem"
+        }, LinearLayout.LayoutParams(dp(100), dp(100)).apply {
+            bottomMargin = dp(8)
+        })
         screen.addView(TextView(this).apply {
             text = "SUPREME"
             textSize = 28f
