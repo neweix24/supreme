@@ -11,6 +11,7 @@ import android.view.WindowManager
 import android.view.Window
 import android.os.Build
 import android.view.WindowManager.LayoutParams
+import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -87,28 +88,32 @@ class MainActivity : FragmentActivity() {
         // keeping interactive content clear of the bottom and side system bars.
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.setPadding(bars.left, 0, bars.right, bars.bottom)
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            view.setPadding(bars.left, 0, bars.right, maxOf(bars.bottom, ime.bottom))
             insets
         }
 
-        val scroll = ScrollView(this)
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            clipToPadding = false
+        }
         screen = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(26), dp(28), dp(26), dp(36))
+            setPadding(dp(22), dp(10), dp(22), dp(18))
         }
 
         screen.addView(ImageView(this).apply {
-            setImageResource(R.drawable.supreme_icon)
+            setImageResource(R.drawable.supreme_emblem)
             scaleType = ImageView.ScaleType.FIT_CENTER
-            contentDescription = "Supreme crown and S emblem"
-        }, LinearLayout.LayoutParams(dp(176), dp(176)).apply {
-            bottomMargin = dp(8)
+            contentDescription = "Supreme gold S emblem"
+        }, LinearLayout.LayoutParams(dp(84), dp(84)).apply {
+            bottomMargin = dp(6)
         })
 
         val brand = TextView(this).apply {
             text = "SUPREME"
-            textSize = 30f
+            textSize = 27f
             letterSpacing = 0.24f
             setTextColor(Color.rgb(229, 197, 120))
             gravity = Gravity.CENTER
@@ -121,20 +126,20 @@ class MainActivity : FragmentActivity() {
             letterSpacing = 0.25f
             setTextColor(Color.rgb(151, 133, 96))
             gravity = Gravity.CENTER
-            setPadding(0, dp(8), 0, dp(30))
+            setPadding(0, dp(4), 0, dp(14))
         }
         screen.addView(subtitle, matchWrap())
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(24), dp(20), dp(24))
+            setPadding(dp(16), dp(16), dp(16), dp(16))
             setBackgroundColor(Color.rgb(20, 20, 20))
         }
         screen.addView(card, matchWrap())
 
         card.addView(TextView(this).apply {
             text = "Supreme Account"
-            textSize = 21f
+            textSize = 19f
             setTextColor(Color.WHITE)
         }, matchWrap())
 
@@ -142,7 +147,7 @@ class MainActivity : FragmentActivity() {
             text = "Sign in with the single, dedicated Supreme identity. No Neweix Account or social login is used."
             textSize = 13f
             setTextColor(Color.rgb(170, 170, 170))
-            setPadding(0, dp(8), 0, dp(22))
+            setPadding(0, dp(6), 0, dp(14))
         }, matchWrap())
 
         card.addView(label("Supreme account email"))
@@ -185,6 +190,15 @@ class MainActivity : FragmentActivity() {
             addView(passwordVisibilityButton, LinearLayout.LayoutParams(dp(76), dp(50)))
         }
         card.addView(passwordRow, fieldParams())
+        passwordInput.imeOptions = EditorInfo.IME_ACTION_DONE
+        passwordInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                beginPasswordSignIn()
+                true
+            } else {
+                false
+            }
+        }
 
         card.addView(label("Authenticator code").apply { visibility = View.GONE })
         codeInput = input("6-digit TOTP code", InputType.TYPE_CLASS_NUMBER).apply {
@@ -193,6 +207,15 @@ class MainActivity : FragmentActivity() {
         }
         codeInput.visibility = View.GONE
         card.addView(codeInput, fieldParams())
+        codeInput.imeOptions = EditorInfo.IME_ACTION_DONE
+        codeInput.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                verifyMfaCode()
+                true
+            } else {
+                false
+            }
+        }
 
         primaryButton = Button(this).apply {
             text = "SIGN IN"
@@ -203,14 +226,14 @@ class MainActivity : FragmentActivity() {
             }
         }
         val buttonParams = matchWrap()
-        buttonParams.topMargin = dp(18)
+        buttonParams.topMargin = dp(14)
         card.addView(primaryButton, buttonParams)
 
         statusText = TextView(this).apply {
             text = "Password and TOTP MFA are required. Device attestation is checked separately."
             textSize = 12f
             setTextColor(Color.rgb(174, 159, 124))
-            setPadding(0, dp(20), 0, dp(4))
+            setPadding(0, dp(12), 0, dp(4))
             gravity = Gravity.CENTER
         }
         screen.addView(statusText, matchWrap())
@@ -221,7 +244,7 @@ class MainActivity : FragmentActivity() {
             letterSpacing = 0.06f
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(100, 100, 100))
-            setPadding(0, dp(34), 0, 0)
+            setPadding(0, dp(12), 0, 0)
         }, matchWrap())
 
         scroll.addView(screen)
@@ -236,11 +259,11 @@ class MainActivity : FragmentActivity() {
             setPadding(dp(30), dp(30), dp(30), dp(30))
             setBackgroundColor(Color.rgb(7, 7, 7))
             addView(ImageView(this@MainActivity).apply {
-                setImageResource(R.drawable.supreme_icon)
+                setImageResource(R.drawable.supreme_emblem)
                 scaleType = ImageView.ScaleType.FIT_CENTER
-                contentDescription = "Supreme crown and S emblem"
-            }, LinearLayout.LayoutParams(dp(160), dp(160)).apply {
-                bottomMargin = dp(14)
+                contentDescription = "Supreme gold S emblem"
+            }, LinearLayout.LayoutParams(dp(96), dp(96)).apply {
+                bottomMargin = dp(10)
             })
             addView(TextView(this@MainActivity).apply {
                 text = "SUPREME"
@@ -267,6 +290,7 @@ class MainActivity : FragmentActivity() {
         ))
         lockOverlay.visibility = View.VISIBLE
         setContentView(root)
+        ViewCompat.requestApplyInsets(root)
     }
 
     private fun beginPasswordSignIn() {
@@ -329,6 +353,8 @@ class MainActivity : FragmentActivity() {
                     factorId,
                     challengeId,
                     code,
+                    initial.refreshToken,
+                    initial.userId,
                 )
                 if (session.userId != initial.userId || session.assuranceLevel != "aal2") {
                     throw IllegalStateException("Supreme AAL2 verification was not confirmed.")
@@ -380,7 +406,14 @@ class MainActivity : FragmentActivity() {
                     emailInput.isEnabled = true
                     codeInput.visibility = View.GONE
                     primaryButton.text = "SIGN IN"
-                    setBusy(false, safeMessage(error))
+                    val message = if (error is SupremeAuthException &&
+                        error.statusCode in 400..422
+                    ) {
+                        "Authenticator code was rejected. Wait for a fresh six-digit code and try again."
+                    } else {
+                        safeMessage(error)
+                    }
+                    setBusy(false, message)
                 }
             }
         }
@@ -392,10 +425,10 @@ class MainActivity : FragmentActivity() {
     ) {
         screen.removeAllViews()
         screen.addView(ImageView(this).apply {
-            setImageResource(R.drawable.supreme_icon)
+            setImageResource(R.drawable.supreme_emblem)
             scaleType = ImageView.ScaleType.FIT_CENTER
-            contentDescription = "Supreme crown and S emblem"
-        }, LinearLayout.LayoutParams(dp(144), dp(144)).apply {
+            contentDescription = "Supreme gold S emblem"
+        }, LinearLayout.LayoutParams(dp(96), dp(96)).apply {
             bottomMargin = dp(8)
         })
         screen.addView(TextView(this).apply {
