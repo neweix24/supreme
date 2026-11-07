@@ -316,5 +316,6 @@ export async function handleSupremeAttestationVerify(
     security_level: verification.keyPolicy.securityLevel,
     provisioning_method: verification.chain.provisioningMethod,
     proof_of_possession_verified: verification.proofOfPossessionVerified,
+    device_key_sha256: verification.deviceKeySha256,
   }, 200);
 }
