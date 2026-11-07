@@ -4,8 +4,8 @@
 - Exactly one Supreme principal is provisioned for the ruler role.
 - The principal identifier is `supreme`; it is neither a Neweix Account customer nor an employee identity.
 - Reuse the existing shared Supabase Auth project for credentials and sessions, but keep Supreme authorization identities in the Supreme-owned `supreme.identities` table (`role = 'ruler'`, `public_id = 'supreme'`, `is_active = true`).
-- The unique index `supreme_identities_single_principal_uidx` guarantees one Supreme principal. Do not use `public.staff_profiles` for Supreme identity or create a second Supabase project.
-- Do not require a `public.neweix_accounts` customer row for Supreme authorization. Future Neweix Employees remain a separate identity/workforce domain. The migration copies the existing Supreme Auth user UUID into `supreme.identities`; legacy `staff_profiles` cleanup must wait until all dependencies are audited.
+- The unique index `supreme_identities_single_principal_uidx` guarantees one Supreme principal. Do not create a second Supreme identity source or Supabase project; use only `supreme.identities`.
+- Do not require a `public.neweix_accounts` customer row for Supreme authorization. Future Neweix Employees remain a separate identity/workforce domain. The Supreme principal is provisioned independently in `supreme.identities`; no legacy workforce-profile table is read or recreated.
 - Do not hard-code the identity or credentials into the Android binary.
 - Enforce MFA server-side for privileged sessions.
 - Require a server-signed `supreme_app_session` JWT claim containing an active session ID, registered device ID, and attestation timestamp. The claim may be minted only by a trusted Supabase Auth hook after checking server-side device/session records; never accept user metadata or client headers as proof.
