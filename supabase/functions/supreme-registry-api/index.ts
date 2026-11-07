@@ -58,7 +58,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
   return headers;
 }
 
-function decodeJwtClaims(token: string): JsonObject {
+function decodeClaimsAfterSupabaseUserVerification(token: string): JsonObject {
   const part = token.split(".")[1];
   if (!part) throw new Error("Invalid bearer token.");
   const normalized = part.replace(/-/g, "+").replace(/_/g, "/");
@@ -305,7 +305,7 @@ async function authenticate(request: Request): Promise<{
   if (!principal || principal.user_id !== user.id || count?.active_count !== 1) {
     throw new Response("Forbidden", { status: 403 });
   }
-  const claims = decodeJwtClaims(token);
+  const claims = decodeClaimsAfterSupabaseUserVerification(token);
   if (claims.sub !== user.id) {
     throw new Response("Unauthorized", { status: 401 });
   }
