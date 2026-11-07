@@ -126,4 +126,15 @@ gradle :app:assembleDebug
 
 Never set `SUPABASE_SERVICE_ROLE_KEY` in Android or any `BuildConfig` field.
 
-**Integration still pending:** the native login/MFA client is not yet wired into `MainActivity`; attestation challenges are not yet bound to the authenticated Auth session; there is not yet a server endpoint that atomically consumes a verified attestation receipt to register the device and mint `supreme.app_sessions`. Therefore the app must not open the protected workspace based only on password/MFA or attestation success. The signed Auth Hook and session API must be connected before release.
+Native login is wired into `MainActivity`: password sign-in must proceed through a verified TOTP factor, the app then requests hardware-backed Android attestation, and the server validates the production package signer before atomically registering the device and binding the app session to the AAL2 Supabase Auth session. After token refresh, the app verifies the signed `supreme_app_session` claim and active database session before establishing an HttpOnly Supabase SSR cookie for the private WebView. The WebView is never unlocked by local biometrics alone.
+
+## Required server configuration before use
+
+- Apply the migrations in timestamp order, including the device/session and atomic session-issuer migrations.
+- Deploy `supreme-attestation-verify` with the production APK signing-certificate SHA-256 and minimum allowed package version.
+- Deploy `supreme-session-api` with `SUPABASE_URL`, `SUPABASE_ANON_KEY` (or publishable key), and the server-only `SUPABASE_DB_URL`.
+- Configure Supabase Authentication → Hooks → Custom Access Token to call `public.supreme_custom_access_token_hook`.
+- Configure the Cloudflare Next.js runtime with Supabase URL, anon/publishable key, service-role key, and `SUPREME_ANDROID_SIGNING_CERT_SHA256`.
+- Build the Android app with the matching Supabase URL, anon/publishable key, and private Supreme path. Never include the service-role key in the APK.
+
+The app remains fail-closed if any required hook, verifier, secret, production signing digest, or database connection is unavailable. A runtime deployment and a real production-signed device are required before first sign-in can succeed.
