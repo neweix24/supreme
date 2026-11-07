@@ -29,3 +29,9 @@
 4. Define Supreme-owned database schema independently; preserve commerce-owned data behind integration APIs.
 5. Implement Supreme Core authentication, MFA, authorization, service registry, approvals, and audit events.
 6. Add CI checks and require successful builds/tests before merge or release.
+
+## Known coupling that still needs removal
+
+The imported Android shell currently loads the private workspace from `https://neweix.com` and uses the former NEWEIX private-path configuration. This is preserved as historical implementation, not accepted as the final independent Supreme app architecture. Before a separate Supreme release, move the shell to a Supreme-owned domain/API origin, replace the private-path discovery mechanism with authenticated backend sessions, and verify that no production secret is embedded in the APK. The old README explicitly documents that the private path is extractable and is not an authentication factor.
+
+The imported Next.js API routes and dashboard are also commerce-app-bound. They must not be treated as the new Supreme Core API until their imports, data ownership, and authorization boundaries are refactored.
