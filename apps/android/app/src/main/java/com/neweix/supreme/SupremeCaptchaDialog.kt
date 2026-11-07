@@ -125,7 +125,7 @@ internal object SupremeCaptchaDialog {
         dialog.show()
         dialog.window?.setLayout(
             (activity.resources.displayMetrics.widthPixels * 0.90f).toInt(),
-            (activity.resources.displayMetrics.heightPixels * 0.42f).toInt(),
+            (activity.resources.displayMetrics.heightPixels * 0.62f).toInt().coerceAtLeast((320 * activity.resources.displayMetrics.density).toInt()),
         )
         webView.loadDataWithBaseURL(
             "$APPROVED_ORIGIN/",
@@ -144,39 +144,32 @@ internal object SupremeCaptchaDialog {
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <title>Supreme security verification</title>
           <style>
-            html, body { margin: 0; padding: 0; background: #121212; color: #e5c578;
-              font: 14px Arial, sans-serif; min-height: 100%; }
-            body { display: flex; flex-direction: column; align-items: center;
-              justify-content: center; padding: 22px 12px; box-sizing: border-box; }
-            #message { color: #c9c9c9; text-align: center; margin-bottom: 18px; }
-            #widget { min-height: 66px; }
+            html, body { margin: 0; padding: 0; background: #121212; color: #e5c578; font: 14px Arial, sans-serif; min-height: 100%; }
+            body { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 12px; box-sizing: border-box; }
+            #message { color: #c9c9c9; text-align: center; margin-bottom: 20px; }
+            #widget { min-height: 70px; display: flex; justify-content: center; }
           </style>
-          <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
+          <script>
+            function notify(value) { if (window.SupremeCaptchaBridge) window.SupremeCaptchaBridge.postMessage(value); }
+            window.onSupremeTurnstileLoaded = function () {
+              try {
+                if (!window.turnstile || !document.getElementById("widget")) { notify("CAPTCHA_ERROR"); return; }
+                window.turnstile.render("#widget", {
+                  sitekey: "$SITE_KEY",
+                  theme: "dark",
+                  callback: function(token) { notify(token); },
+                  "error-callback": function() { notify("CAPTCHA_ERROR"); },
+                  "expired-callback": function() { notify("CAPTCHA_EXPIRED"); }
+                });
+              } catch (_) { notify("CAPTCHA_ERROR"); }
+            };
+            window.setTimeout(function () { if (!window.turnstile) notify("CAPTCHA_ERROR"); }, 20000);
+          </script>
+          <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onSupremeTurnstileLoaded&render=explicit" async defer onerror="notify('CAPTCHA_ERROR')"></script>
         </head>
         <body>
-          <div id="message">Complete the security check to continue.</div>
+          <div id="message">Loading Cloudflare security verification…</div>
           <div id="widget"></div>
-          <script>
-            function notify(value) {
-              if (window.SupremeCaptchaBridge) {
-                window.SupremeCaptchaBridge.postMessage(value);
-              }
-            }
-            function renderSupremeCaptcha() {
-              if (!window.turnstile) {
-                notify("CAPTCHA_ERROR");
-                return;
-              }
-              window.turnstile.render("#widget", {
-                sitekey: "$SITE_KEY",
-                theme: "dark",
-                callback: function(token) { notify(token); },
-                "error-callback": function() { notify("CAPTCHA_ERROR"); },
-                "expired-callback": function() { notify("CAPTCHA_EXPIRED"); }
-              });
-            }
-            window.addEventListener("load", renderSupremeCaptcha);
-          </script>
         </body>
         </html>
     """.trimIndent()

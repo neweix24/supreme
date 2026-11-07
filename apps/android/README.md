@@ -49,7 +49,7 @@ Devices that cannot produce a qualifying attestation chain must not be silently 
 - Supreme authorization must consult the single active `supreme.identities` principal with `role = ruler` and `public_id = supreme`; it must not require `neweix_accounts`.
 - The registry API requires a server-signed `supreme_app_session` claim for an active device-bound attested session. The native flow submits the hardware-attestation proof to the server-side issuer, which verifies the production package signer, records the device, and binds the row to the exact AAL2 Supabase Auth session. The app refreshes the token and verifies the signed claim and live session record before loading registry data.
 - **The native debug app is not a production login release.** Keep privileged operations fail-closed until the Auth Hook, persistent device/session binding, production APK signer allowlist, and real-device/browser-denial tests pass.
-- The diamond emblem is the temporary app mark and can be replaced later without changing the application ID.
+- The temporary black-and-gold crown with the S monogram is the app mark. Its source artwork is `app/src/main/assets/supreme-logo.svg`; Android launcher and in-app rendering use the matching native `VectorDrawable` resource at `app/src/main/res/drawable/supreme_icon.xml` because Android does not load SVG files directly as launcher icons.
 
 ## Remote-first Supreme dashboard (permanent architecture requirement)
 
