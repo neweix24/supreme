@@ -121,7 +121,7 @@ internal object SupremeAuthClient {
     }
 
     fun refresh(refreshToken: String): AuthSession {
-        require(refreshToken.length in 20..8192) { "Supreme session is invalid. Sign in again." }
+        require(refreshToken.isNotBlank() && refreshToken.length <= 8192 && refreshToken != "null") { "Supreme session is invalid. Sign in again." }
         val response = request(
             "POST",
             "/auth/v1/token?grant_type=refresh_token",
@@ -257,7 +257,7 @@ internal object SupremeAuthClient {
         val access = response.optString("access_token")
             .takeIf { it.length in 40..16_384 }
         val responseRefresh = response.optString("refresh_token")
-            .takeIf { it.length in 20..8192 }
+            .takeIf { it.isNotBlank() && it.length <= 8192 && it != "null" }
         // Supabase MFA upgrades may omit a replacement refresh token in a
         // response. Reuse only the refresh token from this same pre-MFA
         // session; the caller must still refresh it and prove AAL2 continuity
