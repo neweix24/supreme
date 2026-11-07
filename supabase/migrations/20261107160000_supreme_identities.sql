@@ -34,45 +34,18 @@ alter table supreme.identities enable row level security;
 revoke all on table supreme.identities from public, anon, authenticated;
 grant select, insert, update, delete on table supreme.identities to service_role;
 
--- Idempotent handoff. If production has already moved Supreme into this table,
--- verify and retain that principal. Otherwise migrate the single legacy row.
+-- The Supreme principal is provisioned independently. This migration never
+-- imports, reads, or recreates a legacy workforce profile table.
 do $$
 declare
   identity_count integer;
-  identity_user_id uuid;
-  source_count integer;
-  source_user_id uuid;
 begin
-  select count(*)::integer, (array_agg(user_id))[1]
-    into identity_count, identity_user_id
+  select count(*)::integer into identity_count
   from supreme.identities
-  where public_id = 'supreme'
-    and role = 'ruler'
-    and is_active = true;
+  where public_id = 'supreme' and role = 'ruler' and is_active = true;
 
-  if identity_count = 1 and identity_user_id is not null then
-    -- The principal has already been migrated; keep it unchanged.
-    null;
-  elsif identity_count <> 0 then
-    raise exception 'SUPREME_IDENTITY_STATE_INVALID';
-  else
-    if to_regclass('public.staff_profiles') is null then
-      raise exception 'SUPREME_IDENTITY_SOURCE_NOT_FOUND';
-    end if;
-
-    select count(*)::integer, (array_agg(user_id))[1]
-      into source_count, source_user_id
-    from public.staff_profiles
-    where role = 'supreme'
-      and public_id = 'supreme'
-      and is_active = true;
-
-    if source_count <> 1 or source_user_id is null then
-      raise exception 'EXPECTED_EXACTLY_ONE_ACTIVE_SUPREME_SOURCE_IDENTITY';
-    end if;
-
-    insert into supreme.identities (user_id, public_id, role, is_active)
-    values (source_user_id, 'supreme', 'ruler', true);
+  if identity_count <> 1 then
+    raise exception 'EXPECTED_EXACTLY_ONE_ACTIVE_SUPREME_IDENTITY';
   end if;
 end;
 $$;
