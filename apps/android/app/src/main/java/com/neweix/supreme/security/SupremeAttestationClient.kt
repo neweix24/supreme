@@ -27,6 +27,7 @@ internal object SupremeAttestationClient {
         val securityLevel: String,
         val provisioningMethod: String,
         val proofOfPossessionVerified: Boolean,
+        val deviceKeySha256: String,
     )
 
     /**
@@ -99,6 +100,11 @@ internal object SupremeAttestationClient {
             securityLevel = result.optString("security_level", "unknown"),
             provisioningMethod = result.optString("provisioning_method", "unknown"),
             proofOfPossessionVerified = true,
+            deviceKeySha256 = result.optString("device_key_sha256").also {
+                require(Regex("^[a-f0-9]{64}$").matches(it)) {
+                    "Supreme device key fingerprint was not returned by the verifier."
+                }
+            },
         )
     }
 
