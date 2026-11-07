@@ -3,7 +3,7 @@
   "services": [
     {
       "service_id": "neweix-commerce",
-      "display_name": "NEWEIX Commerce",
+      "display_name": "Neweix Commerce",
       "repository": {
         "provider": "github",
         "full_name": "neweix24/neweix",
