@@ -6,7 +6,7 @@ The dashboard/API code below is retained as a NEWEIX integration snapshot, not a
 
 | Import used by Supreme source | Preserved snapshot path | Notes |
 |---|---|---|
-| `@/lib/auth` | `integrations/neweix-commerce/next-app/lib/auth.ts` | Uses NEWEIX `staff_profiles`, role model, and Supabase SSR session. |
+| `@/lib/auth` | `integrations/neweix-commerce/next-app/lib/auth.ts` | Legacy snapshot uses NEWEIX `staff_profiles`; this dependency must be removed before the dashboard/API snapshot is activated in the standalone Supreme runtime. |
 | `@/lib/permissions` | `integrations/neweix-commerce/next-app/lib/permissions.ts` | Existing role and permission contract; review against the single Supreme ruler identity. |
 | `@/lib/supabase/server` | `integrations/neweix-commerce/next-app/lib/supabase/server.ts` | Uses NEWEIX Supabase environment variables and `.neweix.com` cookie domain. |
 | `@/lib/phone-verification` | `integrations/neweix-commerce/next-app/lib/phone-verification.ts` | Used by the Supreme NEWEIX+ API; depends on Supabase JS and OpenNext Cloudflare bindings. |
