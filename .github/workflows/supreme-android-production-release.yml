@@ -1,0 +1,105 @@
+name: Supreme Android production release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supreme-android-production-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and verify production-signed APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    env:
+      SUPREME_RELEASE_KEYSTORE_BASE64: ${{ secrets.SUPREME_RELEASE_KEYSTORE_BASE64 }}
+      SUPREME_RELEASE_STORE_PASSWORD: ${{ secrets.SUPREME_RELEASE_STORE_PASSWORD }}
+      SUPREME_RELEASE_KEY_ALIAS: ${{ secrets.SUPREME_RELEASE_KEY_ALIAS }}
+      SUPREME_RELEASE_KEY_PASSWORD: ${{ secrets.SUPREME_RELEASE_KEY_PASSWORD }}
+      SUPREME_ANDROID_SIGNING_CERT_SHA256: ${{ vars.SUPREME_ANDROID_SIGNING_CERT_SHA256 }}
+      SUPREME_VERSION_CODE: ${{ vars.SUPREME_ANDROID_MIN_VERSION_CODE }}
+      SUPREME_VERSION_NAME: ${{ vars.SUPREME_ANDROID_VERSION_NAME }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-35"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Validate release secrets and signer identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in SUPREME_RELEASE_KEYSTORE_BASE64 SUPREME_RELEASE_STORE_PASSWORD SUPREME_RELEASE_KEY_ALIAS SUPREME_RELEASE_KEY_PASSWORD SUPREME_ANDROID_SIGNING_CERT_SHA256 SUPREME_VERSION_CODE; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Required production release setting is missing: $name" >&2
+              exit 1
+            fi
+          done
+          if [[ ! "$SUPREME_ANDROID_SIGNING_CERT_SHA256" =~ ^[[:xdigit:]]{64}$ ]]; then
+            echo "SUPREME_ANDROID_SIGNING_CERT_SHA256 must be 64 hexadecimal characters." >&2
+            exit 1
+          fi
+          if [[ ! "$SUPREME_VERSION_CODE" =~ ^[1-9][0-9]{0,8}$ ]]; then
+            echo "SUPREME_ANDROID_MIN_VERSION_CODE must be a positive integer." >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/supreme-signing"
+          printf '%s' "$SUPREME_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/supreme-signing/supreme-production.jks"
+          chmod 600 "$RUNNER_TEMP/supreme-signing/supreme-production.jks"
+          keytool -list -keystore "$RUNNER_TEMP/supreme-signing/supreme-production.jks" -alias "$SUPREME_RELEASE_KEY_ALIAS" -storepass "$SUPREME_RELEASE_STORE_PASSWORD" >/dev/null
+          keytool -exportcert -keystore "$RUNNER_TEMP/supreme-signing/supreme-production.jks" -alias "$SUPREME_RELEASE_KEY_ALIAS" -storepass "$SUPREME_RELEASE_STORE_PASSWORD" -file "$RUNNER_TEMP/supreme-signing/certificate.der" >/dev/null
+          actual="$(sha256sum "$RUNNER_TEMP/supreme-signing/certificate.der" | awk '{print $1}')"
+          expected="${SUPREME_ANDROID_SIGNING_CERT_SHA256,,}"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "The configured keystore does not match the server-approved signer fingerprint." >&2
+            exit 1
+          fi
+          {
+            echo "SUPREME_RELEASE_KEYSTORE_PATH=$RUNNER_TEMP/supreme-signing/supreme-production.jks"
+            echo "SUPREME_VERSION_CODE=$SUPREME_VERSION_CODE"
+            echo "SUPREME_VERSION_NAME=${SUPREME_VERSION_NAME:-1.1.0}"
+          } >> "$GITHUB_ENV"
+
+      - name: Assemble production APK
+        working-directory: apps/android
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Verify APK signature and production signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="apps/android/app/build/outputs/apk/release/app-release.apk"
+          test -s "$apk"
+          output="$(bash services/android-attestation/scripts/security/print-android-signing-cert.sh "$apk")"
+          printf '%s\n' "$output"
+          expected="${SUPREME_ANDROID_SIGNING_CERT_SHA256,,}"
+          grep -Fq "$expected" <<< "$output"
+
+      - name: Upload production-signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: supreme-android-production-apk-${{ github.run_number }}
+          path: apps/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
