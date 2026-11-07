@@ -1,21 +1,20 @@
-# Neweix Supreme Android app
+# Supreme Android app
 
-This Android app is a native shell around the existing Supreme workspace. It loads the existing website UI and keeps authentication, role checks, and MFA on the server. It does not create a second admin backend.
+The Supreme Android app is the only supported sign-in client. Supreme authentication is independent of Neweix Account customers and the future Neweix Employees system. The current WebView/private-route shell is legacy and is not compliant with the native-app-only login requirement; it must not be treated as a completed login implementation.
 
 ## Build requirements
 
 - Android Studio with JDK 17 and Android SDK Platform 35, or Gradle 8.9+ with the Android SDK installed. Open this directory in Android Studio if Gradle is not installed on your device.
-- For a production-connected local build, the private Supreme path configured on the Cloudflare Worker as `SUPREME_PRIVATE_PATH`.
+- The native app build must use the Supreme-owned authentication/API configuration. A private URL/path is not an authentication factor and must not be used to grant access.
 - Never commit the production path or embed it in a public artifact.
 
-The path must match `/control-` followed by exactly 48 hexadecimal characters. CI compile-preview builds use a public, disposable placeholder path and cannot authenticate to the production private route.
+The native app must not require or embed a secret web path. Browser login and browser dashboard access must be denied server-side.
 
 ## Build a local debug APK
 
 From this directory, provide the configured path without putting it in source control:
 
 ```sh
-export SUPREME_PRIVATE_PATH='/control-<your-48-hex-character-secret>'
 gradle :app:assembleDebug
 ```
 
@@ -24,14 +23,14 @@ The APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
 If you prefer not to export an environment variable, pass it as a Gradle property:
 
 ```sh
-gradle :app:assembleDebug -PsupremePrivatePath='/control-<your-48-hex-character-secret>'
+gradle :app:assembleDebug
 ```
 
 ## Security notes
 
 - The app accepts only HTTPS navigation to `neweix.com` and `www.neweix.com`; other web links are handed to Android.
 - File/content access and cleartext HTTP are disabled; TLS certificate errors are rejected.
-- The private path is embedded in the APK at build time and can be extracted by someone reverse-engineering the APK. It is a discovery barrier only, not an authentication factor.
+- A hidden/private route is never proof of app authenticity and must never authorize a session.
 - The website must continue enforcing Supreme role authorization and AAL2 MFA on every protected page and API.
 - Google OAuth and Cloudflare Turnstile behavior inside Android WebView still require device testing. Google may require external-browser OAuth handoff; do not treat this initial shell as release-ready until login and MFA flows are verified.
 - Do not distribute this debug APK as a production release.
@@ -49,11 +48,10 @@ Devices that cannot produce a qualifying attestation chain must not be silently 
 
 ## Private Supreme-only navigation and temporary authentication lock
 
-- The launcher opens only the private Supreme workspace entry. Main-frame navigation is restricted to the private workspace and the dedicated Supreme sign-in/MFA routes; storefront and shared customer/staff login routes are redirected back to the private entry.
-- External web navigation is blocked inside the app. Telephone and email actions may still be handed to Android.
-- Unauthenticated private-workspace requests are sent to `/auth/supreme-login`, not the shared staff login page.
-- The shared `/auth/login` page rejects and signs out a Supreme role.
-- **Supreme dashboard access is intentionally fail-closed (HTTP 503) until the complete server-side Android Key Attestation verifier is integrated.** The current private URL and WebView are not proof of an authentic app. Do not remove this lock based on User-Agent, package name, a custom header, or the private URL alone.
+- Supreme login must be implemented as a native Android screen and authenticated by a Supreme-owned backend flow.
+- Browser-based Supreme sign-in and dashboard access must be denied server-side.
+- Supreme authorization must consult only `supreme.identities`, not `neweix_accounts` or `staff_profiles`.
+- **The current WebView/private-route app is not a compliant login release.** Keep privileged operations fail-closed until native authentication, MFA, hardware attestation, device-bound sessions, and browser-denial tests pass.
 - The diamond emblem is the temporary app mark and can be replaced later without changing the application ID.
 
 ## Remote-first Supreme dashboard (permanent architecture requirement)
