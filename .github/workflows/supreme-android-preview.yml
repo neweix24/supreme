@@ -3,6 +3,7 @@ name: Build Supreme Android preview APK
 on:
   push:
     branches:
+      - main
       - feat/supreme-native-android-login
     paths:
       - "apps/android/**"
