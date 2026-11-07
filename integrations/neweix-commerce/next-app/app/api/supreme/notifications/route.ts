@@ -26,12 +26,12 @@ async function getSupremeAccess(): Promise<SupremeAccess> {
   if (authError || !user) return { ok: false, error: "Authentication required.", status: 401 };
 
   const { data: profile, error: profileError } = await session
-    .from("staff_profiles")
-    .select("role,is_active")
-    .eq("user_id", user.id)
+    .schema("supreme").from("identities")
+    .select("role, is_active, public_id")
+    .eq("user_id", user.id).eq("public_id", "supreme")
     .maybeSingle();
 
-  if (profileError || !profile || profile.role !== "supreme" || profile.is_active !== true) {
+  if (profileError || !profile || profile.role !== "ruler" || profile.public_id !== "supreme" || profile.is_active !== true) {
     return { ok: false, error: "Only an active Supreme account can access this inbox.", status: 403 };
   }
 

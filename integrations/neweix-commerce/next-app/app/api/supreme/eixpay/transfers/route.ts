@@ -15,8 +15,8 @@ async function getSupremeAccess(): Promise<SupremeAccess> {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) return { ok: false, response: fail("লগইন প্রয়োজন।", 401) };
   const { data: staff, error: staffError } = await supabase
-    .from("staff_profiles").select("role, is_active").eq("user_id", user.id).maybeSingle();
-  if (staffError || !staff || staff.is_active !== true || staff.role !== "supreme") {
+    .schema("supreme").from("identities").select("role, is_active, public_id").eq("user_id", user.id).eq("public_id", "supreme").maybeSingle();
+  if (staffError || !staff || staff.is_active !== true || staff.role !== "ruler" || staff.public_id !== "supreme") {
     return { ok: false, response: fail("শুধু সক্রিয় Supreme অ্যাকাউন্ট এই কাজ করতে পারবে।", 403) };
   }
   const { data: assurance, error: mfaError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();

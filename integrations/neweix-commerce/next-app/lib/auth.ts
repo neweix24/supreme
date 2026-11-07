@@ -2,10 +2,6 @@ import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { StaffRole } from "@/lib/permissions";
 
-const ACTIVE_STAFF_ROLES: readonly StaffRole[] = [
-  "supreme", "admin", "manager", "employee", "staff",
-];
-
 export async function getCurrentStaff() {
   const supabase = await createServerSupabaseClient();
 
@@ -27,29 +23,29 @@ export async function getCurrentStaff() {
   };
 
   const { data: profile, error: profileError } = await supabase
-    .from("staff_profiles")
-    .select("role, is_active")
-    .eq("user_id", userId)
+    .schema("supreme").from("identities")
+    .select("role, is_active, public_id")
+    .eq("user_id", userId).eq("public_id", "supreme")
     .maybeSingle();
 
   if (
     profileError ||
     !profile ||
     profile.is_active !== true ||
-    !ACTIVE_STAFF_ROLES.includes(profile.role as StaffRole)
+    (profile.role !== "ruler" || profile.public_id !== "supreme")
   ) {
     return null;
   }
 
   // Supreme must complete MFA before accessing protected pages.
-  if (profile.role === "supreme") {
+  if (profile.role === "ruler" && profile.public_id === "supreme") {
     const { data: assurance, error: assuranceError } =
       await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
 
     if (assuranceError || assurance.currentLevel !== "aal2") {
       return {
         user,
-        role: profile.role as StaffRole,
+        role: "supreme" as StaffRole,
         mfaRequired: true,
       };
     }

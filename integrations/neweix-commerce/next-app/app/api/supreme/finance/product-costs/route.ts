@@ -19,8 +19,8 @@ async function authorize(): Promise<SupremeActorResult> {
   const { data: { user }, error } = await session.auth.getUser();
   if (error || !user) return { ok: false, error: "Authentication required.", status: 401 };
   const { data: profile, error: profileError } = await session
-    .from("staff_profiles").select("role, is_active").eq("user_id", user.id).maybeSingle();
-  if (profileError || !profile || profile.role !== "supreme" || profile.is_active !== true) {
+    .schema("supreme").from("identities").select("role, is_active, public_id").eq("user_id", user.id).eq("public_id", "supreme").maybeSingle();
+  if (profileError || !profile || profile.role !== "ruler" || profile.public_id !== "supreme" || profile.is_active !== true) {
     return { ok: false, error: "Only an active Supreme account can manage product costs.", status: 403 };
   }
   const { data: assurance, error: mfaError } = await session.auth.mfa.getAuthenticatorAssuranceLevel();

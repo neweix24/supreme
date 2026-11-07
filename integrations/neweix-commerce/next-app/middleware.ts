@@ -215,8 +215,8 @@ export async function middleware(request: NextRequest) {
       return copySessionState(redirectResponse);
     }
     const { data: mfaProfile, error: mfaProfileError } = await supabase
-      .from("staff_profiles")
-      .select("role, is_active")
+      .schema("supreme").from("identities")
+      .select("role, is_active, public_id")
       .eq("user_id", userId)
       .maybeSingle();
     if (mfaProfileError) {
@@ -225,7 +225,7 @@ export async function middleware(request: NextRequest) {
         headers: { "Cache-Control": "private, no-store, max-age=0" },
       }));
     }
-    if (mfaProfile?.role === "supreme") {
+    if (mfaProfile?.role === "ruler" && mfaProfile.public_id === "supreme") {
       return copySessionState(new NextResponse(
         "Supreme MFA is locked until verified Android app attestation is available.",
         { status: 503, headers: { "Cache-Control": "private, no-store, max-age=0", "X-Robots-Tag": "noindex, nofollow" } },
@@ -306,28 +306,28 @@ export async function middleware(request: NextRequest) {
   }
 
   const { data: profile, error: profileError } = await supabase
-    .from("staff_profiles")
-    .select("role, is_active")
-    .eq("user_id", userId)
+    .schema("supreme").from("identities")
+    .select("role, is_active, public_id")
+    .eq("user_id", userId).eq("public_id", "supreme")
     .maybeSingle();
 
   if (
     profileError ||
     !profile ||
     profile.is_active !== true ||
-    !["supreme", "admin", "staff"].includes(profile.role)
+    (profile.role !== "ruler" || profile.public_id !== "supreme")
   ) {
     return redirectWithCookies("/unauthorized");
   }
 
   // The Supreme identity is not a general workforce/admin login. Even an
   // existing Supreme session must never enter the browser-based /admin area.
-  if (isAdminPath && profile.role === "supreme") {
+  if (isAdminPath && profile.role === "ruler" && profile.public_id === "supreme") {
     return redirectWithCookies("/unauthorized");
   }
 
   if (isSupremePath) {
-    if (profile.role !== "supreme") return redirectWithCookies("/unauthorized");
+    if (profile.role !== "ruler" || profile.public_id !== "supreme") return redirectWithCookies("/unauthorized");
 
     // Fail closed until the complete Google Android Key Attestation verifier,
     // revocation checks, replay protection and server-side app proof are wired

@@ -16,8 +16,8 @@ This inventory records features that already exist in the ecosystem so Supreme c
 |---|---|---|
 | **Neweix** | Storefront/catalog, cart/checkout, orders/payments, Pathao delivery, inventory/warehouses, customer account, staff/workforce, search/reviews, transactional SMS, social publishing | Source is preserved in `neweix24/neweix`; Supreme-specific dashboard/API source was imported as a reference snapshot. Service execution adapter is not enabled. |
 | **Eixon** | EixPay wallet/ledger, transfer requests, referral rewards, integrity chain/watchdog, EixVerse missions/campaigns, Neweix+ membership UI/status | Extracted to `neweix24/eixon`; source extraction is not yet a standalone deployable service. Supreme adapter is not enabled. |
-| **Neweix Account** | Email/password signup, username-or-email login, TOTP MFA, password recovery, live session validation/revocation, central account/service-access foundation | Uses the existing Neweix Supabase project. Supreme validates the central identity for its registry API; full OAuth/OIDC SSO integration is not yet ready. |
-| **Supreme** | Service registry, control-request approval queue, audit foundation, Android attestation verifier source/tests, imported Supreme dashboard panels | Registry and approval API are deployed. Provider execution adapters and a standalone dashboard runtime remain unfinished. |
+| **Neweix Account** | Email/password signup, username-or-email login, TOTP MFA, password recovery, live session validation/revocation for customers | Customer-only identity service in the existing Neweix Supabase project. It is not used to authenticate Supreme. |
+| **Supreme** | One ruler principal (`public_id = supreme`), app-only login/security, service registry, control-request approval queue, audit foundation, Android attestation verifier source/tests, imported dashboard panels | Reuses the existing Supabase Auth project and the single active `supreme.identities` principal. Customer Account rows are not required. Native app-only login/session binding and provider execution adapters remain unfinished. |
 
 ## Feature ownership and source paths
 

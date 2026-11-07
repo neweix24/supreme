@@ -25,7 +25,7 @@ insert into supreme.services (
   'none', null, 5, array[200], 1
 ),
 (
-  'neweix-account', 'Neweix Account', 'Central first-party identity and authentication platform. Uses the existing Neweix Supabase Auth identity; service-specific authorization remains enforced by each service.',
+  'neweix-account', 'Neweix Account', 'Customer-only account and authentication service. Supreme and future employee identities are provisioned and authorized independently.',
   'github', 'neweix24/account', 'main', 'https://github.com/neweix24/account',
   'Neweix Account', 'restricted', 'critical', 'planned',
   'none', null, 5, array[200], 1
@@ -55,19 +55,3 @@ insert into supreme.service_environments (
   ('supreme', 'development', 'development', null, false)
 on conflict (service_id, environment_id) do nothing;
 
-insert into supreme.audit_events (
-  actor_user_id, action, outcome, policy_version, details
-)
-select
-  s.user_id,
-  'registry.bootstrap',
-  'success',
-  'v1',
-  jsonb_build_object(
-    'services_registered', array['neweix', 'neweix-shop', 'eixon', 'neweix-account', 'neweix-message', 'supreme'],
-    'capabilities_enabled', false,
-    'note', 'Initial registry metadata only; no provider operation adapters are enabled.'
-  )
-from public.staff_profiles s
-where s.role = 'supreme' and s.is_active = true and s.public_id = 'supreme'
-limit 1;
