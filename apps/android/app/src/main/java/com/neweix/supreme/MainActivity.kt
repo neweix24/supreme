@@ -7,6 +7,9 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import android.view.Window
+import android.os.Build
+import android.view.WindowManager.LayoutParams
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -15,6 +18,9 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.FragmentActivity
 import com.neweix.supreme.auth.SupremeAuthClient
 import com.neweix.supreme.auth.SupremeAuthException
@@ -46,17 +52,39 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        window.statusBarColor = Color.rgb(7, 7, 7)
-        window.navigationBarColor = Color.rgb(7, 7, 7)
+        configureEdgeToEdge(window)
         sessionStore = SupremeSessionStore(this)
         buildInterface()
         configureAppLock()
         authenticateToUnlock()
     }
 
+    private fun configureEdgeToEdge(targetWindow: Window) {
+        WindowCompat.setDecorFitsSystemWindows(targetWindow, false)
+        targetWindow.statusBarColor = Color.TRANSPARENT
+        targetWindow.navigationBarColor = Color.rgb(7, 7, 7)
+        WindowCompat.getInsetsController(targetWindow, targetWindow.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            targetWindow.attributes = targetWindow.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+    }
+
     private fun buildInterface() {
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.rgb(7, 7, 7))
+        }
+        // Draw the app surface behind the status bar/camera cutout while
+        // keeping interactive content clear of the bottom and side system bars.
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(bars.left, 0, bars.right, bars.bottom)
+            insets
         }
 
         val scroll = ScrollView(this)
