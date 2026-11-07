@@ -6,8 +6,8 @@
         </shape>
     </item>
     <item
-        android:drawable="@drawable/supreme_icon"
-        android:width="192dp"
-        android:height="192dp"
+        android:drawable="@drawable/supreme_emblem"
+        android:width="136dp"
+        android:height="136dp"
         android:gravity="center" />
 </layer-list>
