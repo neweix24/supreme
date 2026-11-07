@@ -122,10 +122,13 @@ package ID is `com.neweix.supreme`; the package ID alone is not a trusted signer
 
 ## Download an installable debug APK
 
-Every successful run of the **Supreme Android app build** workflow uploads
-`supreme-android-debug-apk` as a GitHub Actions artifact. Open the workflow
-run for the target commit, download the artifact ZIP, extract it, and install
-`app-debug.apk` on an Android device (Android 8.0 / API 26 or newer).
+Every successful run of the **Build Supreme Android preview APK** workflow
+(`.github/workflows/supreme-android-preview.yml`) uploads an artifact named
+`supreme-android-native-preview-<run-number>`. Open the workflow run for the
+target commit, download the artifact ZIP, extract it, and install
+`app-debug.apk` on an Android device (Android 8.0 / API 26 or newer). The
+workflow is triggered by changes under `apps/android/` on `main`, pull
+requests targeting `main`, or manual workflow dispatch.
 
 This is a debug-signed preview build. It is not the production-signed release
 APK required by the hardware-attestation policy. A release APK must be signed
