@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://supreme.invalid/schemas/service-registry-v1.schema.json",
+  "$id": "urn:supreme:schema:service-registry:v1",
   "title": "Supreme Service Registry",
   "description": "Versioned, non-secret catalogue of services Supreme is authorized to observe or operate.",
   "type": "object",
