@@ -11,7 +11,7 @@ Supreme is a control plane, not a replacement for the business applications it m
 1. Supreme-owned application, backend, schema, policies, and release workflows live in this repository.
 2. Neweix-owned storefront, checkout, orders, delivery, workforce, and commerce logic remain in `neweix24/neweix`.
 3. Eixon-owned wallet, ledger, transfer, rewards, and campaign logic remain in `neweix24/eixon`.
-4. Account identity remains in the central Neweix Account service and its existing Supabase Auth project until an explicitly approved identity migration exists.
+4. Supreme identity is fully independent: one `supreme` principal, its own credentials and authorization mapping. It must not depend on Neweix Account customer records or Neweix Employees.
 5. Supreme never copies service business logic or service-owned production tables into its own database.
 6. Production secrets are stored only in backend secret storage. The Android binary, repository, and client configuration contain references, never secret values.
 7. Every write operation is service-scoped, least-privilege, approval-gated according to risk, idempotent where appropriate, and audited.
@@ -62,7 +62,7 @@ Supreme is a control plane, not a replacement for the business applications it m
 
 ### G. Access, identity, and device security
 - Preserve exactly one Supreme ruler identity: `supreme`.
-- Validate central Neweix Account identity and server-side sessions.
+- Validate the independent Supreme principal and server-side sessions; do not query or require Neweix Account or employee identity records.
 - Enforce MFA/AAL2 on privileged server operations.
 - Use Android biometric/device credential only as local app unlock, never as server authorization.
 - Add device registration, attestation verification, session revocation, inactivity lock, and lost-device recovery.
