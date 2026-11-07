@@ -1,6 +1,6 @@
 # Supreme Android app
 
-The Supreme Android app is the only supported sign-in client. Supreme authentication is independent of Neweix Account customers and the future Neweix Employees system. The current WebView/private-route shell is legacy and is not compliant with the native-app-only login requirement; it must not be treated as a completed login implementation.
+The Supreme Android app is the only supported sign-in client. Supreme has one separate principal (`public_id = supreme`) in the existing shared Supabase Auth project. It reuses the existing `staff_profiles` row and does not require a Neweix Account customer record. Future Neweix Employees remain a separate identity/workforce domain. The current WebView/private-route shell is legacy and is not compliant with the native-app-only login requirement; it must not be treated as a completed login implementation.
 
 ## Build requirements
 
@@ -48,9 +48,9 @@ Devices that cannot produce a qualifying attestation chain must not be silently 
 
 ## Private Supreme-only navigation and temporary authentication lock
 
-- Supreme login must be implemented as a native Android screen and authenticated by a Supreme-owned backend flow.
+- Supreme login must be implemented as a native Android screen and authenticated by the existing shared Supabase Auth identity plus server-verified Supreme app attestation.
 - Browser-based Supreme sign-in and dashboard access must be denied server-side.
-- Supreme authorization must consult only `supreme.identities`, not `neweix_accounts` or `staff_profiles`.
+- Supreme authorization must consult the existing active `staff_profiles` row with `role = supreme` and `public_id = supreme`; it must not require `neweix_accounts`.
 - **The current WebView/private-route app is not a compliant login release.** Keep privileged operations fail-closed until native authentication, MFA, hardware attestation, device-bound sessions, and browser-denial tests pass.
 - The diamond emblem is the temporary app mark and can be replaced later without changing the application ID.
 
