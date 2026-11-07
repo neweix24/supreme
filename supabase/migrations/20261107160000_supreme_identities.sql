@@ -21,7 +21,7 @@ create table if not exists supreme.identities (
 
 -- There can be only one Supreme identity, active or inactive.
 create unique index if not exists supreme_identities_single_principal_uidx
-  on supreme.identities ((public_id));
+  on supreme.identities (public_id);
 
 comment on table supreme.identities is
   'The single Supreme ruler identity. Separate from Neweix Account customers and Neweix Employees.';
@@ -34,41 +34,50 @@ alter table supreme.identities enable row level security;
 revoke all on table supreme.identities from public, anon, authenticated;
 grant select, insert, update, delete on table supreme.identities to service_role;
 
--- One-time identity handoff: preserve the existing Auth UUID while moving
--- Supreme authorization ownership out of public.staff_profiles. This migration
--- deliberately does not delete or mutate the legacy source row; cleanup is a
--- separate gated step after all legacy dependencies are replaced.
+-- Idempotent handoff. If production has already moved Supreme into this table,
+-- verify and retain that principal. Otherwise migrate the single legacy row.
 do $$
 declare
+  identity_count integer;
+  identity_user_id uuid;
   source_count integer;
   source_user_id uuid;
 begin
-  if to_regclass('public.staff_profiles') is null then
-    raise exception 'SUPREME_IDENTITY_SOURCE_NOT_FOUND';
-  end if;
-
   select count(*)::integer, (array_agg(user_id))[1]
-    into source_count, source_user_id
-  from public.staff_profiles
-  where role = 'supreme'
-    and public_id = 'supreme'
+    into identity_count, identity_user_id
+  from supreme.identities
+  where public_id = 'supreme'
+    and role = 'ruler'
     and is_active = true;
 
-  if source_count <> 1 or source_user_id is null then
-    raise exception 'EXPECTED_EXACTLY_ONE_ACTIVE_SUPREME_SOURCE_IDENTITY';
-  end if;
+  if identity_count = 1 and identity_user_id is not null then
+    -- The principal has already been migrated; keep it unchanged.
+    null;
+  elsif identity_count <> 0 then
+    raise exception 'SUPREME_IDENTITY_STATE_INVALID';
+  else
+    if to_regclass('public.staff_profiles') is null then
+      raise exception 'SUPREME_IDENTITY_SOURCE_NOT_FOUND';
+    end if;
 
-  insert into supreme.identities (user_id, public_id, role, is_active)
-  values (source_user_id, 'supreme', 'ruler', true)
-  on conflict (public_id) do update
-    set user_id = excluded.user_id,
-        role = excluded.role,
-        is_active = excluded.is_active,
-        updated_at = now();
+    select count(*)::integer, (array_agg(user_id))[1]
+      into source_count, source_user_id
+    from public.staff_profiles
+    where role = 'supreme'
+      and public_id = 'supreme'
+      and is_active = true;
+
+    if source_count <> 1 or source_user_id is null then
+      raise exception 'EXPECTED_EXACTLY_ONE_ACTIVE_SUPREME_SOURCE_IDENTITY';
+    end if;
+
+    insert into supreme.identities (user_id, public_id, role, is_active)
+    values (source_user_id, 'supreme', 'ruler', true);
+  end if;
 end;
 $$;
 
--- Record the initial registry bootstrap under the newly migrated principal.
+-- Record the initial registry bootstrap under the migrated principal.
 insert into supreme.audit_events (
   actor_user_id, action, outcome, policy_version, details
 )
