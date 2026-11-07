@@ -64,7 +64,7 @@ The already implemented features in Neweix, Eixon, Neweix Account and Supreme ha
 - The app's native password/TOTP client is implemented, but its verified attestation response is not yet bound to a persisted app device and Supabase `session_id`.
 - The Supabase Custom Access Token Hook is not configured in the live Auth project. Registry access stays fail-closed until that hook and its device-session issuer are live.
 - The production APK signing keystore and server-side SHA-256 signing certificate allowlist are not configured. A debug APK must never be accepted as a production app.
-- The current native attestation client still calls the existing Neweix-hosted challenge/verification proxy. Moving this proxy into a Supreme-owned runtime remains outstanding; no other repository was modified in this work.
+- Native challenge issuance and device-session registration run through the Supreme-owned `supreme-session-api` Supabase Edge Function. The Android app no longer depends on a Neweix website API route or Neweix Account identity.
 - The standalone Supreme web dashboard and its GitHub, Cloudflare, Supabase, and service-specific operation adapters are not complete. Service registrations are inventory only until adapters and approval/execution tests exist.
 ## Standalone control-plane completion plan
 
