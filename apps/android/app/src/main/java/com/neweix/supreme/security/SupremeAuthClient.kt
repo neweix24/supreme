@@ -37,7 +37,12 @@ internal class SupremeAuthClient {
     )
 
     sealed interface PasswordResult {
-        data class MfaRequired(val accessToken: String, val factors: List<TotpFactor>) : PasswordResult
+        data class MfaRequired(
+            val accessToken: String,
+            val refreshToken: String,
+            val userId: String,
+            val factors: List<TotpFactor>,
+        ) : PasswordResult
         data class Complete(val session: AuthSession) : PasswordResult
     }
 
@@ -67,7 +72,7 @@ internal class SupremeAuthClient {
         if (factors.isEmpty()) {
             throw AuthException("No verified Supreme TOTP factor is enrolled. Access remains locked.")
         }
-        return PasswordResult.MfaRequired(accessToken, factors)
+        return PasswordResult.MfaRequired(accessToken, refreshToken, userId, factors)
     }
 
     fun createTotpChallenge(accessToken: String, factorId: String): MfaChallenge {
