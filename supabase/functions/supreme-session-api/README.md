@@ -1,29 +1,35 @@
 # Supreme session API
 
-Deploy as the Supabase Edge Function `supreme-session-api`.
+Deploy as the Supabase Edge Function `supreme-session-api` with JWT verification enabled.
 
-## Required server secrets
+## Required server configuration
 
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY` (or `SUPABASE_PUBLISHABLE_KEY`)
-- `SUPABASE_DB_URL` (server-side database connection string; never ship it in the Android app)
+- Supabase project defaults: `SUPABASE_URL`, `SUPABASE_ANON_KEY` or `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+- `SUPABASE_DB_URL`: server-side database connection string if it is not already present in the Edge Function runtime.
+- `SUPREME_ANDROID_SIGNING_CERT_SHA256`: the permanent production APK signer SHA-256 digest. Never set this to the debug signer.
+- `SUPREME_ANDROID_MIN_VERSION_CODE`: minimum approved production app version code.
 
-The function uses the Auth `/user` endpoint to validate the bearer token before decoding its `session_id`. It then independently checks the active Supreme principal and the device-session records in the private `supreme` schema.
+Never place service-role credentials, database URLs or signing configuration in the APK.
 
 ## Endpoints
 
-- `GET /functions/v1/supreme-session-api`: returns the current Auth session's device-bound status. It never treats a valid Supabase user session as sufficient Supreme app authorization.
-- `DELETE /functions/v1/supreme-session-api`: revokes only the current Auth session's Supreme device-session record and appends an audit event. It does not revoke another device or the underlying Supabase Auth session.
+All endpoints require a valid Supabase bearer access token. Challenge creation and registration additionally require the one active Supreme identity, AAL2 and a recent authentication time.
 
-All responses are private/no-store. The function does not accept a user ID or Auth session ID from the request body.
+- `POST /functions/v1/supreme-session-api/challenge`: creates a five-minute server nonce. Its rate-limit binding is derived from the authenticated user and exact Supabase Auth session; client-provided IP headers are not trusted.
+- `POST /functions/v1/supreme-session-api/issue`: calls the deployed Android verifier, then registers the verifier-returned hardware key against the exact AAL2 Auth session using the service-role-only registration RPC.
+- `GET /functions/v1/supreme-session-api`: returns the current Auth session's device-bound status. It does not treat a valid Supabase user session as sufficient Supreme authorization.
+- `DELETE /functions/v1/supreme-session-api`: revokes only the current Auth session's Supreme device-session record and appends an audit event.
 
-## Required deployment order
+All responses are private/no-store. The API does not accept a user ID or Auth session ID from the request body.
 
-1. Apply the Supreme identity migration.
-2. Apply `20261107200000_supreme_device_bound_auth_sessions.sql`.
-3. Configure the Custom Access Token Hook as documented in `docs/security/supreme-device-session-hook.md`.
-4. Deploy this function with server-only secrets.
+## Required deployment and activation order
 
-## Explicitly not complete
+1. Apply the Supreme identity, device-bound session, and atomic registration migrations.
+2. Configure the Supabase Custom Access Token Hook exactly as documented in `docs/security/supreme-device-session-hook.md`.
+3. Set the production signer digest and minimum version secrets on both the attestation verifier and session API functions.
+4. Deploy `supreme-attestation-verify` and `supreme-session-api`.
+5. Test a production-signed APK on a physical Android device, including AAL1, wrong account, replay, expired challenge, revoked device, wrong signer, and verifier outage cases.
 
-This API does not create device registrations or app sessions. The native login + AAL2 flow and a server-verified attestation receipt bound to the authenticated Supabase session must be implemented before session issuance is enabled. Do not insert session rows manually for production users or treat the preview APK as trusted.
+The native app calls only this Supreme-owned Supabase Edge Function. It does not depend on a Neweix website API route or Neweix Account login.
+
+Do not insert device/session rows manually for production users or treat a debug APK as trusted.
