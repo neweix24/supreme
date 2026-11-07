@@ -1,292 +1,577 @@
 package com.neweix.supreme
 
-import android.annotation.SuppressLint
-import android.content.Intent
+import android.app.AlertDialog
 import android.graphics.Color
-import android.net.Uri
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
-import android.webkit.CookieManager
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.view.WindowManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import kotlin.math.max
+import com.neweix.supreme.auth.SupremeAuthClient
+import com.neweix.supreme.auth.SupremeAuthException
+import com.neweix.supreme.auth.SupremeSessionStore
+import com.neweix.supreme.security.SupremeAttestationClient
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class MainActivity : FragmentActivity() {
-    private var webView: WebView? = null
-    private var progressBar: ProgressBar? = null
-    private var errorPanel: LinearLayout? = null
-    private var mainFrameLoadFailed = false
-    private var backInvokedCallback: android.window.OnBackInvokedCallback? = null
+    private val background: ExecutorService = Executors.newSingleThreadExecutor()
+    private lateinit var sessionStore: SupremeSessionStore
+    private lateinit var screen: LinearLayout
+    private lateinit var statusText: TextView
+    private lateinit var emailInput: EditText
+    private lateinit var passwordInput: EditText
+    private lateinit var codeInput: EditText
+    private lateinit var primaryButton: Button
+    private lateinit var lockOverlay: LinearLayout
     private var biometricPrompt: BiometricPrompt? = null
-    private var lockOverlay: View? = null
-    private var lockMessage: TextView? = null
-    private var isUnlocked = false
     private var authInProgress = false
-    private var hasLoadedPrivatePage = false
+    private var isUnlocked = false
+    private var isBusy = false
+    private var resumeSessionCheck = false
+    private var currentAccessToken: String? = null
+    private var pendingFactorId: String? = null
+    private var pendingChallengeId: String? = null
+    private var pendingPasswordSession: SupremeAuthClient.AuthSession? = null
 
-    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Prevent sensitive dashboard content from appearing in screenshots,
-        // screen recordings, and Android's recent-apps snapshot.
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
-
-        val browser = WebView(this).apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.databaseEnabled = false // WebSQL is not used by the Supreme workspace
-            settings.allowFileAccess = false
-            settings.allowContentAccess = false
-            settings.javaScriptCanOpenWindowsAutomatically = false
-            settings.setSupportMultipleWindows(false)
-            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            settings.safeBrowsingEnabled = true
-            // Keep normal HTTP caching semantics: the protected dashboard sends
-            // private/no-store headers, while versioned static assets may cache.
-            // This forces every top-level navigation/reopen to revalidate remotely.
-            settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
-
-            CookieManager.getInstance().setAcceptCookie(true)
-            // Supreme authentication is same-origin; embedded cross-site content needs no cookies.
-            CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
-
-            webChromeClient = object : WebChromeClient() {
-                override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                    progressBar?.progress = newProgress
-                    progressBar?.visibility = if (newProgress >= 100) View.GONE else View.VISIBLE
-                }
-            }
-
-            webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(
-                    view: WebView,
-                    request: WebResourceRequest
-                ): Boolean {
-                    val uri = request.url
-                    val host = uri.host?.lowercase()
-                    if (
-                        uri.scheme == "https" &&
-                        (host == "neweix.com" || host == "www.neweix.com") &&
-                        (uri.port == -1 || uri.port == 443) &&
-                        uri.userInfo == null
-                    ) {
-                        val path = uri.encodedPath.orEmpty()
-                        val privatePrefix = BuildConfig.SUPREME_PRIVATE_PATH
-                        val allowedSupremeRoutes = listOf(
-                            "/auth/supreme-login",
-                            "/auth/mfa",
-                            "/auth/mfa/setup",
-                            "/auth/logout",
-                        )
-                        val isPrivateWorkspaceRoute =
-                            path == privatePrefix || path.startsWith("$privatePrefix/") ||
-                            path == "/supreme" || path.startsWith("/supreme/")
-                        val isSupremeAuthRoute = allowedSupremeRoutes.any { route ->
-                            path == route || path.startsWith("$route/")
-                        }
-                        if (isPrivateWorkspaceRoute || isSupremeAuthRoute) return false
-
-                        // Never let this private app fall back to the customer
-                        // storefront or shared staff sign-in. Return to its entry.
-                        view.loadUrl(BuildConfig.SITE_ORIGIN + privatePrefix)
-                        return true
-                    }
-
-                    // External web navigation is blocked; only device actions are handed off.
-                    return openExternalUri(uri)
-                }
-
-                override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                    mainFrameLoadFailed = false
-                    errorPanel?.visibility = View.GONE
-                    progressBar?.visibility = View.VISIBLE
-                    progressBar?.progress = 0
-                }
-
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    progressBar?.visibility = View.GONE
-                    if (mainFrameLoadFailed) showLoadError()
-                }
-
-                override fun onReceivedError(
-                    view: WebView,
-                    request: WebResourceRequest,
-                    error: WebResourceError
-                ) {
-                    if (request.isForMainFrame) {
-                        mainFrameLoadFailed = true
-                        showLoadError()
-                    }
-                }
-
-                override fun onReceivedHttpError(
-                    view: WebView,
-                    request: WebResourceRequest,
-                    errorResponse: android.webkit.WebResourceResponse
-                ) {
-                    if (request.isForMainFrame && errorResponse.statusCode >= 500) {
-                        mainFrameLoadFailed = true
-                        showLoadError()
-                    }
-                }
-
-                override fun onReceivedSslError(
-                    view: WebView,
-                    handler: android.webkit.SslErrorHandler,
-                    error: android.net.http.SslError
-                ) {
-                    // Never bypass certificate validation.
-                    handler.cancel()
-                    mainFrameLoadFailed = true
-                    showLoadError()
-                }
-            }
-        }
-
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
-        if (android.os.Build.VERSION.SDK_INT >= 29) {
-            window.isNavigationBarContrastEnforced = false
-        }
-
-        val root = FrameLayout(this).apply {
-            setBackgroundColor(Color.rgb(11, 18, 32))
-        }
-        val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            isIndeterminate = false
-            max = 100
-            visibility = View.GONE
-        }
-        root.addView(
-            browser,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        )
-        root.addView(
-            bar,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(3),
-                Gravity.TOP
-            )
-        )
-
-        val error = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(28), dp(28), dp(28), dp(28))
-            visibility = View.GONE
-            addView(TextView(this@MainActivity).apply {
-                text = "সংযোগ পাওয়া যাচ্ছে না। ইন্টারনেট পরীক্ষা করে আবার চেষ্টা করুন।"
-                textSize = 16f
-                gravity = Gravity.CENTER
-            })
-            addView(Button(this@MainActivity).apply {
-                text = "আবার চেষ্টা করুন"
-                setOnClickListener {
-                    visibility = View.GONE
-                    browser.reload()
-                }
-            })
-        }
-        root.addView(
-            error,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        )
-
-        val privacyShield = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(32), dp(32), dp(32), dp(32))
-            setBackgroundColor(Color.rgb(11, 18, 32))
-            addView(TextView(this@MainActivity).apply {
-                text = "SUPREME"
-                textSize = 28f
-                setTextColor(Color.rgb(212, 175, 55))
-                gravity = Gravity.CENTER
-            })
-            addView(TextView(this@MainActivity).apply {
-                text = "Authenticate to unlock"
-                textSize = 15f
-                setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
-            })
-            addView(TextView(this@MainActivity).apply {
-                textSize = 13f
-                setTextColor(Color.rgb(235, 190, 125))
-                gravity = Gravity.CENTER
-                setPadding(0, dp(12), 0, dp(4))
-            }.also { lockMessage = it })
-            addView(Button(this@MainActivity).apply {
-                text = "Try again"
-                setOnClickListener { authenticateToUnlock() }
-            })
-        }
-        root.addView(
-            privacyShield,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        )
-        lockOverlay = privacyShield
-
-        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val safe = insets.getInsets(
-                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
-            )
-            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            view.setPadding(safe.left, safe.top, safe.right, max(safe.bottom, ime.bottom))
-            insets
-        }
-
-        webView = browser
-        progressBar = bar
-        errorPanel = error
-        setContentView(root)
-        ViewCompat.requestApplyInsets(root)
-
-        // Android 13+ predictive/system back must use the platform dispatcher.
-        if (android.os.Build.VERSION.SDK_INT >= 33) {
-            val callback = android.window.OnBackInvokedCallback { handleBack() }
-            backInvokedCallback = callback
-            onBackInvokedDispatcher.registerOnBackInvokedCallback(
-                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,
-                callback
-            )
-        }
-
-        val privatePath = BuildConfig.SUPREME_PRIVATE_PATH
-        if (!Regex("^/control-[A-Fa-f0-9]{48}$").matches(privatePath)) {
-            showMessage("Supreme app is not configured. Please install the official build.")
-            return
-        }
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        window.statusBarColor = Color.rgb(7, 7, 7)
+        window.navigationBarColor = Color.rgb(7, 7, 7)
+        sessionStore = SupremeSessionStore(this)
+        buildInterface()
         configureAppLock()
         authenticateToUnlock()
     }
 
+    private fun buildInterface() {
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(Color.rgb(7, 7, 7))
+        }
+
+        val scroll = ScrollView(this)
+        screen = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(26), dp(50), dp(26), dp(36))
+        }
+
+        val brand = TextView(this).apply {
+            text = "SUPREME"
+            textSize = 30f
+            letterSpacing = 0.24f
+            setTextColor(Color.rgb(229, 197, 120))
+            gravity = Gravity.CENTER
+        }
+        screen.addView(brand, matchWrap())
+
+        val subtitle = TextView(this).apply {
+            text = "PRIVATE CONTROL PLATFORM"
+            textSize = 10f
+            letterSpacing = 0.25f
+            setTextColor(Color.rgb(151, 133, 96))
+            gravity = Gravity.CENTER
+            setPadding(0, dp(8), 0, dp(30))
+        }
+        screen.addView(subtitle, matchWrap())
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(24), dp(20), dp(24))
+            setBackgroundColor(Color.rgb(20, 20, 20))
+        }
+        screen.addView(card, matchWrap())
+
+        card.addView(TextView(this).apply {
+            text = "Supreme Account"
+            textSize = 21f
+            setTextColor(Color.WHITE)
+        }, matchWrap())
+
+        card.addView(TextView(this).apply {
+            text = "Sign in with the single, dedicated Supreme identity. No Neweix Account or social login is used."
+            textSize = 13f
+            setTextColor(Color.rgb(170, 170, 170))
+            setPadding(0, dp(8), 0, dp(22))
+        }, matchWrap())
+
+        card.addView(label("Supreme account email"))
+        emailInput = input("Email address", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS)
+        card.addView(emailInput, fieldParams())
+
+        card.addView(label("Password"))
+        passwordInput = input("Password", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
+        card.addView(passwordInput, fieldParams())
+
+        card.addView(label("Authenticator code").apply { visibility = View.GONE })
+        codeInput = input("6-digit TOTP code", InputType.TYPE_CLASS_NUMBER)
+        codeInput.visibility = View.GONE
+        card.addView(codeInput, fieldParams())
+
+        primaryButton = Button(this).apply {
+            text = "SIGN IN"
+            setTextColor(Color.rgb(18, 16, 10))
+            setBackgroundColor(Color.rgb(212, 175, 55))
+            setOnClickListener {
+                if (pendingFactorId == null) beginPasswordSignIn() else verifyMfaCode()
+            }
+        }
+        val buttonParams = matchWrap()
+        buttonParams.topMargin = dp(18)
+        card.addView(primaryButton, buttonParams)
+
+        statusText = TextView(this).apply {
+            text = "Password and TOTP MFA are required. Device attestation is checked separately."
+            textSize = 12f
+            setTextColor(Color.rgb(174, 159, 124))
+            setPadding(0, dp(20), 0, dp(4))
+            gravity = Gravity.CENTER
+        }
+        screen.addView(statusText, matchWrap())
+
+        screen.addView(TextView(this).apply {
+            text = "ACCESS IS VERIFIED SERVER-SIDE · UNAUTHORIZED DEVICES ARE DENIED"
+            textSize = 9f
+            letterSpacing = 0.06f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(100, 100, 100))
+            setPadding(0, dp(34), 0, 0)
+        }, matchWrap())
+
+        scroll.addView(screen)
+        root.addView(scroll, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT,
+        ))
+
+        lockOverlay = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(30), dp(30), dp(30), dp(30))
+            setBackgroundColor(Color.rgb(7, 7, 7))
+            addView(TextView(this@MainActivity).apply {
+                text = "SUPREME"
+                textSize = 28f
+                letterSpacing = 0.2f
+                gravity = Gravity.CENTER
+                setTextColor(Color.rgb(229, 197, 120))
+            }, matchWrap())
+            addView(TextView(this@MainActivity).apply {
+                text = "Unlock this device to continue"
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setTextColor(Color.LTGRAY)
+                setPadding(0, dp(12), 0, dp(20))
+            }, matchWrap())
+            addView(Button(this@MainActivity).apply {
+                text = "UNLOCK SUPREME"
+                setOnClickListener { authenticateToUnlock() }
+            }, matchWrap())
+        }
+        root.addView(lockOverlay, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT,
+        ))
+        lockOverlay.visibility = View.VISIBLE
+        setContentView(root)
+    }
+
+    private fun beginPasswordSignIn() {
+        val email = emailInput.text.toString().trim()
+        val password = passwordInput.text.toString()
+        if (isBusy) return
+        setBusy(true, "Authenticating Supreme Account…")
+        background.execute {
+            try {
+                val session = SupremeAuthClient.signIn(email, password)
+                val factors = SupremeAuthClient.verifiedTotpFactors(session.accessToken)
+                if (factors.isEmpty()) {
+                    runOnUiThread {
+                        passwordInput.text.clear()
+                        setBusy(false, "TOTP MFA is not enrolled on the Supreme Account. Access remains locked.")
+                    }
+                    return@execute
+                }
+                val factor = factors.first()
+                val challenge = SupremeAuthClient.createTotpChallenge(session.accessToken, factor.id)
+                runOnUiThread {
+                    pendingPasswordSession = session
+                    pendingFactorId = factor.id
+                    pendingChallengeId = challenge
+                    passwordInput.text.clear()
+                    emailInput.isEnabled = false
+                    passwordInput.visibility = View.GONE
+                    codeInput.visibility = View.VISIBLE
+                    primaryButton.text = "VERIFY MFA"
+                    statusText.text = "Enter the current code from your authenticator app."
+                    setBusy(false, null)
+                    codeInput.requestFocus()
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    passwordInput.text.clear()
+                    setBusy(false, safeMessage(error))
+                }
+            }
+        }
+    }
+
+    private fun verifyMfaCode() {
+        val initial = pendingPasswordSession ?: return
+        val factorId = pendingFactorId ?: return
+        val challengeId = pendingChallengeId ?: return
+        val code = codeInput.text.toString().trim()
+        if (isBusy) return
+
+        setBusy(true, "Verifying multi-factor authentication…")
+        background.execute {
+            try {
+                val session = SupremeAuthClient.verifyTotp(
+                    initial.accessToken,
+                    factorId,
+                    challengeId,
+                    code,
+                )
+                if (session.userId != initial.userId || session.assuranceLevel != "aal2") {
+                    throw IllegalStateException("Supreme AAL2 verification was not confirmed.")
+                }
+                val now = System.currentTimeMillis() / 1000L
+                if (now - session.authTime > 300L || session.authTime > now + 30L) {
+                    throw IllegalStateException("Supreme MFA verification is no longer fresh. Sign in again.")
+                }
+
+                val device = SupremeAttestationClient.verifyDevice()
+                if (!device.proofOfPossessionVerified ||
+                    (device.securityLevel != "TRUSTED_ENVIRONMENT" && device.securityLevel != "STRONG_BOX")
+                ) {
+                    throw IllegalStateException("This device did not pass Supreme hardware security verification.")
+                }
+
+                // The registry API is the server-side authority for whether
+                // this attested device is bound to the current AAL2 Auth session.
+                val services = SupremeAuthClient.listServices(session.accessToken)
+                val requests = SupremeAuthClient.listPendingRequests(session.accessToken)
+                sessionStore.saveRefreshToken(session.refreshToken)
+
+                runOnUiThread {
+                    currentAccessToken = session.accessToken
+                    pendingPasswordSession = null
+                    pendingFactorId = null
+                    pendingChallengeId = null
+                    codeInput.text.clear()
+                    renderDashboard(services, requests)
+                    setBusy(false, "Supreme device and session checks passed.")
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    sessionStore.clear()
+                    pendingPasswordSession = null
+                    pendingFactorId = null
+                    pendingChallengeId = null
+                    codeInput.text.clear()
+                    passwordInput.visibility = View.VISIBLE
+                    emailInput.isEnabled = true
+                    codeInput.visibility = View.GONE
+                    primaryButton.text = "SIGN IN"
+                    setBusy(false, safeMessage(error))
+                }
+            }
+        }
+    }
+
+    private fun renderDashboard(
+        services: List<SupremeAuthClient.Service>,
+        requests: List<SupremeAuthClient.ControlRequest>,
+    ) {
+        screen.removeAllViews()
+        screen.addView(TextView(this).apply {
+            text = "SUPREME"
+            textSize = 28f
+            letterSpacing = 0.24f
+            setTextColor(Color.rgb(229, 197, 120))
+            gravity = Gravity.CENTER
+        }, matchWrap())
+        screen.addView(TextView(this).apply {
+            text = "CONTROL CENTRE"
+            textSize = 11f
+            letterSpacing = 0.2f
+            setTextColor(Color.rgb(170, 150, 108))
+            gravity = Gravity.CENTER
+            setPadding(0, dp(8), 0, dp(24))
+        }, matchWrap())
+        statusText = TextView(this).apply {
+            text = "Supreme session is active."
+            textSize = 12f
+            setTextColor(Color.rgb(174, 159, 124))
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(18))
+        }
+        screen.addView(statusText, matchWrap())
+        screen.addView(TextView(this).apply {
+            text = "PENDING APPROVALS · ${requests.size}"
+            textSize = 12f
+            setTextColor(Color.rgb(229, 197, 120))
+            setPadding(0, dp(8), 0, dp(8))
+        }, matchWrap())
+
+        screen.addView(TextView(this).apply {
+            text = "An approval records the governance decision only. It does not deploy or execute a provider operation."
+            textSize = 11f
+            setTextColor(Color.rgb(145, 145, 145))
+            setPadding(0, 0, 0, dp(8))
+        }, matchWrap())
+
+        if (requests.isEmpty()) {
+            screen.addView(TextView(this).apply {
+                text = "No pending approvals."
+                textSize = 12f
+                setTextColor(Color.LTGRAY)
+                setPadding(0, 0, 0, dp(14))
+            }, matchWrap())
+        }
+
+        for (request in requests) {
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                setBackgroundColor(Color.rgb(24, 24, 24))
+            }
+            item.addView(TextView(this@MainActivity).apply {
+                text = request.action.replace('.', ' ').replace('_', ' ').uppercase()
+                textSize = 14f
+                setTextColor(Color.WHITE)
+            }, matchWrap())
+            item.addView(TextView(this@MainActivity).apply {
+                text = "Request ${request.id.take(8)} · ${request.requestType} · ${request.serviceId ?: "system"}"
+                textSize = 11f
+                setTextColor(Color.rgb(210, 180, 110))
+                setPadding(0, dp(6), 0, dp(4))
+            }, matchWrap())
+            item.addView(TextView(this@MainActivity).apply {
+                text = "Created: ${request.createdAt}\nExpires: ${request.expiresAt}"
+                textSize = 10f
+                setTextColor(Color.rgb(150, 150, 150))
+            }, matchWrap())
+            val actions = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.END
+            }
+            val reject = Button(this@MainActivity).apply {
+                text = "REJECT"
+                setOnClickListener { confirmRequestDecision(request, approve = false) }
+            }
+            val approve = Button(this@MainActivity).apply {
+                text = "APPROVE"
+                setOnClickListener { confirmRequestDecision(request, approve = true) }
+            }
+            actions.addView(reject, LinearLayout.LayoutParams(0, dp(44), 1f))
+            actions.addView(approve, LinearLayout.LayoutParams(0, dp(44), 1f))
+            item.addView(actions, matchWrap())
+            val params = matchWrap()
+            params.topMargin = dp(10)
+            screen.addView(item, params)
+        }
+
+        screen.addView(TextView(this).apply {
+            text = "REGISTERED SERVICES"
+            textSize = 12f
+            setTextColor(Color.LTGRAY)
+        }, matchWrap())
+
+        for (service in services) {
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                setBackgroundColor(Color.rgb(24, 24, 24))
+            }
+            item.addView(TextView(this@MainActivity).apply {
+                text = service.name
+                textSize = 16f
+                setTextColor(Color.WHITE)
+            }, matchWrap())
+            item.addView(TextView(this@MainActivity).apply {
+                text = service.id + " · " + service.status.uppercase()
+                textSize = 11f
+                setTextColor(Color.rgb(210, 180, 110))
+                setPadding(0, dp(6), 0, 0)
+            }, matchWrap())
+            if (service.description.isNotBlank()) {
+                item.addView(TextView(this@MainActivity).apply {
+                    text = service.description
+                    textSize = 12f
+                    setTextColor(Color.LTGRAY)
+                    setPadding(0, dp(6), 0, 0)
+                }, matchWrap())
+            }
+            val params = matchWrap()
+            params.topMargin = dp(10)
+            screen.addView(item, params)
+        }
+
+        val signOut = Button(this).apply {
+            text = "SIGN OUT"
+            setOnClickListener { signOut() }
+        }
+        primaryButton = signOut
+        val params = matchWrap()
+        params.topMargin = dp(24)
+        screen.addView(signOut, params)
+    }
+
+    private fun confirmRequestDecision(
+        request: SupremeAuthClient.ControlRequest,
+        approve: Boolean,
+    ) {
+        if (approve) {
+            AlertDialog.Builder(this)
+                .setTitle("Approve control request?")
+                .setMessage(
+                    "Approve ${request.action} for ${request.serviceId ?: "the Supreme system"}? " +
+                        "This records the decision only; it does not deploy or execute the operation.",
+                )
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Approve") { _, _ ->
+                    submitRequestDecision(request, "approve", null)
+                }
+                .show()
+            return
+        }
+
+        val reason = EditText(this).apply {
+            hint = "Reason (at least 8 characters)"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minLines = 2
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Reject control request?")
+            .setMessage("A reason is required and will be written to the audit log.")
+            .setView(reason)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Reject") { _, _ ->
+                val value = reason.text.toString().trim()
+                if (value.length < 8) {
+                    statusText.text = "Enter a rejection reason of at least 8 characters."
+                } else {
+                    submitRequestDecision(request, "reject", value)
+                }
+            }
+            .show()
+    }
+
+    private fun submitRequestDecision(
+        request: SupremeAuthClient.ControlRequest,
+        decision: String,
+        reason: String?,
+    ) {
+        val accessToken = currentAccessToken
+        if (accessToken.isNullOrBlank()) {
+            statusText.text = "Supreme session is unavailable. Sign in again."
+            return
+        }
+        if (isBusy) return
+        setBusy(true, "Recording Supreme approval decision…")
+        background.execute {
+            try {
+                SupremeAuthClient.decideControlRequest(
+                    accessToken = accessToken,
+                    requestId = request.id,
+                    decision = decision,
+                    reason = reason,
+                )
+                val services = SupremeAuthClient.listServices(accessToken)
+                val requests = SupremeAuthClient.listPendingRequests(accessToken)
+                runOnUiThread {
+                    renderDashboard(services, requests)
+                    setBusy(false, if (decision == "approve") {
+                        "Approval recorded. Provider execution has not been triggered."
+                    } else {
+                        "Rejection recorded in the Supreme audit log."
+                    })
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    setBusy(false, safeMessage(error))
+                }
+            }
+        }
+    }
+
+    private fun resumeStoredSession() {
+        if (resumeSessionCheck || pendingFactorId != null) return
+        val refreshToken = sessionStore.readRefreshToken() ?: return
+        resumeSessionCheck = true
+        setBusy(true, "Restoring the encrypted Supreme session…")
+        background.execute {
+            try {
+                val session = SupremeAuthClient.refresh(refreshToken)
+                if (session.assuranceLevel != "aal2") {
+                    throw IllegalStateException("Supreme session has fallen below AAL2. Sign in again.")
+                }
+                val services = SupremeAuthClient.listServices(session.accessToken)
+                val requests = SupremeAuthClient.listPendingRequests(session.accessToken)
+                sessionStore.saveRefreshToken(session.refreshToken)
+                runOnUiThread {
+                    currentAccessToken = session.accessToken
+                    resumeSessionCheck = false
+                    renderDashboard(services, requests)
+                    setBusy(false, "Supreme session restored.")
+                }
+            } catch (error: Exception) {
+                val status = (error as? SupremeAuthException)?.statusCode
+                if (status == 401 || status == 403) sessionStore.clear()
+                runOnUiThread {
+                    resumeSessionCheck = false
+                    showSignIn()
+                    setBusy(false, if (status == 401 || status == 403) {
+                        "The previous Supreme app session is no longer authorized. Sign in again."
+                    } else {
+                        safeMessage(error)
+                    })
+                }
+            }
+        }
+    }
+
+    private fun signOut() {
+        val refresh = sessionStore.readRefreshToken()
+        sessionStore.clear()
+        currentAccessToken = null
+        if (refresh == null) {
+            showSignIn()
+            return
+        }
+        setBusy(true, "Signing out…")
+        background.execute {
+            try {
+                val session = SupremeAuthClient.refresh(refresh)
+                SupremeAuthClient.signOut(session.accessToken)
+            } catch (_: Exception) {
+                // Local credential deletion remains mandatory if the server is offline.
+            }
+            runOnUiThread {
+                showSignIn()
+                setBusy(false, "Signed out.")
+            }
+        }
+    }
+
+    private fun showSignIn() {
+        currentAccessToken = null
+        buildInterface()
+        lockOverlay.visibility = View.GONE
+        isUnlocked = true
+    }
 
     private fun configureAppLock() {
         biometricPrompt = BiometricPrompt(
@@ -295,34 +580,22 @@ class MainActivity : FragmentActivity() {
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     authInProgress = false
-                    val wasUnlocked = isUnlocked
                     isUnlocked = true
-                    lockOverlay?.visibility = View.GONE
-                    if (!hasLoadedPrivatePage) {
-                        hasLoadedPrivatePage = true
-                        // Do not restore a saved WebView document. Load the current
-                        // private server route only after local device authentication.
-                        webView?.loadUrl(BuildConfig.SITE_ORIGIN + BuildConfig.SUPREME_PRIVATE_PATH)
-                    } else if (!wasUnlocked) {
-                        webView?.reload()
-                    }
+                    lockOverlay.visibility = View.GONE
+                    resumeStoredSession()
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     authInProgress = false
                     isUnlocked = false
-                    lockOverlay?.visibility = View.VISIBLE
-                    lockMessage?.text = when (errorCode) {
-                        BiometricPrompt.ERROR_USER_CANCELED,
-                        BiometricPrompt.ERROR_NEGATIVE_BUTTON -> "Authentication cancelled. Tap Try again to unlock."
-                        else -> "Device authentication failed. Check your screen lock and try again."
-                    }
+                    lockOverlay.visibility = View.VISIBLE
+                    statusText.text = "Device unlock failed. Supreme content remains hidden."
                 }
 
                 override fun onAuthenticationFailed() {
-                    // Keep the system prompt open; no app content is revealed.
+                    // Leave the system prompt active; no content is revealed.
                 }
-            }
+            },
         )
     }
 
@@ -330,97 +603,91 @@ class MainActivity : FragmentActivity() {
         if (isUnlocked || authInProgress) return
         val prompt = biometricPrompt ?: return
         authInProgress = true
-        lockOverlay?.visibility = View.VISIBLE
-        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+        lockOverlay.visibility = View.VISIBLE
+        val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle("Unlock Supreme")
-            .setSubtitle("Use your fingerprint or your phone's screen lock PIN")
-            .setDescription("Your device credential stays on your phone.")
+            .setSubtitle("Use fingerprint or the device screen-lock PIN")
+            .setDescription("This only unlocks the app on this device. Server authentication is still required.")
             .setDeviceCredentialAllowed(true)
             .build()
-        prompt.authenticate(promptInfo)
+        try {
+            prompt.authenticate(info)
+        } catch (_: Exception) {
+            authInProgress = false
+            lockOverlay.visibility = View.VISIBLE
+            statusText.text = "Set up a secure screen lock on this device before opening Supreme."
+        }
     }
+
+    private fun setBusy(busy: Boolean, message: String?) {
+        isBusy = busy
+        primaryButton.isEnabled = !busy
+        primaryButton.alpha = if (busy) 0.6f else 1f
+        if (!message.isNullOrBlank()) statusText.text = message
+    }
+
+    private fun safeMessage(error: Exception): String {
+        return when (error) {
+            is SupremeAuthException -> when (error.statusCode) {
+                400, 401 -> "Supreme sign-in could not be verified. Check the credentials and authenticator code."
+                403 -> "Supreme access is denied. The account or verified device is not authorized."
+                429 -> "Too many attempts. Wait before trying again."
+                503 -> "Supreme security verification is not configured yet. Access remains locked."
+                else -> "Supreme service error (HTTP " + error.statusCode + ")."
+            }
+            else -> error.message?.take(180) ?: "Supreme authentication failed. Access remains locked."
+        }
+    }
+
+    private fun label(value: String): TextView = TextView(this).apply {
+        text = value
+        textSize = 12f
+        setTextColor(Color.rgb(205, 190, 158))
+        setPadding(0, dp(10), 0, dp(6))
+    }
+
+    private fun input(hintText: String, type: Int) = EditText(this).apply {
+        hint = hintText
+        inputType = type
+        textSize = 14f
+        isSingleLine = true
+        setTextColor(Color.WHITE)
+        setHintTextColor(Color.rgb(120, 120, 120))
+        setPadding(dp(12), dp(12), dp(12), dp(12))
+        setBackgroundColor(Color.rgb(9, 9, 9))
+    }
+
+    private fun fieldParams(): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(50),
+        ).apply { bottomMargin = dp(6) }
+
+    private fun matchWrap(): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        )
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 
     override fun onStop() {
         super.onStop()
         if (!isChangingConfigurations) {
             isUnlocked = false
-            authInProgress = false
-            lockOverlay?.visibility = View.VISIBLE
+            lockOverlay.visibility = View.VISIBLE
         }
     }
 
     override fun onResume() {
         super.onResume()
-        if (webView != null && !isUnlocked) authenticateToUnlock()
-    }
-
-    private fun openExternalUri(uri: Uri): Boolean {
-        return try {
-            val intent = when (uri.scheme?.lowercase()) {
-                "tel" -> Intent(Intent.ACTION_DIAL, uri)
-                "mailto" -> Intent(Intent.ACTION_SENDTO, uri)
-                else -> return true
-            }
-            startActivity(intent)
-            true
-        } catch (_: Exception) {
-            true
-        }
-    }
-
-    private fun showLoadError() {
-        progressBar?.visibility = View.GONE
-        errorPanel?.visibility = View.VISIBLE
-    }
-
-    private fun showMessage(message: String) {
-        setContentView(TextView(this).apply {
-            text = message
-            textSize = 16f
-            gravity = Gravity.CENTER
-            setPadding(dp(32), dp(32), dp(32), dp(32))
-        })
-    }
-
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
-
-    private fun handleBack() {
-        val browser = webView
-        if (errorPanel?.visibility == View.VISIBLE) {
-            errorPanel?.visibility = View.GONE
-            if (browser?.canGoBack() == true) browser.goBack() else super.onBackPressed()
-        } else if (browser?.canGoBack() == true) {
-            browser.goBack()
-        } else {
-            super.onBackPressed()
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    override fun onBackPressed() {
-        // Android 12 and earlier use the legacy Activity callback.
-        if (android.os.Build.VERSION.SDK_INT < 33) handleBack()
-        else super.onBackPressed()
+        if (!isUnlocked && biometricPrompt != null) authenticateToUnlock()
     }
 
     override fun onDestroy() {
-        if (android.os.Build.VERSION.SDK_INT >= 33) {
-            backInvokedCallback?.let(onBackInvokedDispatcher::unregisterOnBackInvokedCallback)
-        }
-        backInvokedCallback = null
-        webView?.apply {
-            stopLoading()
-            webChromeClient = null
-            webViewClient = WebViewClient()
-            destroy()
-        }
-        webView = null
+        background.shutdownNow()
         biometricPrompt = null
-        lockOverlay = null
-        lockMessage = null
-        progressBar = null
-        errorPanel = null
         super.onDestroy()
     }
 }

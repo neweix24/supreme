@@ -1,18 +1,18 @@
 # Supreme Android app
 
-The Supreme Android app is the only supported sign-in client. Supreme has one separate principal (`public_id = supreme`) in the existing shared Supabase Auth project. Supreme authorization is stored only in `supreme.identities`; it does not require a Neweix Account customer record. Future Neweix Employees remain a separate identity/workforce domain. The current WebView/private-route shell is legacy and is not compliant with the native-app-only login requirement; it must not be treated as a completed login implementation.
+The Supreme Android app is the only supported sign-in client. Supreme has one separate principal (`public_id = supreme`) in the existing shared Supabase Auth project. Supreme authorization is stored only in `supreme.identities`; it does not require a Neweix Account customer record. Future Neweix Employees remain a separate identity/workforce domain. The WebView/private-route shell has been replaced on the native app branch. The native UI builds, but production sign-in remains fail-closed until the server-side device-session issuer and Supabase Auth hook are deployed and tested.
 
 ## Build requirements
 
 - Android Studio with JDK 17 and Android SDK Platform 35, or Gradle 8.9+ with the Android SDK installed. Open this directory in Android Studio if Gradle is not installed on your device.
 - The native app must use the existing shared Supabase project and the Supreme-specific authentication/API contract. It must not use Neweix Account customer login. A private URL/path is not an authentication factor and must not be used to grant access.
-- Never commit the production path or embed it in a public artifact.
+- Never commit private route secrets, production signing keys, passwords, or production credentials.
 
 The native app must not require or embed a secret web path. Browser login and browser dashboard access must be denied server-side.
 
 ## Build a local debug APK
 
-From this directory, provide the configured path without putting it in source control:
+From this directory, run:
 
 ```sh
 gradle :app:assembleDebug
@@ -20,17 +20,13 @@ gradle :app:assembleDebug
 
 The APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
 
-If you prefer not to export an environment variable, pass it as a Gradle property:
-
-```sh
-gradle :app:assembleDebug
-```
+The project no longer requires a private route path at build time.
 
 ## Security notes
 
-- The app accepts only HTTPS navigation to `neweix.com` and `www.neweix.com`; other web links are handed to Android.
-- File/content access and cleartext HTTP are disabled; TLS certificate errors are rejected.
-- A hidden/private route is never proof of app authenticity and must never authorize a session.
+- Supreme authentication is native; no WebView or hidden/private URL is used as an authentication factor.
+- Supabase service-role credentials and provider secrets are never embedded in the app.
+- Android local biometric/PIN unlock does not replace server password, AAL2 MFA, or hardware-backed attestation.
 - The website must continue enforcing Supreme role authorization and AAL2 MFA on every protected page and API.
 - The production login flow must not rely on Google/Facebook OAuth. Verify the native username/password and TOTP MFA flow on a physical device before release.
 - Do not distribute this debug APK as a production release.
@@ -41,18 +37,18 @@ This project does not modify storefront routes or customer-facing navigation.
 
 The Android app includes a native Android Keystore helper at `app/src/main/java/com/neweix/supreme/security/SupremeKeyAttestation.kt`. It creates a fresh P-256 signing key for a server-provided, one-time challenge and returns the certificate chain in leaf-to-root DER/Base64 form.
 
-This is only the Android-side key-generation primitive. It is not currently wired into login and does not grant access by itself. The server must validate the complete chain against Google's current trust anchors, check Google's revocation status, verify the attestation challenge and `com.neweix.supreme` application identity (including the production signing-certificate digest), and enforce the required hardware security and verified-boot policy. Until that verifier and its replay-resistant challenge store are deployed and tested, existing server-side role and MFA checks remain authoritative.
+The native sign-in flow now requests a one-time challenge, creates a hardware-backed key, and posts the certificate chain and proof-of-possession to the existing challenge/verification proxy. The server verifies Google's trust roots and revocation feed, package/signer identity, key security level, verified boot, challenge, and proof. This response is still only an attestation decision: it does not create a Supabase session or bind a device to a Supabase `session_id`. That server-side binding must be completed before registry access can be enabled.
 
 Devices that cannot produce a qualifying attestation chain must not be silently downgraded to an unverified Supreme login once enforcement is enabled.
 
 
 ## App-only Supreme authentication and temporary access lock
 
-- Supreme login must be implemented as a native Android screen and authenticated by the existing shared Supabase Auth identity plus server-verified Supreme app attestation.
+- Supreme login is implemented as a native Android screen with Supreme-specific Supabase Auth password sign-in, verified TOTP MFA, fresh AAL2 checks, and server-verified Android app attestation.
 - Browser-based Supreme sign-in and dashboard access must be denied server-side.
 - Supreme authorization must consult the single active `supreme.identities` principal with `role = ruler` and `public_id = supreme`; it must not require `neweix_accounts`.
 - The registry API also requires a server-signed `supreme_app_session` claim for an active device-bound attested session. The current verifier proves device-key possession only; the Supabase Auth hook/session issuer is still pending, so registry access remains denied until wired end-to-end.
-- **The current WebView/private-route app is not a compliant login release.** Keep privileged operations fail-closed until native authentication, MFA, hardware attestation, device-bound sessions, and browser-denial tests pass.
+- **The native debug app is not a production login release.** Keep privileged operations fail-closed until the Auth Hook, persistent device/session binding, production APK signer allowlist, and real-device/browser-denial tests pass.
 - The diamond emblem is the temporary app mark and can be replaced later without changing the application ID.
 
 ## Remote-first Supreme dashboard (permanent architecture requirement)
@@ -83,6 +79,23 @@ Only changes that genuinely need native Android capabilities or a change to the 
 
 **Acceptance criterion:** a dashboard-only feature or design change is implemented and deployed on Cloudflare and becomes available in the already-installed Supreme app after reload/reopen, with no APK rebuild or reinstall.
 
+## Native implementation status
+
+- Dedicated Supreme Account email/password sign-in; no Neweix Account, Google, or Facebook login.
+- Verified TOTP MFA, AAL2 and recent `auth_time` checks.
+- Android hardware-backed attestation challenge and proof client.
+- Android Keystore AES-256-GCM encrypted refresh-token storage.
+- Biometric/device credential app lock and screenshot protection.
+- Registry listing is deliberately blocked until the server returns a valid signed app-session claim bound to the same Supabase session.
+- GitHub Actions debug build and internal preview artifact pass; debug signing cannot satisfy the production attestation allowlist.
+
+## Production release gates
+
+1. Persist a verified pending attestation public key and register it to the exact Supabase user/session with a signed proof-of-possession request.
+2. Create and enable a Supabase Custom Access Token Hook that emits `supreme_app_session` only from active server-side device/session records.
+3. Deploy the strict Registry API, verify current-session/device revocation on each request, and test all allow/deny paths.
+4. Generate the permanent production APK signing key in the chosen secure signing environment, configure its SHA-256 digest as a server-side secret, and test on a physical Android device.
+5. Move or confirm the attestation challenge/verification proxy hosting endpoint; the current native code calls the Neweix-hosted proxy without using Neweix Account identity.
 ## Production signing identity — not configured yet
 
 The production signer certificate digest is a security input to Android Key Attestation's
