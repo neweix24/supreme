@@ -55,19 +55,3 @@ insert into supreme.service_environments (
   ('supreme', 'development', 'development', null, false)
 on conflict (service_id, environment_id) do nothing;
 
-insert into supreme.audit_events (
-  actor_user_id, action, outcome, policy_version, details
-)
-select
-  s.user_id,
-  'registry.bootstrap',
-  'success',
-  'v1',
-  jsonb_build_object(
-    'services_registered', array['neweix', 'neweix-shop', 'eixon', 'neweix-account', 'neweix-message', 'supreme'],
-    'capabilities_enabled', false,
-    'note', 'Initial registry metadata only; no provider operation adapters are enabled.'
-  )
-from public.staff_profiles s
-where s.role = 'supreme' and s.is_active = true and s.public_id = 'supreme'
-limit 1;
