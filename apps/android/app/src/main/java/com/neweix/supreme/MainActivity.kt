@@ -527,6 +527,7 @@ class MainActivity : FragmentActivity() {
                 if (session.assuranceLevel != "aal2") {
                     throw IllegalStateException("Supreme session has fallen below AAL2. Sign in again.")
                 }
+                SupremeAuthClient.verifyDeviceSession(session.accessToken)
                 val services = SupremeAuthClient.listServices(session.accessToken)
                 val requests = SupremeAuthClient.listPendingRequests(session.accessToken)
                 sessionStore.saveRefreshToken(session.refreshToken)
@@ -564,6 +565,9 @@ class MainActivity : FragmentActivity() {
         background.execute {
             try {
                 val session = SupremeAuthClient.refresh(refresh)
+                if (session.assuranceLevel == "aal2") {
+                    try { SupremeAuthClient.revokeDeviceSession(session.accessToken) } catch (_: Exception) { }
+                }
                 SupremeAuthClient.signOut(session.accessToken)
             } catch (_: Exception) {
                 // Local credential deletion remains mandatory if the server is offline.
