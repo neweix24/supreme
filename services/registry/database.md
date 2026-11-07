@@ -27,4 +27,4 @@ The registry does not create another Supreme account. The API must validate the 
 
 ## Migration
 
-Apply `supabase/migrations/20261107141300_supreme_service_registry_v1.sql` to the existing Neweix Supabase project. Verify schema isolation and RLS before deploying the registry Edge Function.
+Applied to the existing Neweix Supabase project as migration `supreme_service_registry_v1` (database version `20261107141546`). The authenticated registry Edge Function is maintained at `supabase/functions/supreme-registry-api`.
