@@ -125,10 +125,8 @@ export async function middleware(request: NextRequest) {
   const supabase = createServerClient(url, anonKey, {
     cookieOptions: {
       path: "/",
-      domain: process.env.NODE_ENV === "production" ? ".neweix.com" : undefined,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 365,
     },
     cookies: {
       getAll() {
