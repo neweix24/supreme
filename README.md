@@ -36,7 +36,7 @@ Supreme Core Backend
 
 ## Repository layout
 
-- `apps/android/` — existing native Android shell and device-security foundation
+- `apps/android/` — native Android shell and device-security foundation
 - `services/android-attestation/` — Android Key Attestation verifier source and tests
 - `services/registry/` — versioned service registry contracts
 - `integrations/neweix-commerce/` — preserved source snapshot of Supreme features previously embedded in Neweix; not a standalone backend
@@ -49,34 +49,24 @@ The already implemented features in Neweix, Eixon, Neweix Account and Supreme ha
 
 **Important:** a feature listed in the catalog is not automatically executable from Supreme. The owning service remains the source of truth; Supreme must use a tested, service-scoped adapter rather than duplicate that service's business logic.
 
-## Status
+## Verified status
 
-- The Supreme registry database is deployed in the existing Neweix Supabase project under the isolated `supreme` schema. No separate Supabase project was created.
-- Live Supabase checks on 2026-11-07 confirm exactly one active `supreme.identities` ruler and that `public.staff_profiles` no longer exists. The single Supreme principal is linked to its own Supabase Auth user; no Neweix Account or customer profile is used. The Registry API source in this branch now checks the Supreme principal and requires a server-signed `supreme_app_session` claim bound to the exact JWT session ID, but this update is not yet deployed.
-- The registry currently contains six known services: Neweix, Neweix Shop, Eixon, Neweix Account, Neweix Message, and Supreme. Only the existing Neweix website is marked active; the others remain planned until their deployment and integration boundaries are verified.
-- No provider capabilities are enabled yet. GitHub, Cloudflare, Supabase administration, and service-specific execution adapters still require implementation, scoped credentials, and end-to-end tests.
-- The native Android app now has a Supreme-only password + TOTP AAL2 sign-in shell, Android hardware-attestation client, encrypted Keystore refresh-token storage, biometric/PIN lock, and screenshot protection. GitHub Actions Android builds and the internal debug preview succeeded. Production access remains locked until device/session binding, the Custom Access Token Hook, and the production APK signing fingerprint are configured. Imported Neweix Commerce UI/API snapshots are not yet a standalone Supreme web runtime.
+- The Supreme registry database is deployed in the existing Neweix Supabase project under the isolated `supreme` schema.
+- The live database has exactly one active `supreme.identities` ruler. Supreme does not use a Neweix Account customer identity or employee profile.
+- The Supreme session and attestation Edge Functions are deployed. The Auth hook function exists with least-privilege grants, but the Custom Access Token Hook still requires activation in Supabase Authentication → Hooks.
+- Supreme's Android debug build passes GitHub Actions and is installable on Android 8.0+; it is not a production release.
+- A protected production release workflow is available. It requires the owner's permanent signing keystore and certificate fingerprint to be configured in the GitHub `production` environment and Supabase Edge Function secrets.
+- The native app includes password/TOTP MFA, hardware-backed attestation client, encrypted refresh-token storage, and device-session verification. End-to-end operation remains fail-closed until production configuration and physical-device tests pass.
+- The standalone web dashboard and production GitHub, Cloudflare, Supabase, and service-specific execution adapters are not complete. Service registrations are inventory until an adapter is implemented and tested.
 
-## Supreme app release status
+## Documentation
 
-- Supreme has exactly one principal: `supreme.identities(public_id='supreme', role='ruler')`, linked to its own Supabase Auth credential. The user does not have or use a Neweix Account for Supreme.
-- The latest Android debug assemble and internal preview APK workflows passed. The artifact is debug-signed, for testing only, and is not a production release.
-- The app's native password/TOTP client is implemented, but its verified attestation response is not yet bound to a persisted app device and Supabase `session_id`.
-- The Supabase Custom Access Token Hook is not configured in the live Auth project. Registry access stays fail-closed until that hook and its device-session issuer are live.
-- The production APK signing keystore and server-side SHA-256 signing certificate allowlist are not configured. A debug APK must never be accepted as a production app.
-- Native challenge issuance and device-session registration run through the Supreme-owned `supreme-session-api` Supabase Edge Function. The Android app no longer depends on a Neweix website API route or Neweix Account identity.
-- The standalone Supreme web dashboard and its GitHub, Cloudflare, Supabase, and service-specific operation adapters are not complete. Service registrations are inventory only until adapters and approval/execution tests exist.
-## Standalone control-plane completion plan
-
-See [Standalone control-plane implementation and migration gates](docs/standalone-control-plane-implementation.md) for the required app capabilities, current gaps, safe Neweix source cleanup gates, and completion criteria.
-
-## Getting started
-
-Read:
-1. [Architecture](docs/architecture.md)
-2. [Security model](docs/security-model.md)
-3. [Service registry](services/registry/README.md)
-4. [Ecosystem feature inventory](docs/ecosystem-feature-inventory.md)
+- [Standalone control-plane implementation and migration gates](docs/standalone-control-plane-implementation.md)
+- [Security model](docs/security-model.md)
+- [Production Android release and signing](docs/production-android-release.md)
+- [Architecture](docs/architecture.md)
+- [Service registry](services/registry/README.md)
+- [Ecosystem feature inventory](docs/ecosystem-feature-inventory.md)
 
 ## Security
 
@@ -93,6 +83,6 @@ Existing Supreme implementation work from `neweix24/neweix` has been copied into
 - Android app: `apps/android/`
 - Commerce-coupled dashboard and API source: `integrations/neweix-commerce/`
 - Android Key Attestation service source: `services/android-attestation/`
-- Extraction notes: [docs/migration-from-neweix.md](docs/migration-from-neweix.md)
+- Extraction notes: [Migration from Neweix](docs/migration-from-neweix.md)
 
-**Important:** imported commerce API/UI modules still depend on the original Neweix application and are preserved as a source snapshot. SQL files under `migrations-reference` are not safe to apply directly to a fresh database. The original `neweix` repository remains unchanged.
+**Important:** imported commerce API/UI modules still depend on the original Neweix application and are preserved as a source snapshot. SQL files under `migrations-reference` are not safe to apply directly to production. The original `neweix` repository remains unchanged.
