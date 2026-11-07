@@ -37,7 +37,7 @@ This project does not modify storefront routes or customer-facing navigation.
 
 The Android app includes a native Android Keystore helper at `app/src/main/java/com/neweix/supreme/security/SupremeKeyAttestation.kt`. It creates a fresh P-256 signing key for a server-provided, one-time challenge and returns the certificate chain in leaf-to-root DER/Base64 form.
 
-The native sign-in flow now requests a one-time challenge, creates a hardware-backed key, and posts the certificate chain and proof-of-possession to the existing challenge/verification proxy. The server verifies Google's trust roots and revocation feed, package/signer identity, key security level, verified boot, challenge, and proof. This response is still only an attestation decision: it does not create a Supabase session or bind a device to a Supabase `session_id`. That server-side binding must be completed before registry access can be enabled.
+The native sign-in flow calls the Supreme-owned Supabase Edge Function for a five-minute one-time challenge and device-session issuance. The server calls the Android verifier, validates Google's trust roots and revocation feed, package/signer identity, hardware security level, verified boot, challenge and proof, then binds the verifier-derived key fingerprint to the exact AAL2 Supabase Auth session. The app refreshes its token and verifies the signed claim and live session before opening the registry. The `supreme-session-api` endpoints are `/challenge` and `/issue`; no Neweix website API route is required.
 
 Devices that cannot produce a qualifying attestation chain must not be silently downgraded to an unverified Supreme login once enforcement is enabled.
 
