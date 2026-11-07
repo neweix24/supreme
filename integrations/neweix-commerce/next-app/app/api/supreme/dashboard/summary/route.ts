@@ -28,7 +28,7 @@ async function getSupremeActor(): Promise<SupremeActorResult> {
   const { data: profile, error } = await session
     .schema("supreme").from("identities")
     .select("role, is_active, public_id")
-    .eq("user_id", user.id).eq("public_id", "supreme")
+    .eq("user_id", user.id).eq("public_id", "supreme").eq("public_id", "supreme")
     .maybeSingle();
 
   if (error || !profile || profile.is_active !== true || profile.role !== "ruler" || profile.public_id !== "supreme") {
