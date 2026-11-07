@@ -24,7 +24,8 @@ Of these, 99 mapped files had identical Git blob SHAs in the destination. The re
 ## Consolidation performed
 
 - Updated the Android `MainActivity.kt` from the source revision after comparing the existing native shell.
-- Added `SupremeAttestationClient.kt` as a native transport reference. It is not wired into login and must not be treated as authentication.
+- Preserved `SupremeAttestationClient.kt` and `SupremeKeyAttestation.kt` as native attestation transport/key-generation components. They are not wired into login and must not be treated as authentication.
+- Imported the existing `20261101202007_neweix_public_identity_ids.sql` migration as a reference, preserving the `staff_profiles` `public_id = 'supreme'` identity contract and single-Supreme unique index.
 - Updated the attestation endpoint documentation with the latest challenge-attempt budget and production migration history.
 - Added the Supreme web icon to the preserved commerce integration snapshot.
 - Added the latest five timestamp-aligned Supreme SQL migration references and the missing attestation-attempt-budget SQL test.
@@ -55,7 +56,7 @@ The dashboard/API source was originally part of the NEWEIX Commerce Next.js appl
 ## Next steps
 
 1. Inventory imports and runtime dependencies of the preserved dashboard/API modules.
-2. Define Supreme-owned identity, session, MFA, device-attestation, service registry, approvals, remote configuration, and audit contracts.
-3. Separate Supreme-owned data from NEWEIX commerce data; keep migrations in reference-only status until a clean schema plan exists.
+2. Reuse the existing shared Supabase Auth project and NEWEIX Supreme identity row (`staff_profiles.role = supreme`, `public_id = supreme`); complete Supreme-only app session, MFA, and device-attestation binding without using Neweix Account customer identity.
+3. Keep the existing Supreme identity and attestation migrations as reference to the shared Supabase schema; do not create duplicate identity tables or apply reference migrations again. Keep commerce-owned data separate.
 4. Build and test the Android app in this repository; fix any CI/path or signing configuration issues.
 5. Move runtime control to a Supreme-owned API/domain and add integration tests before production enablement.
