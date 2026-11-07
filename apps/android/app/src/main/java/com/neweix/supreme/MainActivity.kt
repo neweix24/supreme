@@ -382,9 +382,11 @@ class MainActivity : FragmentActivity() {
                     throw IllegalStateException("Supreme AAL2 session continuity could not be confirmed.")
                 }
                 SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
+                // Persist the rotated refresh token immediately. Any later API failure
+                // must not leave the encrypted store holding an already-rotated token.
+                sessionStore.saveRefreshToken(refreshed.refreshToken)
                 val services = SupremeAuthClient.listServices(refreshed.accessToken)
                 val requests = SupremeAuthClient.listPendingRequests(refreshed.accessToken)
-                sessionStore.saveRefreshToken(refreshed.refreshToken)
 
                 runOnUiThread {
                     currentAccessToken = refreshed.accessToken
@@ -657,9 +659,11 @@ class MainActivity : FragmentActivity() {
                     throw IllegalStateException("Supreme session has fallen below AAL2. Sign in again.")
                 }
                 SupremeAuthClient.verifyDeviceSession(session.accessToken)
+                // Refresh-token rotation is committed by Supabase before the next
+                // API request. Save the replacement before any downstream operation.
+                sessionStore.saveRefreshToken(session.refreshToken)
                 val services = SupremeAuthClient.listServices(session.accessToken)
                 val requests = SupremeAuthClient.listPendingRequests(session.accessToken)
-                sessionStore.saveRefreshToken(session.refreshToken)
                 runOnUiThread {
                     currentAccessToken = session.accessToken
                     resumeSessionCheck = false
@@ -846,9 +850,17 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onStop() {
-        clearTransientCredentials()
+        // Opening an authenticator app temporarily backgrounds Supreme. Keep the
+        // in-memory, short-lived MFA transaction so the user can return and enter
+        // the TOTP code; clear the typed code itself and all state on destruction.
+        val mfaInProgress = pendingPasswordSession != null && pendingFactorId != null
+        if (mfaInProgress) {
+            if (::codeInput.isInitialized) codeInput.text?.clear()
+        } else {
+            clearTransientCredentials()
+        }
         super.onStop()
-        if (!isChangingConfigurations) {
+        if (!isChangingConfigurations && !mfaInProgress) {
             isUnlocked = false
             if (::lockOverlay.isInitialized) lockOverlay.visibility = View.VISIBLE
         }
@@ -856,7 +868,8 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (!isUnlocked && biometricPrompt != null) authenticateToUnlock()
+        val mfaInProgress = pendingPasswordSession != null && pendingFactorId != null
+        if (!isUnlocked && !mfaInProgress && biometricPrompt != null) authenticateToUnlock()
     }
 
     override fun onDestroy() {
