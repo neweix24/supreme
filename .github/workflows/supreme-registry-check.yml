@@ -1,0 +1,34 @@
+# Run strict type checks against the exact function-local Deno configuration.
+name: Supreme registry function check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "supabase/functions/supreme-registry-api/**"
+      - ".github/workflows/supreme-registry-check.yml"
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/supreme-registry-api/**"
+      - ".github/workflows/supreme-registry-check.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supreme-registry-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deno-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check registry Edge Function
+        run: deno check --config supabase/functions/supreme-registry-api/deno.json supabase/functions/supreme-registry-api/index.ts

@@ -17,7 +17,7 @@
     "service": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["service_id", "display_name", "repository", "environments", "capabilities", "integration_secret_refs", "status"],
+      "required": ["service_id", "display_name", "environments", "capabilities", "integration_secret_refs", "status"],
       "properties": {
         "service_id": {
           "type": "string",
