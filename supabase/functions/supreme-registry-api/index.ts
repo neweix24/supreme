@@ -269,29 +269,23 @@ async function authenticate(request: Request): Promise<{
     throw new Response("Unauthorized", { status: 401 });
   }
 
+  // Supreme has its own principal registry. It deliberately does not depend on
+  // Neweix Account customer rows or Neweix Employees/staff profiles.
   const [ruler] = await db`
     select user_id::text
-    from public.staff_profiles
+    from supreme.identities
     where user_id = ${user.id}::uuid
-      and role = 'supreme'
+      and principal_id = 'supreme'
       and is_active = true
-      and public_id = 'supreme'
     limit 2
   `;
   const [count] = await db`
     select count(*)::integer as active_count
-    from public.staff_profiles
-    where role = 'supreme'
+    from supreme.identities
+    where principal_id = 'supreme'
       and is_active = true
-      and public_id = 'supreme'
   `;
-  const [centralAccount] = await db`
-    select user_id::text
-    from public.neweix_accounts
-    where user_id = ${user.id}::uuid
-    limit 1
-  `;
-  if (!ruler || ruler.user_id !== user.id || !centralAccount || centralAccount.user_id !== user.id || count?.active_count !== 1) {
+  if (!ruler || ruler.user_id !== user.id || count?.active_count !== 1) {
     throw new Response("Forbidden", { status: 403 });
   }
   return { userId: user.id, claims: decodeJwtClaims(token) };
