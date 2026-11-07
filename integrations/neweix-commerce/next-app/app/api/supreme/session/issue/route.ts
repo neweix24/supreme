@@ -13,7 +13,7 @@ const NO_STORE = {
 };
 const MAX_BODY_BYTES = 96 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const SHA256 = /^[a-f0-9]{64}$/;
+const SHA256 = /^[a-f0-9]{64}$/i;
 
 function fail(message: string, status: number) {
   return NextResponse.json({ error: message }, { status, headers: NO_STORE });
@@ -137,6 +137,7 @@ export async function POST(request: Request) {
       return fail("Supreme production app signer is not configured.", 503);
     }
 
+    const signerDigest = productionSigner.toLowerCase();
     const db = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
@@ -184,7 +185,7 @@ export async function POST(request: Request) {
         p_user_id: userId,
         p_auth_session_id: authSessionId,
         p_device_key_sha256: verified.device_key_sha256,
-        p_signing_certificate_sha256: productionSigner,
+        p_signing_certificate_sha256: signerDigest,
         p_security_level: verified.security_level,
         p_attested_at: now.toISOString(),
         p_expires_at: expiresAt,
