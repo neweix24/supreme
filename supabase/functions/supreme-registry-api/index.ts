@@ -313,7 +313,7 @@ async function audit(input: {
     values
       (${input.requestId}::uuid, ${input.actor}::uuid, ${input.action},
        ${input.serviceId ?? null}, ${input.environmentId ?? null},
-       ${input.outcome}, 'v1', ${db.json(input.details ?? {})})
+       ${input.outcome}, 'v1', ${db.json(JSON.parse(JSON.stringify(input.details ?? {})))})
   `;
 }
 
@@ -380,7 +380,7 @@ async function createControlRequest(
        requester_user_id, idempotency_key, policy_version, approval_required)
     values
       (${requestType}, ${targetServiceId}, ${environmentId}, ${action},
-       ${db.json(parameters)}, ${actor}::uuid, ${idempotencyKey}, 'v1', true)
+       ${db.json(JSON.parse(JSON.stringify(parameters)))}, ${actor}::uuid, ${idempotencyKey}, 'v1', true)
     on conflict (requester_user_id, idempotency_key) do nothing
     returning id::text, status, created_at
   `;
@@ -497,10 +497,10 @@ async function handle(request: Request): Promise<Response> {
       const body = await readJson(request);
       const envRows = await db`
         select classification from supreme.service_environments where service_id = ${id}
-      `;
+      ` as unknown as Array<{ classification: string }>;
       const highImpact = hasProductionImpact(body) ||
         current.risk_tier === "high" || current.risk_tier === "critical" ||
-        envRows.some((row: { classification: string }) => row.classification === "production");
+        envRows.some((row) => row.classification === "production");
       if (highImpact && !isFreshAal2(claims)) {
         await audit({ actor: userId, action: "services.update.denied", serviceId: id, outcome: "denied", requestId, details: { reason: "fresh_aal2_required" } });
         return errorResponse("MFA_REQUIRED", "Fresh MFA (AAL2) is required for production-impacting changes.", 403, requestId);
