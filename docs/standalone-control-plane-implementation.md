@@ -11,7 +11,7 @@ Supreme is a control plane, not a replacement for the business applications it m
 1. Supreme-owned application, backend, schema, policies, and release workflows live in this repository.
 2. Neweix-owned storefront, checkout, orders, delivery, workforce, and commerce logic remain in `neweix24/neweix`.
 3. Eixon-owned wallet, ledger, transfer, rewards, and campaign logic remain in `neweix24/eixon`.
-4. Supreme identity is fully independent: one `supreme` principal, its own credentials and authorization mapping. It must not depend on Neweix Account customer records or Neweix Employees.
+4. Supreme has one independent principal (`public_id = 'supreme'`) in the existing shared Supabase Auth project. Reuse the existing `public.staff_profiles` row and unique index; never require a Neweix Account customer row or create duplicate identity tables. Future Neweix Employees remain separate from Supreme.
 5. Supreme never copies service business logic or service-owned production tables into its own database.
 6. Production secrets are stored only in backend secret storage. The Android binary, repository, and client configuration contain references, never secret values.
 7. Every write operation is service-scoped, least-privilege, approval-gated according to risk, idempotent where appropriate, and audited.
@@ -61,8 +61,9 @@ Supreme is a control plane, not a replacement for the business applications it m
 - Provide operation status, logs, result, rollback guidance, and emergency disable/revoke controls.
 
 ### G. Access, identity, and device security
-- Preserve exactly one Supreme ruler identity: `supreme`.
-- Validate the independent Supreme principal and server-side sessions; do not query or require Neweix Account or employee identity records.
+- Preserve exactly one Supreme ruler identity: `public.staff_profiles.role = 'supreme'`, `public_id = 'supreme'`, active.
+- Reuse the existing Supabase Auth session and NEWEIX Supreme identity row; do not require a `neweix_accounts` customer record.
+- Keep future Neweix Employees identity and workforce permissions separate from the Supreme ruler principal.
 - Enforce MFA/AAL2 on privileged server operations.
 - Use Android biometric/device credential only as local app unlock, never as server authorization.
 - Add device registration, attestation verification, session revocation, inactivity lock, and lost-device recovery.
