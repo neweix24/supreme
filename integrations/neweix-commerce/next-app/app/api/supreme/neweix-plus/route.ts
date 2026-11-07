@@ -9,8 +9,8 @@ async function getSupreme() {
   const supabase = await createServerSupabaseClient();
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return { ok: false as const, response: fail("লগইন প্রয়োজন।", 401) };
-  const { data: profile, error: profileError } = await supabase.from("staff_profiles").select("role,is_active").eq("user_id", user.id).maybeSingle();
-  if (profileError || !profile || profile.is_active !== true || profile.role !== "supreme") return { ok: false as const, response: fail("শুধু সক্রিয় Supreme অ্যাকাউন্ট এই কাজ করতে পারবে।", 403) };
+  const { data: profile, error: profileError } = await supabase.schema("supreme").from("identities").select("role, is_active, public_id").eq("user_id", user.id).eq("public_id", "supreme").maybeSingle();
+  if (profileError || !profile || profile.is_active !== true || profile.role !== "ruler" || profile.public_id !== "supreme") return { ok: false as const, response: fail("শুধু সক্রিয় Supreme অ্যাকাউন্ট এই কাজ করতে পারবে।", 403) };
   const { data: assurance, error: mfaError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
   if (mfaError || assurance?.currentLevel !== "aal2") return { ok: false as const, response: fail("Supreme MFA যাচাই সম্পন্ন করুন।", 403) };
   return { ok: true as const, supabase };
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     let queryError: { code?: string } | null = null;
 
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(query)) {
-      const result = await admin.from("customer_profiles").select(columns).eq("user_id", query).limit(1);
+      const result = await admin.from("customer_profiles").select(columns).eq("user_id", query).eq("public_id", "supreme").limit(1);
       rows = result.data ?? [];
       queryError = result.error;
     } else if (query.includes("@")) {
