@@ -54,12 +54,14 @@ internal object SupremeAuthClient {
     }
 
     fun verifiedTotpFactors(accessToken: String): List<TotpFactor> {
-        val response = request("GET", "/auth/v1/factors", accessToken)
-        val candidates = JSONArray()
+        val response = request("GET", "/rest/v1/auth/factors?select=id,factor_type,status,friendly_name", accessToken)
+        // PostgREST returns the authenticated user MFA factors as a JSON array.
+        // The legacy Auth API GET /factors route returns HTTP 405 on this project.
+        val candidates = response.optJSONArray("rows") ?: JSONArray()
         val totp = response.optJSONArray("totp")
         if (totp != null) {
             for (i in 0 until totp.length()) candidates.put(totp.getJSONObject(i))
-        } else {
+        } else if (candidates.length() == 0) {
             val all = response.optJSONArray("all")
             if (all != null) {
                 for (i in 0 until all.length()) candidates.put(all.getJSONObject(i))
@@ -376,7 +378,13 @@ internal object SupremeAuthClient {
             }
             val text = String(responseBytes, StandardCharsets.UTF_8)
             val parsed = try {
-                if (text.isBlank()) JSONObject() else JSONObject(text)
+                if (text.isBlank()) {
+                    JSONObject()
+                } else if (text.trimStart().startsWith("[")) {
+                    JSONObject().put("rows", JSONArray(text))
+                } else {
+                    JSONObject(text)
+                }
             } catch (_: Exception) {
                 throw SupremeAuthException("Supreme service returned an invalid response.", 502)
             }
