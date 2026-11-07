@@ -139,6 +139,7 @@ async function handle(request: Request): Promise<Response> {
         s.attested_at,
         s.expires_at,
         d.security_level,
+        d.status as device_status,
         d.last_seen_at
       from supreme.app_sessions s
       join supreme.devices d on d.id = s.device_id
@@ -152,6 +153,9 @@ async function handle(request: Request): Promise<Response> {
       const active = Boolean(
         session &&
         session.status === "active" &&
+        session.device_status === "active" &&
+        (signedSession as Record<string, unknown>).session_id === session.session_id &&
+        (signedSession as Record<string, unknown>).device_id === session.device_id &&
         new Date(session.expires_at).getTime() > Date.now(),
       );
       if (active) {
