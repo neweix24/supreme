@@ -57,6 +57,10 @@ The already implemented features in Neweix, Eixon, Neweix Account and Supreme ha
 - No provider capabilities are enabled yet. GitHub, Cloudflare, Supabase administration, and service-specific execution adapters still require implementation, scoped credentials, and end-to-end tests.
 - The Android shell, imported Supreme feature source, and Android attestation verifier are present. Imported Neweix Commerce routes remain a reference snapshot and must not be treated as a production-ready standalone backend.
 
+## Standalone control-plane completion plan
+
+See [Standalone control-plane implementation and migration gates](docs/standalone-control-plane-implementation.md) for the required app capabilities, current gaps, safe Neweix source cleanup gates, and completion criteria.
+
 ## Getting started
 
 Read:
