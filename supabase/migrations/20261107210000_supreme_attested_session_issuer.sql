@@ -31,7 +31,7 @@ begin
      or p_attested_at > now()
      or p_attested_at < now() - interval '2 minutes'
      or p_expires_at <= now()
-     or p_expires_at > now() + interval '4 hours' then
+     or p_expires_at > now() + interval '12 hours' then
     raise exception 'invalid Supreme device registration parameters'
       using errcode = '22023';
   end if;
@@ -114,4 +114,4 @@ grant execute on function public.register_supreme_attested_device_session(
 
 comment on function public.register_supreme_attested_device_session(
   uuid, uuid, text, text, text, timestamptz, timestamptz
-) is 'Atomically registers a server-verified hardware-attested Android device and binds its session to the verified AAL2 Supabase Auth session, with a four-hour maximum lifetime.';
+) is 'Atomically registers a server-verified hardware-attested Android device and binds its session to the verified AAL2 Supabase Auth session.';
