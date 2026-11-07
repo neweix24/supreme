@@ -45,6 +45,7 @@ function metadata(): { roots: GoogleAttestationRoots; status: GoogleAttestationS
 
 function verificationResult(): SupremeAttestationVerificationResult {
   return {
+    deviceKeySha256: "a".repeat(64),
     chain: {
       trustAnchorMatched: true,
       provisioningMethod: "FACTORY_PROVISIONED",
