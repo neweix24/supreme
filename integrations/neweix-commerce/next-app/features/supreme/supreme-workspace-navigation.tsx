@@ -15,7 +15,6 @@ const sections = [
   { href: "/admin/submissions", label: "Product submissions" },
   { href: "/admin/customers", label: "Customer CRM" },
   { href: "/admin/customer-data-requests", label: "Privacy requests" },
-  { href: "/supreme/staff", label: "Staff & roles" },
   { href: "/supreme/manager-nominations", label: "Manager approvals" },
   { href: "/supreme/notifications", label: "Notification Inbox" },
   { href: "/supreme/finance/expenses", label: "Finance & Expenses" },
