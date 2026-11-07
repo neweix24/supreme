@@ -1,8 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#050505"/>
-  <path d="M92 150 164 206 214 106 298 206 370 150 344 292H118Z" fill="#D9B65D"/>
-  <path d="M136 310h240v30H136z" fill="#F5E5B4"/>
-  <path d="M165 260h182v28H165z" fill="#050505"/>
-  <path d="M314 202c-22-26-99-31-128 1-29 31-3 60 55 75 57 14 78 37 48 65-28 27-93 24-127-5l18-31c24 21 70 26 88 8 17-17-7-28-43-38-62-18-86-51-56-86 35-40 113-37 151-5z" fill="#F5E5B4"/>
-  <path d="M162 374h188v18H162z" fill="#D9B65D"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Supreme gold S emblem</title>
+  <defs>
+    <radialGradient id="ring" cx="38%" cy="28%" r="74%">
+      <stop offset="0" stop-color="#FFF0AA"/>
+      <stop offset="0.34" stop-color="#E9B73E"/>
+      <stop offset="0.72" stop-color="#A85C08"/>
+      <stop offset="1" stop-color="#F5D16D"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0.05" y1="0.1" x2="0.92" y2="0.88">
+      <stop offset="0" stop-color="#FFF0A0"/>
+      <stop offset="0.22" stop-color="#F5CD56"/>
+      <stop offset="0.52" stop-color="#D88A0A"/>
+      <stop offset="0.78" stop-color="#FFE28A"/>
+      <stop offset="1" stop-color="#B46A08"/>
+    </linearGradient>
+  </defs>
+  <circle cx="256" cy="256" r="244" fill="#050505"/>
+  <circle cx="256" cy="256" r="232" fill="none" stroke="url(#ring)" stroke-width="20"/>
+  <circle cx="256" cy="256" r="218" fill="none" stroke="#F6D36C" stroke-opacity=".62" stroke-width="3"/>
+  <path d="M390 151C355 111 299 91 238 96 152 103 113 151 122 208c8 53 58 74 129 90 62 15 100 36 100 74 0 34-33 54-79 55-45 1-84-15-115-41l28-33c25 21 53 33 81 31 22-2 36-14 36-27 0-16-21-25-66-38-83-24-135-54-145-110-15-79 47-145 140-152 69-6 135 17 184 57z" fill="url(#gold)"/>
+  <path d="M143 177c12-37 48-62 99-70" fill="none" stroke="#FFF1B4" stroke-opacity=".5" stroke-width="5" stroke-linecap="round"/>
+  <path d="M173 385c24 17 54 27 84 26" fill="none" stroke="#FFF1B4" stroke-opacity=".42" stroke-width="5" stroke-linecap="round"/>
 </svg>

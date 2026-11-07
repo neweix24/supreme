@@ -1,13 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="512"
-    android:viewportHeight="512">
-    <path android:fillColor="#050505" android:pathData="M112,0 H400 C462,0 512,50 512,112 V400 C512,462 462,512 400,512 H112 C50,512 0,462 0,400 V112 C0,50 50,0 112,0 Z"/>
-    <path android:fillColor="#D9B65D" android:pathData="M92,150 L164,206 L214,106 L298,206 L370,150 L344,292 H118 Z"/>
-    <path android:fillColor="#F5E5B4" android:pathData="M136,310 H376 V340 H136 Z"/>
-    <path android:fillColor="#050505" android:pathData="M165,260 H347 V288 H165 Z"/>
-    <path android:fillColor="#F5E5B4" android:pathData="M314,202 C292,176 215,171 186,203 C157,234 183,263 241,278 C298,292 319,315 289,343 C261,370 196,367 162,338 L180,307 C204,328 250,333 268,315 C285,298 261,287 225,277 C163,259 139,226 169,191 C204,151 282,154 320,186 Z"/>
-    <path android:fillColor="#D9B65D" android:pathData="M162,374 H350 V392 H162 Z"/>
-</vector>
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/supreme_emblem"
+    android:insetLeft="20dp"
+    android:insetTop="20dp"
+    android:insetRight="20dp"
+    android:insetBottom="20dp" />

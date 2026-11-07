@@ -47,7 +47,10 @@ internal object SupremeAuthClient {
         val payload = JSONObject()
             .put("email", email.trim())
             .put("password", password)
-        return parseSession(request("POST", "/auth/v1/token?grant_type=password", body = payload))
+        return parseSession(
+            request("POST", "/auth/v1/token?grant_type=password", body = payload),
+            stage = "Password sign-in",
+        )
     }
 
     fun verifiedTotpFactors(accessToken: String): List<TotpFactor> {
@@ -89,7 +92,14 @@ internal object SupremeAuthClient {
         return challengeId
     }
 
-    fun verifyTotp(accessToken: String, factorId: String, challengeId: String, code: String): AuthSession {
+    fun verifyTotp(
+        accessToken: String,
+        factorId: String,
+        challengeId: String,
+        code: String,
+        fallbackRefreshToken: String,
+        expectedUserId: String,
+    ): AuthSession {
         require(UUID_PATTERN.matches(factorId) && UUID_PATTERN.matches(challengeId)) {
             "Invalid Supreme MFA challenge."
         }
@@ -102,7 +112,12 @@ internal object SupremeAuthClient {
                 .put("challenge_id", challengeId)
                 .put("code", code),
         )
-        return parseSession(response)
+        return parseSession(
+            response,
+            stage = "Authenticator verification",
+            fallbackRefreshToken = fallbackRefreshToken,
+            expectedUserId = expectedUserId,
+        )
     }
 
     fun refresh(refreshToken: String): AuthSession {
@@ -112,7 +127,7 @@ internal object SupremeAuthClient {
             "/auth/v1/token?grant_type=refresh_token",
             body = JSONObject().put("refresh_token", refreshToken),
         )
-        return parseSession(response)
+        return parseSession(response, stage = "Session refresh")
     }
 
     fun signOut(accessToken: String) {
@@ -233,18 +248,53 @@ internal object SupremeAuthClient {
         )
     }
 
-    private fun parseSession(response: JSONObject): AuthSession {
+    private fun parseSession(
+        response: JSONObject,
+        stage: String,
+        fallbackRefreshToken: String? = null,
+        expectedUserId: String? = null,
+    ): AuthSession {
         val access = response.optString("access_token")
-        val refresh = response.optString("refresh_token")
-        val user = response.optJSONObject("user")
-        val userId = user?.optString("id").orEmpty()
-        require(access.length in 40..16_384 && refresh.length in 20..8192 &&
-            UUID_PATTERN.matches(userId)
+            .takeIf { it.length in 40..16_384 }
+        val responseRefresh = response.optString("refresh_token")
+            .takeIf { it.length in 20..8192 }
+        // Supabase MFA upgrades may omit a replacement refresh token in a
+        // response. Reuse only the refresh token from this same pre-MFA
+        // session; the caller must still refresh it and prove AAL2 continuity
+        // with the server before opening any privileged screen.
+        val refresh = responseRefresh ?: fallbackRefreshToken
+            ?.takeIf { it.length in 20..8192 }
+
+        val responseUserId = response.optJSONObject("user")
+            ?.optString("id")
+            .orEmpty()
+        val userId = if (UUID_PATTERN.matches(responseUserId)) {
+            responseUserId
+        } else if (access != null && expectedUserId != null &&
+            UUID_PATTERN.matches(expectedUserId)
         ) {
-            "Supreme authentication response was incomplete."
+            // Resolve a missing user object through Supabase's authenticated
+            // /user endpoint instead of trusting an unverified JWT subject.
+            runCatching {
+                request("GET", "/auth/v1/user", accessToken = access)
+                    .optString("id")
+                    .takeIf { it == expectedUserId && UUID_PATTERN.matches(it) }
+            }.getOrNull().orEmpty()
+        } else {
+            ""
         }
 
-        val claims = decodeClaims(access)
+        val missing = mutableListOf<String>()
+        if (access == null) missing += "access_token"
+        if (refresh == null) missing += "refresh_token"
+        if (!UUID_PATTERN.matches(userId)) missing += "user.id"
+        if (missing.isNotEmpty()) {
+            throw IllegalStateException(
+                "$stage response was incomplete. Missing or invalid: ${missing.joinToString(", ")}.",
+            )
+        }
+
+        val claims = decodeClaims(access!!)
         val assurance = claims.optString("aal", "aal1")
         val authTime = claims.optLong("auth_time", 0L)
         val sessionId = claims.optString("session_id")
@@ -253,7 +303,7 @@ internal object SupremeAuthClient {
         }
         require(UUID_PATTERN.matches(sessionId)) { "Supreme session identifier is invalid." }
 
-        return AuthSession(access, refresh, userId, assurance, authTime, sessionId)
+        return AuthSession(access, refresh!!, userId, assurance, authTime, sessionId)
     }
 
     private fun decodeClaims(accessToken: String): JSONObject {
