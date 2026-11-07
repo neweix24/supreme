@@ -143,7 +143,7 @@ Deno.test("valid request verifies cryptography before atomically consuming the c
   const body = await responseBody(response);
   assertEquals(response.status, 200, "valid status");
   assertEquals(body.verified, true, "verification result");
-  assertEquals(body.security_level, "TRUSTED_ENVIRONMENT", "hardware security level");
+  assertEquals(body.security_level, "trusted_environment", "hardware security level");
   assertEquals(body.provisioning_method, "FACTORY_PROVISIONED", "provisioning method");
   assertEquals(calls.join(","), "challenge-available,metadata,verify,consume", "security gate order");
 });
