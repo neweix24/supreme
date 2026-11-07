@@ -27,14 +27,15 @@ The live `supreme-neweix-api` Edge Function was active (version 2), but no match
 ## Supabase security review
 
 - All nine tables in the `supreme` schema have RLS enabled. They have no client-role table grants; `service_role` is the only role found with table access. This is consistent with the server-only data-access model.
-- Security Advisor reports 33 authenticated-callable SECURITY DEFINER functions. The inspected functions bind data to `auth.uid()`; Supreme control functions additionally enforce AAL2 and the Supreme role check. These warnings are not 33 confirmed vulnerabilities.
+- Security Advisor now reports 34 authenticated-callable SECURITY DEFINER functions: 33 pre-existing functions plus the new boolean-only `public.is_current_supreme_ruler()` RPC. The inspected functions bind data to `auth.uid()`; Supreme control functions additionally enforce AAL2 and the Supreme role check. These warnings are not 34 confirmed vulnerabilities.
 - One anonymous-callable SECURITY DEFINER function, `public.eixpay_list_product_reviews(uuid)`, displays approved product reviews without login. Its query returns only approved reviews and is intentionally public; retain that narrow result set.
 - Security Advisor reports leaked-password protection disabled. Enabling Supabase's HaveIBeenPwned-backed password protection requires an eligible Supabase plan and the Auth password settings in the Dashboard.
-- The database contains `public.supreme_custom_access_token_hook(event jsonb)`, and `supabase_auth_admin` has EXECUTE permission. The connected project tools do not expose the Auth Hooks activation setting, so activation itself remains unverified.
+- The database contains `public.supreme_custom_access_token_hook(event jsonb)`, and `supabase_auth_admin` has EXECUTE permission. The hook verifies the active `supreme.identities` row, AAL2, an active device-bound session, app package, security level, and 30-day attestation freshness. The connected project tools do not expose the Auth Hooks activation setting, so activation itself remains unverified.
 
 ## Authentication and Android release status
 
 - Supabase Auth logs recorded password-grant failures with `captcha_failed: no captcha_token found` before the Turnstile fix. No successful physical-device login after the fix has been observed yet.
+- The identity authorization migration is applied to the connected Supabase project as `20261107185618_supreme_identity_authorization_hardening`; the SQL regression test passed after application.
 - Both Android debug build workflows passed for commit `9cdd3e4`. Those artifacts are debug-signed preview APKs, not production releases.
 - The production release workflow requires the production keystore, store password, key alias, key password, and a signer SHA-256 fingerprint matching the server-side attestation configuration. Until those production signing values are configured and a release workflow succeeds, a debug APK must not be treated as a production-authenticated app.
 - CAPTCHA, TOTP, Google Android Key Attestation, proof-of-possession, device registration, refresh-token rotation, and server-side revocation still require a physical Android device test.
@@ -45,9 +46,9 @@ Several legacy commerce/warehouse RPCs still contain direct references to the re
 
 ## Deployment order
 
-1. Review and merge this change after CI passes.
-2. Apply the new Supabase migration.
-3. Deploy `supreme-neweix-api` from the now-versioned repository source.
-4. Configure the production Android signing secrets and matching attestation fingerprint.
-5. Install the production-signed APK on a physical Android device and verify Turnstile → password → TOTP → hardware attestation → device-bound session → registry access.
+1. Merge this change after all CI checks pass.
+2. The identity authorization migration is already applied and the live `supreme-neweix-api` version 2 source matches the newly versioned repository source.
+3. Configure the production Android signing secrets and matching attestation fingerprint.
+4. Install the production-signed APK on a physical Android device and verify Turnstile → password → TOTP → hardware attestation → device-bound session → registry access.
+5. Confirm the Supabase Custom Access Token Hook is enabled in Auth Hooks settings.
 6. Re-run Supabase Security Advisor and verify that Supreme-specific identity/access failures are resolved.
