@@ -3,9 +3,6 @@ name: Supreme Android Key Attestation reference verifier
 
 on:
   push:
-    branches:
-      - feat/supreme-server-attestation-verifier
-      - feat/supreme-deno-x509-parser
     paths:
       - ".github/workflows/supreme-keyattestation-reference.yml"
       - "docs/imported-from-neweix/security/SUPREME_ANDROID_ATTESTATION_VERIFIER.md"
@@ -33,6 +30,10 @@ on:
       - "services/android-attestation/supabase/functions/_shared/supreme-attestation-der*"
       - "services/android-attestation/supabase/functions/_shared/supreme-android-provisioning-info*"
       - "services/android-attestation/supabase/functions/_shared/supreme-x509-certificate*"
+      - "services/android-attestation/supabase/functions/_shared/supreme-x509-signature*"
+      - "services/android-attestation/supabase/functions/_shared/supreme-x509-chain*"
+      - "services/android-attestation/supabase/functions/_shared/supreme-android-attestation-policy*"
+      - "services/android-attestation/supabase/functions/_shared/supreme-attestation-verifier*"
   workflow_dispatch:
 
 permissions:
