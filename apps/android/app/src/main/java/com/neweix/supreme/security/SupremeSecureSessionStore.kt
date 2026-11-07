@@ -73,8 +73,8 @@ internal class SupremeSecureSessionStore(context: Context) {
         val buffer = ByteBuffer.wrap(value)
         val ivLength = buffer.get().toInt() and 0xff
         require(ivLength == 12 && buffer.remaining() > ivLength) { "Invalid encrypted session IV." }
-        val iv = ByteArray(ivLength).also(buffer::get)
-        val ciphertext = ByteArray(buffer.remaining()).also(buffer::get)
+        val iv = ByteArray(ivLength).also { buffer.get(it) }
+        val ciphertext = ByteArray(buffer.remaining()).also { buffer.get(it) }
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(128, iv))
         return cipher.doFinal(ciphertext)
