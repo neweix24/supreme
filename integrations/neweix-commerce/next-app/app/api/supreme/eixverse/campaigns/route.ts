@@ -9,7 +9,7 @@ async function supreme() {
   const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) return { ok: false as const, response: fail("লগইন প্রয়োজন।",401) };
   const { data: profile, error: profileError } = await supabase.schema("supreme").from("identities")
-    .select("role, is_active, public_id").eq("user_id", user.id).eq("public_id", "supreme").eq("public_id", "supreme").maybeSingle();
+    .select("role, is_active, public_id").eq("user_id", user.id).eq("public_id", "supreme").maybeSingle();
   if (profileError || profile?.is_active !== true || profile.role !== "ruler" || profile.public_id !== "supreme")
     return { ok: false as const, response: fail("শুধু সক্রিয় Supreme অ্যাকাউন্ট অনুমোদিত।",403) };
   const { data: assurance, error: mfaError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
