@@ -263,7 +263,7 @@ internal object SupremeAuthClient {
         // session; the caller must still refresh it and prove AAL2 continuity
         // with the server before opening any privileged screen.
         val refresh = responseRefresh ?: fallbackRefreshToken
-            ?.takeIf { it.length in 20..8192 }
+            ?.takeIf { it.isNotBlank() && it.length <= 8192 && it != "null" }
 
         val responseUserId = response.optJSONObject("user")
             ?.optString("id")
