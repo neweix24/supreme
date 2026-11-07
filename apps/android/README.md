@@ -1,6 +1,6 @@
 # Supreme Android app
 
-The Supreme Android app is the only supported sign-in client. Supreme has one separate principal (`public_id = supreme`) in the existing shared Supabase Auth project. It reuses the existing `staff_profiles` row and does not require a Neweix Account customer record. Future Neweix Employees remain a separate identity/workforce domain. The current WebView/private-route shell is legacy and is not compliant with the native-app-only login requirement; it must not be treated as a completed login implementation.
+The Supreme Android app is the only supported sign-in client. Supreme has one separate principal (`public_id = supreme`) in the existing shared Supabase Auth project. Supreme authorization is stored only in `supreme.identities`; it does not require a Neweix Account customer record. Future Neweix Employees remain a separate identity/workforce domain. The current WebView/private-route shell is legacy and is not compliant with the native-app-only login requirement; it must not be treated as a completed login implementation.
 
 ## Build requirements
 
@@ -50,7 +50,7 @@ Devices that cannot produce a qualifying attestation chain must not be silently 
 
 - Supreme login must be implemented as a native Android screen and authenticated by the existing shared Supabase Auth identity plus server-verified Supreme app attestation.
 - Browser-based Supreme sign-in and dashboard access must be denied server-side.
-- Supreme authorization must consult the existing active `staff_profiles` row with `role = supreme` and `public_id = supreme`; it must not require `neweix_accounts`.
+- Supreme authorization must consult the single active `supreme.identities` principal with `role = ruler` and `public_id = supreme`; it must not require `neweix_accounts`.
 - The registry API also requires a server-signed `supreme_app_session` claim for an active device-bound attested session. The current verifier proves device-key possession only; the Supabase Auth hook/session issuer is still pending, so registry access remains denied until wired end-to-end.
 - **The current WebView/private-route app is not a compliant login release.** Keep privileged operations fail-closed until native authentication, MFA, hardware attestation, device-bound sessions, and browser-denial tests pass.
 - The diamond emblem is the temporary app mark and can be replaced later without changing the application ID.
