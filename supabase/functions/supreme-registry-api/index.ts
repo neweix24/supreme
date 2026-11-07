@@ -344,6 +344,7 @@ async function authenticate(request: Request): Promise<{
       and d.user_id = ${user.id}::uuid
       and d.status = 'active'
       and d.app_package = 'com.neweix.supreme'
+      and d.security_level in ('trusted_environment', 'strongbox')
       and d.attested_at > now() - interval '30 days'
       and d.attested_at <= now()
     limit 1
