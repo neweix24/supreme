@@ -2,7 +2,8 @@
 
 ## Identity
 - Exactly one Supreme principal is provisioned for the ruler role.
-- The principal identifier is `supreme`; it is not a normal employee or customer account.
+- The principal identifier is `supreme`; it is not a Neweix Account customer or a Neweix Employee.
+- Supreme has its own credential lifecycle and authorization mapping in `supreme.identities`; it must not depend on customer or employee profile tables.
 - Do not hard-code the identity or credentials into the Android binary.
 - Enforce MFA server-side for privileged sessions.
 - Require re-authentication for sensitive actions and after configurable inactivity.
