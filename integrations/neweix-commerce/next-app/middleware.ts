@@ -275,7 +275,7 @@ export async function middleware(request: NextRequest) {
       ));
     }
     try {
-      const deviceCheck = await fetch(url.replace(/\\/$/, "") + "/functions/v1/supreme-session-api", {
+      const deviceCheck = await fetch(url.replace(/\/$/, "") + "/functions/v1/supreme-session-api", {
         method: "GET",
         headers: { apikey: anonKey, Authorization: "Bearer " + accessToken },
         cache: "no-store",
