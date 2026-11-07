@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.graphics.Color
 import android.os.Bundle
 import android.text.InputType
+import android.text.method.PasswordTransformationMethod
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -37,6 +38,8 @@ class MainActivity : FragmentActivity() {
     private lateinit var statusText: TextView
     private lateinit var emailInput: EditText
     private lateinit var passwordInput: EditText
+    private lateinit var passwordVisibilityButton: Button
+    private var isPasswordVisible = false
     private lateinit var codeInput: EditText
     private lateinit var primaryButton: Button
     private lateinit var lockOverlay: LinearLayout
@@ -147,11 +150,47 @@ class MainActivity : FragmentActivity() {
         card.addView(emailInput, fieldParams())
 
         card.addView(label("Password"))
-        passwordInput = input("Password", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
-        card.addView(passwordInput, fieldParams())
+        passwordInput = input("Password", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD).apply {
+            transformationMethod = PasswordTransformationMethod.getInstance()
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            setAutofillHints()
+            contentDescription = "Supreme account password"
+        }
+        passwordVisibilityButton = Button(this).apply {
+            text = "SHOW"
+            isAllCaps = true
+            textSize = 11f
+            setTextColor(Color.rgb(229, 197, 120))
+            setBackgroundColor(Color.rgb(9, 9, 9))
+            contentDescription = "Show password"
+            setOnClickListener {
+                val selection = passwordInput.selectionStart.coerceAtLeast(0)
+                isPasswordVisible = !isPasswordVisible
+                passwordInput.transformationMethod = if (isPasswordVisible) {
+                    null
+                } else {
+                    PasswordTransformationMethod.getInstance()
+                }
+                passwordVisibilityButton.text = if (isPasswordVisible) "HIDE" else "SHOW"
+                passwordVisibilityButton.contentDescription =
+                    if (isPasswordVisible) "Hide password" else "Show password"
+                passwordInput.setSelection(selection.coerceAtMost(passwordInput.text.length))
+            }
+        }
+        val passwordRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(Color.rgb(9, 9, 9))
+            addView(passwordInput, LinearLayout.LayoutParams(0, dp(50), 1f))
+            addView(passwordVisibilityButton, LinearLayout.LayoutParams(dp(76), dp(50)))
+        }
+        card.addView(passwordRow, fieldParams())
 
         card.addView(label("Authenticator code").apply { visibility = View.GONE })
-        codeInput = input("6-digit TOTP code", InputType.TYPE_CLASS_NUMBER)
+        codeInput = input("6-digit TOTP code", InputType.TYPE_CLASS_NUMBER).apply {
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            setAutofillHints()
+        }
         codeInput.visibility = View.GONE
         card.addView(codeInput, fieldParams())
 
@@ -737,6 +776,7 @@ class MainActivity : FragmentActivity() {
         inputType = type
         textSize = 14f
         isSingleLine = true
+        isSaveEnabled = false
         setTextColor(Color.WHITE)
         setHintTextColor(Color.rgb(120, 120, 120))
         setPadding(dp(12), dp(12), dp(12), dp(12))
@@ -758,11 +798,38 @@ class MainActivity : FragmentActivity() {
     private fun dp(value: Int): Int =
         (value * resources.displayMetrics.density).toInt()
 
+    private fun clearTransientCredentials() {
+        if (::passwordInput.isInitialized) {
+            passwordInput.text?.clear()
+            passwordInput.transformationMethod = PasswordTransformationMethod.getInstance()
+            isPasswordVisible = false
+            if (::passwordVisibilityButton.isInitialized) {
+                passwordVisibilityButton.text = "SHOW"
+                passwordVisibilityButton.contentDescription = "Show password"
+            }
+        }
+        if (::codeInput.isInitialized) codeInput.text?.clear()
+
+        // A half-completed password/MFA flow must be restarted after leaving the app.
+        pendingPasswordSession = null
+        pendingFactorId = null
+        pendingChallengeId = null
+        if (::passwordInput.isInitialized && pendingFactorId == null &&
+            ::codeInput.isInitialized && codeInput.visibility == View.VISIBLE
+        ) {
+            codeInput.visibility = View.GONE
+            passwordInput.visibility = View.VISIBLE
+            emailInput.isEnabled = true
+            if (::primaryButton.isInitialized) primaryButton.text = "SIGN IN"
+        }
+    }
+
     override fun onStop() {
+        clearTransientCredentials()
         super.onStop()
         if (!isChangingConfigurations) {
             isUnlocked = false
-            lockOverlay.visibility = View.VISIBLE
+            if (::lockOverlay.isInitialized) lockOverlay.visibility = View.VISIBLE
         }
     }
 
@@ -772,6 +839,7 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onDestroy() {
+        clearTransientCredentials()
         background.shutdownNow()
         biometricPrompt = null
         super.onDestroy()
