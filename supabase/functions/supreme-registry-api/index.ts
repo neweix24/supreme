@@ -308,6 +308,12 @@ async function authenticate(request: Request): Promise<{
     throw new Response("Forbidden", { status: 403 });
   }
   const claims = decodeJwtClaims(token);
+  if (claims.sub !== user.id) {
+    throw new Response("Unauthorized", { status: 401 });
+  }
+  if (claims.aal !== "aal2") {
+    throw new Response("Supreme AAL2 authentication is required.", { status: 403 });
+  }
   if (!hasVerifiedSupremeAppSession(claims)) {
     throw new Response("Supreme app attestation is required.", { status: 403 });
   }
