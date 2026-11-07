@@ -65,6 +65,7 @@ Supreme is a control plane, not a replacement for the business applications it m
 - Reuse the existing Supabase Auth session and NEWEIX Supreme identity row; do not require a `neweix_accounts` customer record.
 - Keep future Neweix Employees identity and workforce permissions separate from the Supreme ruler principal.
 - Enforce MFA/AAL2 on privileged server operations.
+- Require a server-signed, device-bound `supreme_app_session` claim on every registry request. The Auth hook and session/device registry must be implemented before enabling the app flow.
 - Use Android biometric/device credential only as local app unlock, never as server authorization.
 - Add device registration, attestation verification, session revocation, inactivity lock, and lost-device recovery.
 - Never trust hidden UI controls as authorization.
