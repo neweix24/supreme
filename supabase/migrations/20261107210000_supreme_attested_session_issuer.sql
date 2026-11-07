@@ -81,6 +81,21 @@ begin
     updated_at = now()
   returning id into v_session_id;
 
+  insert into supreme.audit_events (
+    actor_user_id, action, outcome, policy_version, details
+  ) values (
+    p_user_id,
+    'device_session.register',
+    'success',
+    'v1',
+    jsonb_build_object(
+      'session_id', v_session_id,
+      'device_id', v_device_id,
+      'security_level', p_security_level,
+      'app_package', 'com.neweix.supreme'
+    )
+  );
+
   return jsonb_build_object(
     'registered', true,
     'session_id', v_session_id,
