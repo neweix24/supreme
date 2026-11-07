@@ -55,17 +55,17 @@ The already implemented features in Neweix, Eixon, Neweix Account and Supreme ha
 - Live Supabase checks on 2026-11-07 confirm exactly one active `supreme.identities` ruler and that `public.staff_profiles` no longer exists. The single Supreme principal is linked to its own Supabase Auth user; no Neweix Account or customer profile is used. The Registry API source in this branch now checks the Supreme principal and requires a server-signed `supreme_app_session` claim bound to the exact JWT session ID, but this update is not yet deployed.
 - The registry currently contains six known services: Neweix, Neweix Shop, Eixon, Neweix Account, Neweix Message, and Supreme. Only the existing Neweix website is marked active; the others remain planned until their deployment and integration boundaries are verified.
 - No provider capabilities are enabled yet. GitHub, Cloudflare, Supabase administration, and service-specific execution adapters still require implementation, scoped credentials, and end-to-end tests.
-- The native Android app now has a Supreme-only password + TOTP AAL2 sign-in shell, Android hardware-attestation client, encrypted Keystore refresh-token storage, biometric/PIN lock, and screenshot protection. GitHub Actions Android builds and the internal debug preview succeeded. Production access remains locked until device/session binding, the Custom Access Token Hook, and the production APK signing fingerprint are configured. Imported Neweix Commerce UI/API snapshots are not yet a standalone Supreme web runtime.
+- The native Android app has Supreme-only password + TOTP AAL2 sign-in, a server-issued challenge, hardware-backed Android attestation, device/session registration, encrypted Keystore refresh-token storage, biometric/PIN lock, and screenshot protection. Main-branch Android CI passed. The standalone Supreme web dashboard remains a source snapshot, not a deployed web runtime.
 
 ## Supreme app release status
 
 - Supreme has exactly one principal: `supreme.identities(public_id='supreme', role='ruler')`, linked to its own Supabase Auth credential. The user does not have or use a Neweix Account for Supreme.
 - The latest Android debug assemble and internal preview APK workflows passed. The artifact is debug-signed, for testing only, and is not a production release.
-- The app's native password/TOTP client is implemented, but its verified attestation response is not yet bound to a persisted app device and Supabase `session_id`.
-- The Supabase Custom Access Token Hook is not configured in the live Auth project. Registry access stays fail-closed until that hook and its device-session issuer are live.
-- The production APK signing keystore and server-side SHA-256 signing certificate allowlist are not configured. A debug APK must never be accepted as a production app.
+- The app's attestation result is bound by the deployed Supreme session API to a persisted device and the exact Supabase Auth `session_id`; the app refreshes its token and asks the live registry to revalidate that session/device.
+- The Supabase Custom Access Token Hook function is installed and requires AAL2, but its project-level Authentication → Hooks setting is not enabled yet. Until it is enabled, no access token receives the Supreme device-session claim and the registry stays locked.
+- The permanent production APK signing key/fingerprint is not configured in the server verifier. The downloadable APK is debug-signed for UI/testing only; it must never be accepted as a production app.
 - Native challenge issuance and device-session registration run through the Supreme-owned `supreme-session-api` Supabase Edge Function. The Android app no longer depends on a Neweix website API route or Neweix Account identity.
-- The standalone Supreme web dashboard and its GitHub, Cloudflare, Supabase, and service-specific operation adapters are not complete. Service registrations are inventory only until adapters and approval/execution tests exist.
+- Live registry currently contains six service entries but zero capabilities and zero secret references. GitHub, Cloudflare, Supabase administration and each service's operations still need scoped adapters and approval/execution tests. The standalone web dashboard is not deployed.
 ## Standalone control-plane completion plan
 
 See [Standalone control-plane implementation and migration gates](docs/standalone-control-plane-implementation.md) for the required app capabilities, current gaps, safe Neweix source cleanup gates, and completion criteria.
