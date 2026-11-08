@@ -217,6 +217,92 @@ internal object SupremeAuthClient {
         return result
     }
 
+    data class EnrollmentRequest(
+        val id: String,
+        val deviceId: String,
+        val securityLevel: String,
+        val requestedAt: String,
+        val expiresAt: String,
+    )
+
+    data class EnrollmentApprovalChallenge(
+        val id: String,
+        val nonce: String,
+        val enrollmentRequestId: String,
+        val deviceId: String,
+    )
+
+    fun listPendingEnrollments(accessToken: String): List<EnrollmentRequest> {
+        val response = request(
+            "GET",
+            "/functions/v1/supreme-session-api/enrollments",
+            accessToken = accessToken,
+        )
+        val rows = response.optJSONArray("enrollment_requests") ?: JSONArray()
+        val result = ArrayList<EnrollmentRequest>()
+        for (i in 0 until rows.length()) {
+            val row = rows.optJSONObject(i) ?: continue
+            val id = row.optString("request_id")
+            val deviceId = row.optString("device_id")
+            if (!UUID_PATTERN.matches(id) || !UUID_PATTERN.matches(deviceId)) continue
+            result.add(
+                EnrollmentRequest(
+                    id = id,
+                    deviceId = deviceId,
+                    securityLevel = row.optString("security_level", "unknown"),
+                    requestedAt = row.optString("requested_at", ""),
+                    expiresAt = row.optString("expires_at", ""),
+                ),
+            )
+        }
+        return result
+    }
+
+    fun issueEnrollmentApprovalChallenge(
+        accessToken: String,
+        enrollmentRequestId: String,
+    ): EnrollmentApprovalChallenge {
+        require(UUID_PATTERN.matches(enrollmentRequestId)) { "Invalid enrollment request." }
+        val response = request(
+            "POST",
+            "/functions/v1/supreme-session-api/enrollments/$enrollmentRequestId/challenge",
+            accessToken,
+            JSONObject(),
+        )
+        val id = response.optString("challenge_id")
+        val nonce = response.optString("nonce")
+        val requestId = response.optString("enrollment_request_id")
+        val deviceId = response.optString("device_id")
+        require(UUID_PATTERN.matches(id) && UUID_PATTERN.matches(requestId) &&
+            UUID_PATTERN.matches(deviceId) && Regex("^[A-Za-z0-9_-]{43}$").matches(nonce)
+        ) { "Supreme enrollment approval challenge was invalid." }
+        return EnrollmentApprovalChallenge(id, nonce, requestId, deviceId)
+    }
+
+    fun approveEnrollment(
+        accessToken: String,
+        challenge: EnrollmentApprovalChallenge,
+        signature: String,
+    ) {
+        require(UUID_PATTERN.matches(challenge.id) &&
+            UUID_PATTERN.matches(challenge.enrollmentRequestId) &&
+            UUID_PATTERN.matches(challenge.deviceId)
+        ) { "Invalid enrollment approval challenge." }
+        require(signature.length in 80..160 &&
+            Regex("^[A-Za-z0-9+/]+={0,2}$").matches(signature)
+        ) { "Supreme enrollment approval signature is invalid." }
+        request(
+            "POST",
+            "/functions/v1/supreme-session-api/enrollments/${challenge.enrollmentRequestId}/approve",
+            accessToken,
+            JSONObject()
+                .put("challenge_id", challenge.id)
+                .put("nonce", challenge.nonce)
+                .put("device_id", challenge.deviceId)
+                .put("signature", signature),
+        )
+    }
+
     data class DecisionChallenge(
         val id: String,
         val nonce: String,
