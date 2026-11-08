@@ -619,6 +619,27 @@ async function handle(request: Request): Promise<Response> {
         throw new TypeError("A rejection reason of at least 8 characters is required.");
       }
       const nextStatus = decision === "approve" ? "approved" : "rejected";
+
+      // The requester must never approve or reject their own control request.
+      // Supreme is a single ruler identity; this guard prevents accidental
+      // self-approval and preserves the approval boundary for future delegation.
+      const [pending] = await db`
+        select requester_user_id::text
+        from supreme.control_requests
+        where id = ${id}::uuid
+          and status = 'pending'
+          and approval_required = true
+          and expires_at > now()
+        limit 1
+      `;
+      if (pending?.requester_user_id === userId) {
+        await audit({ actor: userId, action: "control_requests.decision.denied",
+          outcome: "denied", requestId,
+          details: { reason: "requester_cannot_approve_own_request", control_request_id: id } });
+        return errorResponse("SELF_APPROVAL_FORBIDDEN",
+          "The requester cannot approve or reject their own control request.", 403, requestId);
+      }
+
       const [changed] = await db`
         update supreme.control_requests
         set status = ${nextStatus},
@@ -626,6 +647,7 @@ async function handle(request: Request): Promise<Response> {
             approved_at = case when ${decision} = 'approve' then now() else null end,
             updated_at = now()
         where id = ${id}::uuid
+          and requester_user_id <> ${userId}::uuid
           and status = 'pending'
           and approval_required = true
           and expires_at > now()
@@ -634,10 +656,17 @@ async function handle(request: Request): Promise<Response> {
       `;
       if (!changed) {
         const [existing] = await db`
-          select id::text, status, requester_user_id::text, expires_at
+          select id::text, status, requester_user_id::text, approved_by::text, expires_at
           from supreme.control_requests where id = ${id}::uuid limit 1
         `;
         if (!existing) return errorResponse("CONTROL_REQUEST_NOT_FOUND", "Control request not found.", 404, requestId);
+        if (existing.requester_user_id === userId) {
+          await audit({ actor: userId, action: "control_requests.decision.denied",
+            outcome: "denied", requestId,
+            details: { reason: "requester_cannot_approve_own_request", control_request_id: id } });
+          return errorResponse("SELF_APPROVAL_FORBIDDEN",
+            "The requester cannot approve or reject their own control request.", 403, requestId);
+        }
         if (new Date(existing.expires_at).getTime() <= Date.now() && existing.status === "pending") {
           await db`update supreme.control_requests set status = 'expired', updated_at = now()
             where id = ${id}::uuid and status = 'pending' and expires_at <= now()`;
@@ -645,7 +674,7 @@ async function handle(request: Request): Promise<Response> {
             requestId, details: { control_request_id: id } });
           return errorResponse("CONTROL_REQUEST_EXPIRED", "The control request has expired.", 410, requestId);
         }
-        if (existing.status === nextStatus && existing.requester_user_id === userId) {
+        if (existing.status === "approved" && existing.approved_by === userId) {
           return json({ control_request: { id, status: nextStatus, duplicate: true }, request_id: requestId }, 200, requestId, cors);
         }
         return errorResponse("CONTROL_REQUEST_NOT_PENDING", "Only pending control requests can be decided.", 409, requestId);
