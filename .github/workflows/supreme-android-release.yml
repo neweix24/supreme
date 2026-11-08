@@ -1,0 +1,108 @@
+name: Build Supreme Android production release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supreme-android-production-release
+  cancel-in-progress: false
+
+jobs:
+  build-production-release:
+    name: Sign and verify production APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: production
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Restore and validate production signing keystore
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SUPREME_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.SUPREME_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SUPREME_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.SUPREME_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE_BASE64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::A required production signing secret is missing from the production environment."
+              exit 1
+            fi
+          done
+
+          KEYSTORE_PATH="$RUNNER_TEMP/supreme-production-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+          if [[ ! -s "$KEYSTORE_PATH" ]]; then
+            echo "::error::The decoded production keystore is empty."
+            exit 1
+          fi
+
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          echo "SUPREME_RELEASE_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          echo "Production keystore decoded and alias validated."
+
+      - name: Calculate monotonically increasing release version code
+        id: release_version
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "version_code=$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_OUTPUT"
+
+      - name: Build signed production APK
+        working-directory: apps/android
+        env:
+          SUPREME_VERSION_CODE: ${{ steps.release_version.outputs.version_code }}
+          SUPREME_RELEASE_STORE_PASSWORD: ${{ secrets.SUPREME_RELEASE_STORE_PASSWORD }}
+          SUPREME_RELEASE_KEY_ALIAS: ${{ secrets.SUPREME_RELEASE_KEY_ALIAS }}
+          SUPREME_RELEASE_KEY_PASSWORD: ${{ secrets.SUPREME_RELEASE_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Verify APK signature and report signer fingerprint
+        id: signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="apps/android/app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          DIGEST="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {gsub(":", "", $2); print tolower($2); exit}')"
+          if [[ ! "$DIGEST" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Could not extract the production signer SHA-256 digest."
+            exit 1
+          fi
+          echo "sha256=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "Production APK signer SHA-256 (configure this exact digest in the server attestation allowlist): $DIGEST"
+
+      - name: Upload production-signed APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: supreme-android-production-${{ github.run_number }}
+          path: apps/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
