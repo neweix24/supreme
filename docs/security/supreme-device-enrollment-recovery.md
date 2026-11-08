@@ -121,7 +121,7 @@ If offline recovery material is lost, recovery requires a separately documented,
 The recovery path is implemented as a separate flow; it does not reuse first-device bootstrap.
 
 1. During secure owner provisioning, generate a 256-bit random recovery code locally and insert only its SHA-256 digest into `supreme.recovery_authorizations`. Keep the raw code offline and outside the phone.
-2. Configure the Edge Function secrets `SUPREME_RECOVERY_NOTIFICATION_WEBHOOK_URL` and `SUPREME_RECOVERY_NOTIFICATION_WEBHOOK_SECRET`. The URL must be HTTPS. The receiver must verify the bearer secret and independently notify the owner; return 2xx only after accepting the notification.
+2. Configure the Edge Function secrets `SUPREME_RECOVERY_NOTIFICATION_WEBHOOK_URL` and `SUPREME_RECOVERY_NOTIFICATION_WEBHOOK_SECRET`. The URL must be HTTPS. The receiver must verify the bearer secret and independently notify the owner; return 2xx only after accepting the notification. Honor the `Idempotency-Key` header (`supreme-recovery:<request-id>:<event-type>`) so retries cannot send duplicate alerts.
 3. When all trusted devices are lost, sign in with password + TOTP. Enter the offline recovery code and leave the recovery request ID empty. The API creates a pending request with a 24-hour cooling-off period and queues an independent notification.
 4. If notification delivery fails or is not configured, the request remains blocked. Re-enter the same offline code after configuring the notifier to retry delivery; completion remains impossible until delivery is acknowledged.
 5. After the cooling-off period, sign in again with password + TOTP, enter the same offline code and the recovery request UUID, and complete fresh Android hardware attestation with biometric proof-of-possession.
@@ -153,7 +153,7 @@ where i.public_id = 'supreme' and i.role = 'ruler' and i.is_active = true
 returning id, expires_at;
 ```
 
-The insert must return exactly one row. The webhook is an external operator-controlled dependency and is intentionally not hard-coded or pointed at an unverified personal address. The application fails closed when the independent notification is unavailable.
+The insert must return exactly one row. The webhook is an external operator-controlled dependency and is intentionally not hard-coded or pointed at an unverified personal address. The application fails closed when the independent notification is unavailable. Recovery SQL explicitly accepts Supabase Auth sessions whose `auth.sessions.not_after` is NULL (the default when no maximum session lifetime is configured) while still rejecting sessions with a non-NULL expiry in the past.
 
 ## Implementation progress
 
