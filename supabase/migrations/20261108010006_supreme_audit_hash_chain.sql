@@ -5,6 +5,7 @@ create extension if not exists pgcrypto with schema extensions;
 alter extension pgcrypto set schema extensions;
 
 alter table supreme.audit_events
+  add column if not exists chain_position bigint,
   add column if not exists previous_hash bytea,
   add column if not exists event_hash bytea;
 
@@ -16,22 +17,25 @@ do $$
 declare
   v_event record;
   v_previous_hash bytea := null;
+  v_position bigint := 0;
   v_payload jsonb;
   v_event_hash bytea;
 begin
   perform pg_advisory_xact_lock(731904221);
 
   for v_event in
-    select * from supreme.audit_events order by id asc
+    select * from supreme.audit_events order by chain_position asc
   loop
-    v_payload := to_jsonb(v_event) - 'previous_hash' - 'event_hash';
+    v_position := v_position + 1;
+    v_payload := to_jsonb(v_event) - 'chain_position' - 'previous_hash' - 'event_hash';
     v_event_hash := extensions.digest(
       convert_to(coalesce(encode(v_previous_hash, 'hex'), '') || E'\\n' || v_payload::text, 'UTF8'),
       'sha256'
     );
 
     update supreme.audit_events
-       set previous_hash = v_previous_hash,
+       set chain_position = v_position,
+           previous_hash = v_previous_hash,
            event_hash = v_event_hash
      where id = v_event.id;
 
@@ -41,6 +45,8 @@ end;
 $$;
 
 alter table supreme.audit_events
+  alter column chain_position set not null,
+  add constraint supreme_audit_chain_position_unique unique (chain_position),
   alter column event_hash set not null,
   add constraint supreme_audit_previous_hash_size
     check (previous_hash is null or octet_length(previous_hash) = 32),
@@ -61,14 +67,18 @@ declare
 begin
   perform pg_advisory_xact_lock(731904221);
 
+  select coalesce(max(chain_position), 0) + 1
+    into new.chain_position
+    from supreme.audit_events;
+
   select event_hash
     into v_previous_hash
     from supreme.audit_events
-   order by id desc
+   order by chain_position desc
    limit 1;
 
   new.previous_hash := v_previous_hash;
-  v_payload := to_jsonb(new) - 'previous_hash' - 'event_hash';
+  v_payload := to_jsonb(new) - 'chain_position' - 'previous_hash' - 'event_hash';
   new.event_hash := extensions.digest(
     convert_to(coalesce(encode(v_previous_hash, 'hex'), '') || E'\\n' || v_payload::text, 'UTF8'),
     'sha256'
@@ -104,7 +114,7 @@ begin
       return false;
     end if;
 
-    v_payload := to_jsonb(v_event) - 'previous_hash' - 'event_hash';
+    v_payload := to_jsonb(v_event) - 'chain_position' - 'previous_hash' - 'event_hash';
     v_expected_hash := extensions.digest(
       convert_to(coalesce(encode(v_previous_hash, 'hex'), '') || E'\\n' || v_payload::text, 'UTF8'),
       'sha256'
@@ -128,6 +138,8 @@ create trigger supreme_audit_events_immutable
 before update or delete on supreme.audit_events
 for each row execute function supreme.reject_audit_mutation();
 
+comment on column supreme.audit_events.chain_position is
+  'Monotonic insertion order assigned under the audit-chain advisory lock; independent of preallocated identity values.';
 comment on column supreme.audit_events.previous_hash is
   'SHA-256 hash of the preceding audit event; NULL only for the first event.';
 comment on column supreme.audit_events.event_hash is
