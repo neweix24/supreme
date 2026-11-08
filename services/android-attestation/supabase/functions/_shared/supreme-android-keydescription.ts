@@ -33,7 +33,7 @@ const KNOWN_AUTHORIZATION_TAGS = new Set([
   503, 504, 505, 506, 507, 508, 509, 701, 702, 703, 704, 705, 706,
   709, 710, 711, 712, 713, 714, 715, 716, 717, 718, 719, 723, 724,
 ]);
-const SET_OF_INTEGER_TAGS = new Set([1, 4, 5, 6, 203]);
+const SET_OF_INTEGER_TAGS = new Set([1, 4, 5, 6, 203, 504]);
 const NULL_MARKER_TAGS = new Set([503, 507, 508, 509, 703]);
 const OCTET_STRING_TAGS = new Set([709, 710, 711, 712, 713, 714, 715, 716, 717, 723, 724]);
 
