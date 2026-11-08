@@ -461,8 +461,12 @@ async function verifyEnrollmentApprovalSignature(
   );
 }
 
-async function trustedApprover(auth: AuthContext): Promise<{ deviceId: string; spki: Uint8Array } | null> {
-  if (!db || !isFreshAal2(auth.claims) || !(await assertSupremeIdentity(auth.userId))) return null;
+async function trustedApprover(
+  auth: AuthContext,
+  requireFreshAal2: boolean,
+): Promise<{ deviceId: string; spki: Uint8Array } | null> {
+  if (!db || (requireFreshAal2 && !isFreshAal2(auth.claims)) ||
+      !(await assertSupremeIdentity(auth.userId))) return null;
   const binding = auth.claims.supreme_app_session;
   if (!binding || typeof binding !== "object" || Array.isArray(binding)) return null;
   const claim = binding as Record<string, unknown>;
@@ -476,7 +480,7 @@ async function trustedApprover(auth: AuthContext): Promise<{ deviceId: string; s
 }
 
 async function enrollmentRequests(auth: AuthContext, requestId: string): Promise<Response> {
-  const approver = await trustedApprover(auth);
+  const approver = await trustedApprover(auth, false);
   if (!approver) return response({ error: { code: "TRUSTED_DEVICE_REQUIRED", request_id: requestId } }, 403, requestId);
   const rows = await db!.unsafe(
     "select r.id::text as request_id, r.device_id::text as device_id, d.security_level, r.requested_at, r.expires_at from supreme.device_enrollment_requests r join supreme.devices d on d.id = r.device_id where r.user_id = $1::uuid and r.status = 'pending' and r.expires_at > now() and d.status = 'pending_approval' order by r.requested_at asc limit 25",
@@ -488,7 +492,7 @@ async function enrollmentRequests(auth: AuthContext, requestId: string): Promise
 async function enrollmentApprovalChallenge(
   auth: AuthContext, requestId: string, enrollmentRequestId: string,
 ): Promise<Response> {
-  const approver = await trustedApprover(auth);
+  const approver = await trustedApprover(auth, true);
   if (!approver) return response({ error: { code: "TRUSTED_DEVICE_REQUIRED", request_id: requestId } }, 403, requestId);
   if (!isUuid(enrollmentRequestId)) return response({ error: { code: "INVALID_ENROLLMENT_ID", request_id: requestId } }, 400, requestId);
   const target = await db!.unsafe(
@@ -517,7 +521,7 @@ async function enrollmentApprovalChallenge(
 async function approveEnrollment(
   auth: AuthContext, request: Request, requestId: string, enrollmentRequestId: string,
 ): Promise<Response> {
-  const approver = await trustedApprover(auth);
+  const approver = await trustedApprover(auth, true);
   if (!approver) return response({ error: { code: "TRUSTED_DEVICE_REQUIRED", request_id: requestId } }, 403, requestId);
   if (!isUuid(enrollmentRequestId)) return response({ error: { code: "INVALID_ENROLLMENT_ID", request_id: requestId } }, 400, requestId);
   let body: Record<string, unknown>;
