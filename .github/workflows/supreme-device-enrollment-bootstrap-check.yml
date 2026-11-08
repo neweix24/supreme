@@ -1,0 +1,66 @@
+name: Supreme device enrollment bootstrap SQL test
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+      - "supabase/tests/**"
+      - ".github/workflows/supreme-device-enrollment-bootstrap-check.yml"
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+      - "supabase/tests/**"
+      - ".github/workflows/supreme-device-enrollment-bootstrap-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supreme-device-enrollment-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGDATABASE: postgres
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Create isolated Supreme enrollment fixture
+        run: psql --set ON_ERROR_STOP=1 --file supabase/tests/supreme_device_enrollment_bootstrap_setup.sql
+
+      - name: Apply device enrollment migration
+        run: psql --set ON_ERROR_STOP=1 --file supabase/migrations/20261108123000_supreme_pending_device_enrollment.sql
+
+      - name: Verify bootstrap and pending-device security invariants
+        run: psql --set ON_ERROR_STOP=1 --file supabase/tests/supreme_device_enrollment_bootstrap.sql
