@@ -41,12 +41,19 @@ internal object SupremeAuthClient {
         val description: String,
     )
 
-    fun signIn(email: String, password: String): AuthSession {
+    fun signIn(email: String, password: String, captchaToken: String): AuthSession {
         require(email.length <= 320 && email.contains("@")) { "Enter the Supreme account email." }
         require(password.length in 1..256) { "Enter the Supreme account password." }
+        require(captchaToken.length in 1..2048 && captchaToken.none { it.isISOControl() }) {
+            "Complete the security verification before signing in."
+        }
         val payload = JSONObject()
             .put("email", email.trim())
             .put("password", password)
+            .put(
+                "gotrue_meta_security",
+                JSONObject().put("captcha_token", captchaToken),
+            )
         return parseSession(
             request("POST", "/auth/v1/token?grant_type=password", body = payload),
             stage = "Password sign-in",
