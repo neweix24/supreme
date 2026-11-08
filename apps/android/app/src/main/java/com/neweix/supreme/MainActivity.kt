@@ -662,37 +662,19 @@ class MainActivity : FragmentActivity() {
             return
         }
         if (isBusy) return
-        setBusy(true, "Recording Supreme approval decision…")
+        setBusy(true, "Preparing biometric approval signature…")
         background.execute {
             try {
                 var activeAccessToken = accessToken
-                try {
-                    val challenge = SupremeAuthClient.issueControlDecisionChallenge(
+                val decisionChallenge = try {
+                    SupremeAuthClient.issueControlDecisionChallenge(
                         accessToken = activeAccessToken,
                         requestId = request.id,
                         decision = decision,
                         reason = reason,
-                    )
-                    val signature = SupremeKeyAttestation.signControlDecision(
-                        challengeId = challenge.id,
-                        nonceBase64Url = challenge.nonce,
-                        requestId = request.id,
-                        decision = decision,
-                        reason = reason,
-                    )
-                    SupremeAuthClient.decideControlRequest(
-                        accessToken = activeAccessToken,
-                        requestId = request.id,
-                        decision = decision,
-                        reason = reason,
-                        challengeId = challenge.id,
-                        nonce = challenge.nonce,
-                        signature = signature,
                     )
                 } catch (error: SupremeAuthException) {
                     if (error.statusCode != 401) throw error
-                    // A stale access token must be refreshed once, then the
-                    // decision is retried exactly once with the same request ID.
                     val storedRefreshToken = sessionStore.readRefreshToken()
                         ?: throw IllegalStateException("Supreme session expired. Sign in again.")
                     val refreshed = SupremeAuthClient.refresh(storedRefreshToken)
@@ -703,43 +685,84 @@ class MainActivity : FragmentActivity() {
                     sessionStore.saveRefreshToken(refreshed.refreshToken)
                     activeAccessToken = refreshed.accessToken
                     currentAccessToken = refreshed.accessToken
-                    val challenge = SupremeAuthClient.issueControlDecisionChallenge(
+                    SupremeAuthClient.issueControlDecisionChallenge(
                         accessToken = activeAccessToken,
                         requestId = request.id,
                         decision = decision,
                         reason = reason,
-                    )
-                    val signature = SupremeKeyAttestation.signControlDecision(
-                        challengeId = challenge.id,
-                        nonceBase64Url = challenge.nonce,
-                        requestId = request.id,
-                        decision = decision,
-                        reason = reason,
-                    )
-                    SupremeAuthClient.decideControlRequest(
-                        accessToken = activeAccessToken,
-                        requestId = request.id,
-                        decision = decision,
-                        reason = reason,
-                        challengeId = challenge.id,
-                        nonce = challenge.nonce,
-                        signature = signature,
                     )
                 }
-                val services = SupremeAuthClient.listServices(activeAccessToken)
-                val requests = SupremeAuthClient.listPendingRequests(activeAccessToken)
+
+                val signer = SupremeKeyAttestation.prepareControlDecisionSignature(
+                    challengeId = decisionChallenge.id,
+                    nonceBase64Url = decisionChallenge.nonce,
+                    requestId = request.id,
+                    decision = decision,
+                    reason = reason,
+                )
                 runOnUiThread {
-                    renderDashboard(services, requests)
-                    setBusy(false, if (decision == "approve") {
-                        "Approval recorded. Provider execution has not been triggered."
-                    } else {
-                        "Rejection recorded in the Supreme audit log."
-                    })
+                    authenticateForSigning(
+                        signer,
+                        onSigned = { authorizedSigner ->
+                            val signature = Base64.getEncoder().encodeToString(authorizedSigner.sign())
+                            background.execute {
+                                try {
+                                    try {
+                                        SupremeAuthClient.decideControlRequest(
+                                            accessToken = activeAccessToken,
+                                            requestId = request.id,
+                                            decision = decision,
+                                            reason = reason,
+                                            challengeId = decisionChallenge.id,
+                                            nonce = decisionChallenge.nonce,
+                                            signature = signature,
+                                        )
+                                    } catch (error: SupremeAuthException) {
+                                        if (error.statusCode != 401) throw error
+                                        // A 401 occurs before route execution; the challenge
+                                        // remains unconsumed and can be retried after rotation.
+                                        val storedRefreshToken = sessionStore.readRefreshToken()
+                                            ?: throw IllegalStateException("Supreme session expired. Sign in again.")
+                                        val refreshed = SupremeAuthClient.refresh(storedRefreshToken)
+                                        if (refreshed.assuranceLevel != "aal2") {
+                                            throw IllegalStateException("Supreme MFA session expired. Sign in again.")
+                                        }
+                                        SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
+                                        sessionStore.saveRefreshToken(refreshed.refreshToken)
+                                        activeAccessToken = refreshed.accessToken
+                                        currentAccessToken = refreshed.accessToken
+                                        SupremeAuthClient.decideControlRequest(
+                                            accessToken = activeAccessToken,
+                                            requestId = request.id,
+                                            decision = decision,
+                                            reason = reason,
+                                            challengeId = decisionChallenge.id,
+                                            nonce = decisionChallenge.nonce,
+                                            signature = signature,
+                                        )
+                                    }
+                                    val services = SupremeAuthClient.listServices(activeAccessToken)
+                                    val requests = SupremeAuthClient.listPendingRequests(activeAccessToken)
+                                    runOnUiThread {
+                                        renderDashboard(services, requests)
+                                        setBusy(false, if (decision == "approve") {
+                                            "Biometric approval recorded. Provider execution has not been triggered."
+                                        } else {
+                                            "Biometric rejection recorded in the Supreme audit log."
+                                        })
+                                    }
+                                } catch (error: Exception) {
+                                    runOnUiThread { setBusy(false, safeMessage(error)) }
+                                }
+                            }
+                        },
+                        onFailure = { message ->
+                            setBusy(false, message)
+                        },
+                    )
                 }
             } catch (error: Exception) {
-                runOnUiThread {
-                    setBusy(false, safeMessage(error))
-                }
+                runOnUiThread { setBusy(false, safeMessage(error)) }
             }
         }
     }
