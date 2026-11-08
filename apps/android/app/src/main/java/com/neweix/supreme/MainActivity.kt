@@ -357,8 +357,17 @@ class MainActivity : FragmentActivity() {
                 text = "UNLOCK SUPREME"
                 isAllCaps = true
                 setOnClickListener {
-                    lockStatusText.text = "Starting Android biometric verification…"
-                    authenticateToUnlock()
+                    // A previous prompt can be left pending if Android backgrounds or
+                    // dismisses its system UI without delivering a callback. A visible
+                    // retry tap means no prompt is currently covering this Activity.
+                    biometricPrompt?.cancelAuthentication()
+                    authInProgress = false
+                    lockStatusText.text = "Retrying Android biometric verification…"
+                    window.decorView.post {
+                        if (!isFinishing && !isDestroyed && !isUnlocked) {
+                            authenticateToUnlock()
+                        }
+                    }
                 }
             }, matchWrap())
         }
