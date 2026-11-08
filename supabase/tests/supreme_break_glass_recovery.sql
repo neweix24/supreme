@@ -5,6 +5,8 @@ DO $$
 DECLARE
   v_user uuid := gen_random_uuid();
   v_auth_session uuid := gen_random_uuid();
+  v_old_auth_session uuid := gen_random_uuid();
+  v_completion_auth_session uuid := gen_random_uuid();
   v_expired_auth_session uuid := gen_random_uuid();
   v_old_device uuid := gen_random_uuid();
   v_pending_device uuid := gen_random_uuid();
@@ -29,6 +31,7 @@ BEGIN
   INSERT INTO auth.sessions(id, user_id, not_after)
   VALUES
     (v_auth_session, v_user, NULL),
+    (v_old_auth_session, v_user, NULL),
     (v_expired_auth_session, v_user, now() - interval '1 minute');
   INSERT INTO supreme.identities(user_id, public_id, role, is_active)
   VALUES (v_user, 'supreme', 'ruler', true);
@@ -62,6 +65,10 @@ BEGIN
   END IF;
 
   v_result := public.begin_supreme_break_glass_recovery(v_user, v_auth_session, v_hash);
+  IF NOT EXISTS (SELECT 1 FROM auth.sessions WHERE id = v_auth_session)
+     OR EXISTS (SELECT 1 FROM auth.sessions WHERE id IN (v_old_auth_session, v_expired_auth_session)) THEN
+    RAISE EXCEPTION 'Recovery request did not retain only its fresh Auth session';
+  END IF;
   v_request := (v_result ->> 'request_id')::uuid;
   v_available := (v_result ->> 'available_at')::timestamptz;
   IF v_request IS NULL OR v_available <= now() THEN
@@ -71,7 +78,7 @@ BEGIN
   -- Completion must be blocked until the independent notification is acknowledged.
   BEGIN
     PERFORM public.complete_supreme_break_glass_recovery(
-      v_user, v_auth_session, v_request, v_hash,
+      v_user, v_completion_auth_session, v_request, v_hash,
       repeat('d', 64), repeat('e', 64), 'strongbox',
       now(), now() + interval '4 hours'
     );
@@ -92,7 +99,7 @@ BEGIN
   v_early_rejected := false;
   BEGIN
     PERFORM public.complete_supreme_break_glass_recovery(
-      v_user, v_auth_session, v_request, v_hash,
+      v_user, v_completion_auth_session, v_request, v_hash,
       repeat('d', 64), repeat('e', 64), 'strongbox',
       now(), now() + interval '4 hours'
     );
@@ -106,9 +113,13 @@ BEGIN
   -- A successful independent delivery is acknowledged by the service role.
   PERFORM public.mark_supreme_recovery_notification_delivered(v_request, 'requested');
 
+  -- The owner signs in again after the cooling-off period with a new Auth session.
+  INSERT INTO auth.sessions(id, user_id, not_after)
+  VALUES (v_completion_auth_session, v_user, NULL);
+
   BEGIN
     PERFORM public.complete_supreme_break_glass_recovery(
-      v_user, v_auth_session, v_request, v_hash,
+      v_user, v_completion_auth_session, v_request, v_hash,
       repeat('d', 64), repeat('e', 64), NULL,
       now(), now() + interval '4 hours'
     );
@@ -121,7 +132,7 @@ BEGIN
 
   BEGIN
     PERFORM public.complete_supreme_break_glass_recovery(
-      v_user, v_auth_session, v_request, v_hash,
+      v_user, v_completion_auth_session, v_request, v_hash,
       repeat('d', 64), repeat('e', 64), 'strongbox',
       now(), NULL
     );
@@ -133,7 +144,7 @@ BEGIN
   END IF;
 
   v_result := public.complete_supreme_break_glass_recovery(
-    v_user, v_auth_session, v_request, v_hash,
+    v_user, v_completion_auth_session, v_request, v_hash,
     repeat('d', 64), repeat('e', 64), 'strongbox',
     now(), now() + interval '4 hours'
   );
@@ -158,6 +169,10 @@ BEGIN
   FROM supreme.app_sessions WHERE id = (v_result ->> 'session_id')::uuid;
   IF v_session_status <> 'active' THEN
     RAISE EXCEPTION 'Replacement device session is not active';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM auth.sessions WHERE id = v_completion_auth_session)
+     OR EXISTS (SELECT 1 FROM auth.sessions WHERE id IN (v_auth_session, v_old_auth_session)) THEN
+    RAISE EXCEPTION 'Recovery completion did not retain only its fresh Auth session';
   END IF;
 
   IF NOT EXISTS (
@@ -187,7 +202,7 @@ BEGIN
   -- A completed request and consumed offline material cannot be replayed.
   BEGIN
     PERFORM public.complete_supreme_break_glass_recovery(
-      v_user, v_auth_session, v_request, v_hash,
+      v_user, v_completion_auth_session, v_request, v_hash,
       repeat('f', 64), repeat('1', 64), 'strongbox',
       now(), now() + interval '4 hours'
     );
