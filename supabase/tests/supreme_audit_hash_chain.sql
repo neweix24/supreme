@@ -62,6 +62,6 @@ begin
     raise exception 'Hash-chain verifier did not detect a privileged audit-event modification';
   end if;
 end;
-$;
+$$;
 
 rollback;
