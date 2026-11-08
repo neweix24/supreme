@@ -665,7 +665,7 @@ class MainActivity : FragmentActivity() {
         setBusy(true, "Preparing biometric approval signature…")
         background.execute {
             try {
-                var activeAccessToken = accessToken
+                var activeAccessToken: String = accessToken
                 val decisionChallenge = try {
                     SupremeAuthClient.issueControlDecisionChallenge(
                         accessToken = activeAccessToken,
