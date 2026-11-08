@@ -166,7 +166,7 @@ async function verifyControlDecisionSignature(input: {
     input.requestId,
     input.decision,
     hex(input.reasonHash),
-  ].join("\n");
+  ].join("\n"));
   return await crypto.subtle.verify(
     { name: "ECDSA", hash: "SHA-256" },
     key,
