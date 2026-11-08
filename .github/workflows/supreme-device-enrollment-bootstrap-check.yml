@@ -69,3 +69,9 @@ jobs:
 
       - name: Verify biometric remote device revocation invariants
         run: psql --set ON_ERROR_STOP=1 --file supabase/tests/supreme_device_inventory_revocation.sql
+
+      - name: Apply break-glass recovery migration
+        run: psql --set ON_ERROR_STOP=1 --file supabase/migrations/20261108160000_supreme_break_glass_recovery.sql
+
+      - name: Verify break-glass recovery invariants
+        run: psql --set ON_ERROR_STOP=1 --file supabase/tests/supreme_break_glass_recovery.sql
