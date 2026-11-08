@@ -151,7 +151,7 @@ begin
     expires_at = excluded.expires_at,
     revoked_at = null,
     updated_at = now()
-  where supreme.app_sessions.status = 'active'
+  where app_sessions.status = 'active'
   returning id into v_session_id;
 
   if v_session_id is null then
