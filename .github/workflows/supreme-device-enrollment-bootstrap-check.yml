@@ -2,7 +2,6 @@ name: Supreme device enrollment bootstrap SQL test
 
 on:
   pull_request:
-    branches: [main]
     paths:
       - "supabase/migrations/**"
       - "supabase/tests/**"
