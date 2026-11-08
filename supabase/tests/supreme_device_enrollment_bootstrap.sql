@@ -110,6 +110,21 @@ BEGIN
   IF v_status <> 'revoked' THEN
     RAISE EXCEPTION 'Revoked device status changed: %', v_status;
   END IF;
+
+  UPDATE supreme.devices SET status = 'blocked' WHERE id = v_second_device_id;
+  BEGIN
+    PERFORM public.register_supreme_attested_device_session(
+      v_user_id, gen_random_uuid(), repeat('2', 64), repeat('d', 64),
+      'trusted_environment', now(), now() + interval '4 hours', repeat('b', 64)
+    );
+    RAISE EXCEPTION 'Blocked device key was unexpectedly reactivated';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+  SELECT status INTO v_status FROM supreme.devices WHERE id = v_second_device_id;
+  IF v_status <> 'blocked' THEN
+    RAISE EXCEPTION 'Blocked device status changed: %', v_status;
+  END IF;
 END;
 $$;
 
