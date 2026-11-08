@@ -365,7 +365,7 @@ async function issueDeviceSession(
   // Persist only the SPKI extracted from the certificate whose chain, Google
   // revocation state, Android KeyDescription and proof-of-possession passed.
   const storedKey = await db.unsafe(
-    "update supreme.devices set device_public_key_spki = decode($1, 'base64'), updated_at = now() where id = $2::uuid and user_id = $3::uuid and device_key_sha256 = $4 and status = 'active' returning id::text",
+    "update supreme.devices set device_public_key_spki = decode($1, 'base64'), device_key_biometric_auth_required = true, updated_at = now() where id = $2::uuid and user_id = $3::uuid and device_key_sha256 = $4 and status = 'active' returning id::text",
     [publicKeyBase64, deviceId, auth.userId, verified.device_key_sha256],
   );
   if (storedKey.length !== 1) {
@@ -405,12 +405,18 @@ async function readOrRevokeSession(
     return response({ error: { code: "INVALID_DEVICE_SESSION_CLAIM", request_id: requestId } }, 403, requestId);
   }
   const rows = await db.unsafe(
-    "select s.id::text as session_id, s.device_id::text as device_id, s.status, s.attested_at, s.expires_at, d.security_level, d.status as device_status, d.last_seen_at from supreme.app_sessions s join supreme.devices d on d.id = s.device_id where s.id = $1::uuid and s.user_id = $2::uuid and s.auth_session_id = $3::uuid and d.id = $4::uuid and d.user_id = $2::uuid limit 1",
+    "select s.id::text as session_id, s.device_id::text as device_id, s.status, s.attested_at, s.expires_at, d.security_level, d.status as device_status, d.device_key_biometric_auth_required, d.last_seen_at from supreme.app_sessions s join supreme.devices d on d.id = s.device_id where s.id = $1::uuid and s.user_id = $2::uuid and s.auth_session_id = $3::uuid and d.id = $4::uuid and d.user_id = $2::uuid limit 1",
     [claim.session_id, auth.userId, auth.authSessionId, claim.device_id],
   );
   const session = rows[0];
 
   if (request.method === "GET") {
+    if (session && session.status === "active" && session.device_status === "active" &&
+        session.device_key_biometric_auth_required !== true) {
+      return response({
+        error: { code: "BIOMETRIC_DEVICE_REENROLLMENT_REQUIRED", request_id: requestId },
+      }, 403, requestId);
+    }
     const active = Boolean(
       session &&
       session.status === "active" &&
