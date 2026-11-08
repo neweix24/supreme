@@ -6,6 +6,8 @@ const SUPABASE_ANON_KEY =
   Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ??
   "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const RECOVERY_NOTIFICATION_URL = Deno.env.get("SUPREME_RECOVERY_NOTIFICATION_WEBHOOK_URL") ?? "";
+const RECOVERY_NOTIFICATION_SECRET = Deno.env.get("SUPREME_RECOVERY_NOTIFICATION_WEBHOOK_SECRET") ?? "";
 const DATABASE_URL = Deno.env.get("SUPABASE_DB_URL") ?? "";
 const SIGNING_CERT_SHA256 = (Deno.env.get("SUPREME_ANDROID_SIGNING_CERT_SHA256") ?? "").toLowerCase();
 const db = DATABASE_URL
@@ -259,8 +261,8 @@ async function issueDeviceSession(
     }, error instanceof RangeError ? 413 : 400, requestId);
   }
 
-  const allowedKeys = new Set(["challenge_id", "challenge", "certificate_chain", "proof_signature", "bootstrap_authorization"]);
-  if (Object.keys(payload).length < 4 || Object.keys(payload).length > 5 ||
+  const allowedKeys = new Set(["challenge_id", "challenge", "certificate_chain", "proof_signature", "bootstrap_authorization", "recovery_request_id", "recovery_material"]);
+  if (Object.keys(payload).length < 4 || Object.keys(payload).length > 7 ||
       Object.keys(payload).some((key) => !allowedKeys.has(key)) ||
       typeof payload.challenge_id !== "string" || !UUID_V4.test(payload.challenge_id) ||
       typeof payload.challenge !== "string" ||
@@ -271,7 +273,12 @@ async function issueDeviceSession(
       typeof payload.proof_signature !== "string" || payload.proof_signature.length > 512 ||
       (payload.bootstrap_authorization !== undefined &&
         (typeof payload.bootstrap_authorization !== "string" ||
-          !/^[a-f0-9]{64}$/.test(payload.bootstrap_authorization)))) {
+          !/^[a-f0-9]{64}$/.test(payload.bootstrap_authorization))) ||
+      ((payload.recovery_request_id === undefined) !== (payload.recovery_material === undefined)) ||
+      (payload.recovery_request_id !== undefined &&
+        (typeof payload.recovery_request_id !== "string" || !UUID_V4.test(payload.recovery_request_id) ||
+         typeof payload.recovery_material !== "string" || !/^[a-f0-9]{64}$/.test(payload.recovery_material))) ||
+      (payload.bootstrap_authorization !== undefined && payload.recovery_request_id !== undefined)) {
     return response({ error: { code: "INVALID_ATTESTATION_PAYLOAD", request_id: requestId } }, 400, requestId);
   }
 
@@ -336,16 +343,32 @@ async function issueDeviceSession(
   const bootstrapTokenHash = typeof payload.bootstrap_authorization === "string"
     ? await sha256Hex(new TextEncoder().encode(payload.bootstrap_authorization))
     : null;
-  const registered = await postServiceRpc("register_supreme_attested_device_session", {
-    p_user_id: auth.userId,
-    p_auth_session_id: auth.authSessionId,
-    p_device_key_sha256: verified.device_key_sha256,
-    p_signing_certificate_sha256: SIGNING_CERT_SHA256,
-    p_security_level: verified.security_level,
-    p_attested_at: now.toISOString(),
-    p_expires_at: expiresAt,
-    p_bootstrap_token_sha256: bootstrapTokenHash,
-  });
+  const recoveryMode = typeof payload.recovery_request_id === "string";
+  const recoveryMaterialHash = recoveryMode
+    ? await sha256Hex(new TextEncoder().encode(payload.recovery_material as string))
+    : null;
+  const registered = recoveryMode
+    ? await postServiceRpc("complete_supreme_break_glass_recovery", {
+        p_user_id: auth.userId,
+        p_auth_session_id: auth.authSessionId,
+        p_request_id: payload.recovery_request_id,
+        p_token_sha256: recoveryMaterialHash,
+        p_device_key_sha256: verified.device_key_sha256,
+        p_signing_certificate_sha256: SIGNING_CERT_SHA256,
+        p_security_level: verified.security_level,
+        p_attested_at: now.toISOString(),
+        p_expires_at: expiresAt,
+      })
+    : await postServiceRpc("register_supreme_attested_device_session", {
+        p_user_id: auth.userId,
+        p_auth_session_id: auth.authSessionId,
+        p_device_key_sha256: verified.device_key_sha256,
+        p_signing_certificate_sha256: SIGNING_CERT_SHA256,
+        p_security_level: verified.security_level,
+        p_attested_at: now.toISOString(),
+        p_expires_at: expiresAt,
+        p_bootstrap_token_sha256: bootstrapTokenHash,
+      });
 
   if (!registered || typeof registered !== "object") {
     return response({ error: { code: "SESSION_REGISTRATION_FAILED", request_id: requestId } }, 503, requestId);
@@ -362,6 +385,12 @@ async function issueDeviceSession(
   }
   const deviceId = value.device_id;
   const pendingApproval = value.pending_approval === true;
+  if (recoveryMode && value.completed !== true) {
+    return response({ error: { code: "RECOVERY_COMPLETION_FAILED", request_id: requestId } }, 409, requestId);
+  }
+  if (recoveryMode) {
+    await dispatchRecoveryNotification(payload.recovery_request_id as string, "completed");
+  }
   const publicKeyBase64 = verified.device_public_key_spki_base64 as string;
   let publicKeyDer: Uint8Array;
   try {
@@ -661,6 +690,95 @@ async function revokeRemoteDevice(auth: AuthContext, request: Request, requestId
   return response({ revoked: true, device_id: targetDeviceId, revoked_sessions: (result as Record<string, unknown>).revoked_sessions ?? 0, request_id: requestId }, 200, requestId);
 }
 
+
+async function dispatchRecoveryNotification(requestId: string, eventType: "requested" | "completed"): Promise<boolean> {
+  if (!db || !RECOVERY_NOTIFICATION_URL || !RECOVERY_NOTIFICATION_SECRET) return false;
+  let url: URL;
+  try {
+    url = new URL(RECOVERY_NOTIFICATION_URL);
+    if (url.protocol !== "https:") return false;
+  } catch {
+    return false;
+  }
+  const rows = await db.unsafe(
+    "select id::text, payload, delivered_at from supreme.recovery_notification_outbox where recovery_request_id = $1::uuid and event_type = $2 limit 1",
+    [requestId, eventType],
+  );
+  if (rows.length !== 1) return false;
+  if (rows[0].delivered_at) return true;
+  try {
+    const result = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer " + RECOVERY_NOTIFICATION_SECRET,
+        "x-neweix-supreme-event": eventType,
+      },
+      body: JSON.stringify(rows[0].payload),
+      redirect: "error",
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!result.ok) {
+      await db.unsafe(
+        "update supreme.recovery_notification_outbox set attempts = attempts + 1, last_error_code = $2 where id = $1::uuid and delivered_at is null",
+        [rows[0].id, "HTTP_" + result.status],
+      );
+      await result.body?.cancel();
+      return false;
+    }
+    await result.body?.cancel();
+    await postServiceRpc("mark_supreme_recovery_notification_delivered", {
+      p_request_id: requestId,
+      p_event_type: eventType,
+    });
+    return true;
+  } catch {
+    await db.unsafe(
+      "update supreme.recovery_notification_outbox set attempts = attempts + 1, last_error_code = 'DELIVERY_FAILED' where id = $1::uuid and delivered_at is null",
+      [rows[0].id],
+    );
+    return false;
+  }
+}
+
+async function beginBreakGlassRecovery(auth: AuthContext, request: Request, requestId: string): Promise<Response> {
+  if (!db || !SERVICE_ROLE_KEY) {
+    return response({ error: { code: "SERVICE_NOT_CONFIGURED", request_id: requestId } }, 503, requestId);
+  }
+  if (!isFreshAal2(auth.claims) || !(await assertSupremeIdentity(auth.userId))) {
+    return response({ error: { code: "SUPREME_AAL2_REQUIRED", request_id: requestId } }, 403, requestId);
+  }
+  let body: Record<string, unknown>;
+  try { body = await boundedJson(request, 8 * 1024); }
+  catch { return response({ error: { code: "INVALID_REQUEST", request_id: requestId } }, 400, requestId); }
+  if (Object.keys(body).length !== 1 || typeof body.recovery_material !== "string" ||
+      !/^[a-f0-9]{64}$/.test(body.recovery_material)) {
+    return response({ error: { code: "INVALID_RECOVERY_MATERIAL", request_id: requestId } }, 400, requestId);
+  }
+  const tokenHash = await sha256Hex(new TextEncoder().encode(body.recovery_material));
+  const result = await postServiceRpc("begin_supreme_break_glass_recovery", {
+    p_user_id: auth.userId,
+    p_auth_session_id: auth.authSessionId,
+    p_token_sha256: tokenHash,
+  });
+  if (!result || typeof result !== "object" || !isUuid((result as Record<string, unknown>).request_id)) {
+    return response({ error: { code: "RECOVERY_REQUEST_FAILED", request_id: requestId } }, 409, requestId);
+  }
+  const recovery = result as Record<string, unknown>;
+  const notificationDelivered = await dispatchRecoveryNotification(
+    recovery.request_id as string, "requested",
+  );
+  return response({
+    requested: true,
+    request_id: recovery.request_id,
+    available_at: recovery.available_at,
+    expires_at: recovery.expires_at,
+    notification_delivered: notificationDelivered,
+    notification_retry_required: !notificationDelivered,
+    request_id_trace: requestId,
+  }, 202, requestId);
+}
+
 async function readOrRevokeSession(
   auth: AuthContext,
   request: Request,
@@ -764,9 +882,10 @@ async function handle(request: Request): Promise<Response> {
   const isDeviceInventory = request.method === "GET" && suffix === "devices";
   const isDeviceRevocationChallenge = request.method === "POST" && parts.length >= 5 && parts[parts.length - 4] === "devices" && parts[parts.length - 2] === "revoke" && suffix === "challenge";
   const isDeviceRevocation = request.method === "POST" && parts.length >= 4 && parts[parts.length - 3] === "devices" && suffix === "revoke";
+  const isRecoveryRequest = request.method === "POST" && suffix === "request" && parts[parts.length - 2] === "recovery";
   const operation = request.method === "POST" ? suffix : "";
   if (request.method !== "GET" && request.method !== "DELETE" &&
-      !(request.method === "POST" && (operation === "challenge" || operation === "issue" || isEnrollmentChallenge || isEnrollmentApproval || isDeviceRevocationChallenge || isDeviceRevocation))) {
+      !(request.method === "POST" && (operation === "challenge" || operation === "issue" || isEnrollmentChallenge || isEnrollmentApproval || isDeviceRevocationChallenge || isDeviceRevocation || isRecoveryRequest))) {
     return response({ error: { code: "METHOD_NOT_ALLOWED", request_id: requestId } }, 405, requestId);
   }
   if (!db || !SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) {
@@ -790,6 +909,7 @@ async function handle(request: Request): Promise<Response> {
     if (isDeviceInventory) return await deviceInventory(auth, requestId);
     if (isDeviceRevocationChallenge) return await deviceRevocationChallenge(auth, requestId, parts[parts.length - 3]);
     if (isDeviceRevocation) return await revokeRemoteDevice(auth, request, requestId, parts[parts.length - 2]);
+    if (isRecoveryRequest) return await beginBreakGlassRecovery(auth, request, requestId);
     return await readOrRevokeSession(auth, request, requestId);
   } catch (error) {
     console.error("Supreme session API failed", { requestId, error: String(error) });
