@@ -404,6 +404,19 @@ class MainActivity : FragmentActivity() {
                                             "This device did not pass Supreme hardware security verification.",
                                         )
                                     }
+                                    if (device.pendingApproval) {
+                                        runOnUiThread {
+                                            pendingPasswordSession = null
+                                            pendingFactorId = null
+                                            pendingChallengeId = null
+                                            codeInput.text.clear()
+                                            setBusy(
+                                                false,
+                                                "This device is awaiting approval from an existing trusted Supreme device. No app session was created.",
+                                            )
+                                        }
+                                        return@execute
+                                    }
                                     val refreshed = SupremeAuthClient.refresh(session.refreshToken)
                                     if (refreshed.userId != session.userId ||
                                         refreshed.sessionId != session.sessionId ||
