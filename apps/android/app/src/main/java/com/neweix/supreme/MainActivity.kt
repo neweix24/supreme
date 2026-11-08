@@ -31,6 +31,7 @@ import com.neweix.supreme.auth.SupremeAuthClient
 import com.neweix.supreme.auth.SupremeAuthException
 import com.neweix.supreme.auth.SupremeSessionStore
 import com.neweix.supreme.security.SupremeAttestationClient
+import com.neweix.supreme.security.SupremeKeyAttestation
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -637,11 +638,27 @@ class MainActivity : FragmentActivity() {
             try {
                 var activeAccessToken = accessToken
                 try {
+                    val challenge = SupremeAuthClient.issueControlDecisionChallenge(
+                        accessToken = activeAccessToken,
+                        requestId = request.id,
+                        decision = decision,
+                        reason = reason,
+                    )
+                    val signature = SupremeKeyAttestation.signControlDecision(
+                        challengeId = challenge.id,
+                        nonceBase64Url = challenge.nonce,
+                        requestId = request.id,
+                        decision = decision,
+                        reason = reason,
+                    )
                     SupremeAuthClient.decideControlRequest(
                         accessToken = activeAccessToken,
                         requestId = request.id,
                         decision = decision,
                         reason = reason,
+                        challengeId = challenge.id,
+                        nonce = challenge.nonce,
+                        signature = signature,
                     )
                 } catch (error: SupremeAuthException) {
                     if (error.statusCode != 401) throw error
@@ -657,11 +674,27 @@ class MainActivity : FragmentActivity() {
                     sessionStore.saveRefreshToken(refreshed.refreshToken)
                     activeAccessToken = refreshed.accessToken
                     currentAccessToken = refreshed.accessToken
+                    val challenge = SupremeAuthClient.issueControlDecisionChallenge(
+                        accessToken = activeAccessToken,
+                        requestId = request.id,
+                        decision = decision,
+                        reason = reason,
+                    )
+                    val signature = SupremeKeyAttestation.signControlDecision(
+                        challengeId = challenge.id,
+                        nonceBase64Url = challenge.nonce,
+                        requestId = request.id,
+                        decision = decision,
+                        reason = reason,
+                    )
                     SupremeAuthClient.decideControlRequest(
                         accessToken = activeAccessToken,
                         requestId = request.id,
                         decision = decision,
                         reason = reason,
+                        challengeId = challenge.id,
+                        nonce = challenge.nonce,
+                        signature = signature,
                     )
                 }
                 val services = SupremeAuthClient.listServices(activeAccessToken)
