@@ -114,7 +114,7 @@ function makeDescription(options: FixtureOptions = {}) {
     contextTag(3, integer(options.keySize ?? 256n)),
     contextTag(5, setOf(...(options.digests ?? [4n]).map(integer))),
     contextTag(10, integer(options.curve ?? 1n)),
-    contextTag(504, setOf(integer(options.biometricAuthType ?? 2n))),
+    contextTag(504, integer(options.biometricAuthType ?? 2n)),
     contextTag(505, integer(options.authTimeout ?? 0n)),
     contextTag(702, integer(options.origin ?? 0n)),
     contextTag(704, seq(
