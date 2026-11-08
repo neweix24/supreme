@@ -118,6 +118,10 @@ begin
     raise exception 'offline recovery material is invalid or expired' using errcode = '42501';
   end if;
 
+  update supreme.recovery_requests
+  set status = 'expired', updated_at = now()
+  where user_id = p_user_id and status = 'pending' and expires_at <= now();
+
   select * into v_request
   from supreme.recovery_requests
   where user_id = p_user_id and status = 'pending'
@@ -206,8 +210,12 @@ begin
   if v_request.notification_sent_at is null then
     raise exception 'independent recovery notification has not been delivered' using errcode = 'P0001';
   end if;
-  if v_request.requester_auth_session_id <> p_auth_session_id then
-    raise exception 'recovery must be completed from the requesting Auth session' using errcode = '42501';
+  if not exists (
+    select 1 from auth.sessions s
+    where s.id = p_auth_session_id and s.user_id = p_user_id
+      and s.not_after > now()
+  ) then
+    raise exception 'current Auth session is not active' using errcode = '42501';
   end if;
 
   select * into v_authorization
