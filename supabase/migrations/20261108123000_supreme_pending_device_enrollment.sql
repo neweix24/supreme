@@ -151,7 +151,13 @@ begin
     expires_at = excluded.expires_at,
     revoked_at = null,
     updated_at = now()
+  where supreme.app_sessions.status = 'active'
   returning id into v_session_id;
+
+  if v_session_id is null then
+    raise exception 'auth session was previously revoked and cannot be reactivated'
+      using errcode = '42501';
+  end if;
 
   insert into supreme.audit_events (
     actor_user_id, action, outcome, policy_version, details
