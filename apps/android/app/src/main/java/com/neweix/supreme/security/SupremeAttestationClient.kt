@@ -29,6 +29,7 @@ internal object SupremeAttestationClient {
         val securityLevel: String,
         val provisioningMethod: String,
         val proofOfPossessionVerified: Boolean,
+        val pendingApproval: Boolean,
     )
 
     data class PreparedVerification internal constructor(
@@ -79,6 +80,7 @@ internal object SupremeAttestationClient {
         accessToken: String,
         prepared: PreparedVerification,
         proofSignatureBase64: String,
+        bootstrapAuthorization: String? = null,
     ): Verification {
         check(Looper.myLooper() != Looper.getMainLooper()) {
             "Supreme attestation must run off the Android UI thread."
@@ -90,17 +92,33 @@ internal object SupremeAttestationClient {
 
         val certificateArray = JSONArray()
         prepared.material.certificateChainBase64.forEach { certificateArray.put(it) }
+        require(bootstrapAuthorization == null ||
+            Regex("^[a-f0-9]{64}$").matches(bootstrapAuthorization)
+        ) { "Supreme first-device bootstrap authorization must be 64 lowercase hexadecimal characters." }
         val verifyPayload = JSONObject()
             .put("challenge_id", prepared.challengeId)
             .put("challenge", prepared.challengeEncoded)
             .put("certificate_chain", certificateArray)
             .put("proof_signature", proofSignatureBase64)
+        bootstrapAuthorization?.let {
+            verifyPayload.put("bootstrap_authorization", it)
+        }
         val response = postJson(
             "/functions/v1/supreme-session-api/issue",
             verifyPayload.toString().toByteArray(StandardCharsets.UTF_8),
             accessToken,
         )
         if (response.first != HttpURLConnection.HTTP_OK) {
+            val errorCode = runCatching {
+                JSONObject(response.second).optJSONObject("error")?.optString("code")
+            }.getOrNull()
+            if (response.first == HttpURLConnection.HTTP_CONFLICT &&
+                errorCode == "SUPREME_BOOTSTRAP_AUTHORIZATION_REQUIRED"
+            ) {
+                throw IllegalStateException(
+                    "No Supreme device is enrolled yet. Enter the one-time bootstrap authorization and sign in again.",
+                )
+            }
             throw IllegalStateException(
                 "Supreme device verification was rejected (HTTP ${response.first}).",
             )
@@ -117,6 +135,7 @@ internal object SupremeAttestationClient {
             },
             provisioningMethod = result.optString("provisioning_method", "unknown"),
             proofOfPossessionVerified = true,
+            pendingApproval = result.optBoolean("pending_approval", false),
         )
     }
 
