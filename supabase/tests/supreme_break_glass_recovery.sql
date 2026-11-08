@@ -78,7 +78,87 @@ BEGIN
   -- Completion must be blocked until the independent notification is acknowledged.
   BEGIN
     PERFORM public.complete_supreme_break_glass_recovery(
-      v_user, v_completion_auth_session, v_request, v_hash,
+      -- Break-glass recovery invariants. Run after all Supreme device/recovery migrations.
+BEGIN;
+
+DO $$
+DECLARE
+  v_user uuid := gen_random_uuid();
+  v_auth_session uuid := gen_random_uuid();
+  v_old_auth_session uuid := gen_random_uuid();
+  v_completion_auth_session uuid := gen_random_uuid();
+  v_expired_auth_session uuid := gen_random_uuid();
+  v_old_device uuid := gen_random_uuid();
+  v_pending_device uuid := gen_random_uuid();
+  v_pending_enrollment uuid := gen_random_uuid();
+  v_request uuid;
+  v_auth_id uuid;
+  v_token text := repeat('a7', 32);
+  v_hash text;
+  v_result jsonb;
+  v_available timestamptz;
+  v_status text;
+  v_device_status text;
+  v_session_status text;
+  v_replay_rejected boolean := false;
+  v_early_rejected boolean := false;
+  v_null_security_rejected boolean := false;
+  v_null_expiry_rejected boolean := false;
+  v_expired_session_rejected boolean := false;
+BEGIN
+  INSERT INTO auth.users(id) VALUES (v_user);
+  -- Supabase sessions have no maximum lifetime by default; NULL not_after is valid.
+  INSERT INTO auth.sessions(id, user_id, not_after)
+  VALUES
+    (v_auth_session, v_user, NULL),
+    (v_old_auth_session, v_user, NULL),
+    (v_expired_auth_session, v_user, now() - interval '1 minute');
+  INSERT INTO supreme.identities(user_id, public_id, role, is_active)
+  VALUES (v_user, 'supreme', 'ruler', true);
+
+  -- Device history exists but no trusted device remains active.
+  INSERT INTO supreme.devices(
+    id, user_id, device_key_sha256, app_package, signing_certificate_sha256,
+    security_level, attested_at, status, device_key_biometric_auth_required
+  ) VALUES
+    (v_old_device, v_user, repeat('b', 64), 'com.neweix.supreme',
+     repeat('c', 64), 'strongbox', now() - interval '2 days', 'revoked', true),
+    (v_pending_device, v_user, repeat('c', 64), 'com.neweix.supreme',
+     repeat('d', 64), 'strongbox', now(), 'pending_approval', true);
+
+  INSERT INTO supreme.device_enrollment_requests(id, user_id, device_id)
+  VALUES (v_pending_enrollment, v_user, v_pending_device);
+
+  v_hash := encode(digest(v_token, 'sha256'), 'hex');
+  INSERT INTO supreme.recovery_authorizations(user_id, token_sha256, expires_at)
+  VALUES (v_user, v_hash, now() + interval '30 days')
+  RETURNING id INTO v_auth_id;
+
+  PERFORM set_config('request.jwt.claim.role', 'service_role', true);
+  BEGIN
+    PERFORM public.begin_supreme_break_glass_recovery(v_user, v_expired_auth_session, v_hash);
+  EXCEPTION WHEN SQLSTATE '42501' THEN
+    v_expired_session_rejected := true;
+  END;
+  IF NOT v_expired_session_rejected THEN
+    RAISE EXCEPTION 'Recovery accepted an Auth session whose not_after is in the past';
+  END IF;
+
+  v_result := public.begin_supreme_break_glass_recovery(v_user, v_auth_session, v_hash);
+  IF NOT EXISTS (SELECT 1 FROM auth.sessions WHERE id = v_auth_session)
+     OR EXISTS (SELECT 1 FROM auth.sessions WHERE id IN (v_old_auth_session, v_expired_auth_session)) THEN
+    RAISE EXCEPTION 'Recovery request did not retain only its fresh Auth session';
+  END IF;
+  v_request := (v_result ->> 'request_id')::uuid;
+  v_available := (v_result ->> 'available_at')::timestamptz;
+  IF v_request IS NULL OR v_available <= now() THEN
+    RAISE EXCEPTION 'Recovery request did not enforce the 24-hour cooling-off period';
+  END IF;
+
+  -- Completion must be blocked until the independent notification is acknowledged.
+  BEGIN
+    PERFORM public.complete_supreme_break_glass_recovery(
+      v_user, v_auth_session, v_request, v_hash,
       repeat('d', 64), repeat('e', 64), 'strongbox',
       now(), now() + interval '4 hours'
     );
@@ -99,7 +179,7 @@ BEGIN
   v_early_rejected := false;
   BEGIN
     PERFORM public.complete_supreme_break_glass_recovery(
-      v_user, v_completion_auth_session, v_request, v_hash,
+      v_user, v_auth_session, v_request, v_hash,
       repeat('d', 64), repeat('e', 64), 'strongbox',
       now(), now() + interval '4 hours'
     );
