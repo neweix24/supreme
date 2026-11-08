@@ -297,7 +297,17 @@ export async function handleSupremeAttestationVerify(
         signingCertificateSha256,
       },
     });
-  } catch {
+  } catch (error) {
+    // Keep detailed failure context in server logs only. Never return certificate,
+    // challenge, key, signer, or policy internals to the Android client.
+    const failure = error instanceof Error ? error : new Error("Unknown verification failure.");
+    const safeMessage = failure.message.replace(/[\\u0000-\\u001f\\u007f]/gu, " ").slice(0, 240);
+    console.error("supreme_attestation_verification_failed", {
+      error_name: failure.name.slice(0, 80),
+      error_message: safeMessage,
+      chain_length: payload.chain.length,
+      challenge_id: payload.challengeId,
+    });
     return json({ error: "Android device attestation was rejected." }, 403);
   }
 
