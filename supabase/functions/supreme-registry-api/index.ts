@@ -104,6 +104,21 @@ function decodeCanonicalBase64(value: unknown, maxBytes: number): Uint8Array {
   return bytes;
 }
 
+function decodeCanonicalBase64Url(value: unknown, expectedBytes: number): Uint8Array {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]+$/.test(value) ||
+      value.length !== Math.ceil(expectedBytes * 4 / 3)) {
+    throw new TypeError("Invalid base64url encoding.");
+  }
+  const standard = value.replaceAll("-", "+").replaceAll("_", "/") +
+    "=".repeat((4 - value.length % 4) % 4);
+  const binary = atob(standard);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  if (bytes.length !== expectedBytes || base64Url(bytes) !== value) {
+    throw new TypeError("Invalid base64url encoding.");
+  }
+  return bytes;
+}
+
 function derEcdsaToP1363(der: Uint8Array): Uint8Array {
   if (der.length < 8 || der[0] !== 0x30) throw new TypeError("Invalid ECDSA signature.");
   let offset = 1;
@@ -778,7 +793,7 @@ async function handle(request: Request): Promise<Response> {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(challengeId)) {
         throw new TypeError("Invalid decision challenge ID.");
       }
-      const nonce = decodeCanonicalBase64(body.nonce, 32);
+      const nonce = decodeCanonicalBase64Url(body.nonce, 32);
       if (nonce.length !== 32) throw new TypeError("Invalid decision nonce.");
       const signatureDer = decodeCanonicalBase64(body.signature, 80);
       const binding = claims.supreme_app_session as JsonObject;
