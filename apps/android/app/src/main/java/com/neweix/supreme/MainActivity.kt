@@ -1267,7 +1267,14 @@ class MainActivity : FragmentActivity() {
                     window.SupremeCaptcha.postMessage(JSON.stringify({ type: type, token: token || "" }));
                   }
                 }
+                let supremeTurnstileInitStarted = false;
                 function initTurnstile() {
+                  if (document.readyState === "loading") {
+                    document.addEventListener("DOMContentLoaded", initTurnstile, { once: true });
+                    return;
+                  }
+                  if (supremeTurnstileInitStarted) return;
+                  supremeTurnstileInitStarted = true;
                   if (!window.turnstile) { send("error"); return; }
                   try {
                     window.supremeWidgetId = window.turnstile.render("#turnstile", {
