@@ -80,6 +80,12 @@ begin
       using errcode = '42501';
   end if;
 
+  -- Serialize even the absent-key case so concurrent first attestations cannot race
+  -- into the unique constraint or create inconsistent enrollment requests.
+  perform pg_advisory_xact_lock(
+    hashtextextended(p_user_id::text || ':' || p_device_key_sha256, 0)
+  );
+
   -- Serialize registration for this user/key. Never revive a revoked or blocked key.
   select d.id, d.status
     into v_device_id, v_device_status
