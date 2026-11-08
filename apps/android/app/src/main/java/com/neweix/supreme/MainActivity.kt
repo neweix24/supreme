@@ -234,9 +234,12 @@ class MainActivity : FragmentActivity() {
         card.addView(bootstrapLabel, fieldParams())
         bootstrapInput = input(
             "64-character offline bootstrap code",
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS,
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS,
         ).apply {
             visibility = View.GONE
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            setAutofillHints()
             filters = arrayOf(android.text.InputFilter.LengthFilter(64))
             isSingleLine = true
         }
@@ -245,9 +248,12 @@ class MainActivity : FragmentActivity() {
         card.addView(recoveryMaterialLabel, fieldParams())
         recoveryMaterialInput = input(
             "64-character offline recovery code",
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS,
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS,
         ).apply {
             visibility = View.GONE
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            setAutofillHints()
             filters = arrayOf(android.text.InputFilter.LengthFilter(64))
         }
         card.addView(recoveryMaterialInput, fieldParams())
