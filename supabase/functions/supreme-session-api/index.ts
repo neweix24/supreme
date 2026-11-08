@@ -98,7 +98,17 @@ async function authenticate(request: Request): Promise<AuthContext | null> {
   const claims = decodeClaimsAfterSupabaseUserVerification(token);
   const userId = (user as Record<string, unknown>).id as string;
   const authSessionId = claims.session_id;
-  if (claims.sub !== userId || !isUuid(authSessionId)) return null;
+  if (claims.sub !== userId || !isUuid(authSessionId) || !db) return null;
+
+  // Supabase access JWTs can remain cryptographically valid until expiry even
+  // after a session is deleted. Check the session row so recovery revocation
+  // takes effect immediately for every Supreme session-API route.
+  const activeSession = await db.unsafe(
+    "select 1 from auth.sessions where id = $1::uuid and user_id = $2::uuid and (not_after is null or not_after > now()) limit 1",
+    [authSessionId, userId],
+  );
+  if (activeSession.length !== 1) return null;
+
   return { userId, authSessionId, claims };
 }
 
