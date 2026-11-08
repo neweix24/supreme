@@ -56,6 +56,8 @@ class MainActivity : FragmentActivity() {
     private lateinit var passwordVisibilityButton: Button
     private var isPasswordVisible = false
     private lateinit var codeInput: EditText
+    private lateinit var bootstrapLabel: TextView
+    private lateinit var bootstrapInput: EditText
     private lateinit var primaryButton: Button
     private lateinit var lockOverlay: LinearLayout
     private var biometricPrompt: BiometricPrompt? = null
@@ -222,6 +224,19 @@ class MainActivity : FragmentActivity() {
         }
         codeInput.visibility = View.GONE
         card.addView(codeInput, fieldParams())
+        bootstrapLabel = label("First-device bootstrap authorization (first device only)").apply {
+            visibility = View.GONE
+        }
+        card.addView(bootstrapLabel, fieldParams())
+        bootstrapInput = input(
+            "64-character offline bootstrap code",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS,
+        ).apply {
+            visibility = View.GONE
+            filters = arrayOf(android.text.InputFilter.LengthFilter(64))
+            isSingleLine = true
+        }
+        card.addView(bootstrapInput, fieldParams())
         codeInput.imeOptions = EditorInfo.IME_ACTION_DONE
         codeInput.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) {
@@ -341,6 +356,8 @@ class MainActivity : FragmentActivity() {
                     emailInput.isEnabled = false
                     passwordInput.visibility = View.GONE
                     codeInput.visibility = View.VISIBLE
+                    bootstrapLabel.visibility = View.VISIBLE
+                    bootstrapInput.visibility = View.VISIBLE
                     primaryButton.text = "VERIFY MFA"
                     statusText.text = "Enter the current code from your authenticator app."
                     setBusy(false, null)
@@ -360,6 +377,11 @@ class MainActivity : FragmentActivity() {
         val factorId = pendingFactorId ?: return
         val challengeId = pendingChallengeId ?: return
         val code = codeInput.text.toString().trim()
+        val bootstrapAuthorization = bootstrapInput.text.toString().trim().takeIf { it.isNotEmpty() }
+        if (bootstrapAuthorization != null && !Regex("^[a-f0-9]{64}$").matches(bootstrapAuthorization)) {
+            setBusy(false, "Bootstrap authorization must be exactly 64 lowercase hexadecimal characters.")
+            return
+        }
         if (isBusy) return
 
         setBusy(true, "Verifying multi-factor authentication…")
@@ -395,6 +417,7 @@ class MainActivity : FragmentActivity() {
                                         session.accessToken,
                                         prepared,
                                         proof,
+                                        bootstrapAuthorization,
                                     )
                                     if (!device.proofOfPossessionVerified ||
                                         (device.securityLevel != "TRUSTED_ENVIRONMENT" &&
@@ -410,6 +433,7 @@ class MainActivity : FragmentActivity() {
                                             pendingFactorId = null
                                             pendingChallengeId = null
                                             codeInput.text.clear()
+                                            bootstrapInput.text.clear()
                                             setBusy(
                                                 false,
                                                 "This device is awaiting approval from an existing trusted Supreme device. No app session was created.",
@@ -430,12 +454,14 @@ class MainActivity : FragmentActivity() {
                                     sessionStore.saveRefreshToken(refreshed.refreshToken)
                                     val services = SupremeAuthClient.listServices(refreshed.accessToken)
                                     val requests = SupremeAuthClient.listPendingRequests(refreshed.accessToken)
+                                    val enrollments = SupremeAuthClient.listPendingEnrollments(refreshed.accessToken)
                                     runOnUiThread {
                                         currentAccessToken = refreshed.accessToken
                                         pendingPasswordSession = null
                                         pendingFactorId = null
                                         pendingChallengeId = null
                                         codeInput.text.clear()
+                                        bootstrapInput.text.clear()
                                         renderDashboard(services, requests, enrollments)
                                         setBusy(false, "Biometric device attestation and Supreme session checks passed.")
                                     }
