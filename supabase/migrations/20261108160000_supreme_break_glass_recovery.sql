@@ -284,7 +284,7 @@ begin
   ));
 
   return jsonb_build_object(
-    'completed', true, 'device_id', v_device_id,
+    'registered', true, 'completed', true, 'device_id', v_device_id,
     'session_id', v_session_id,
     'revoked_devices', v_revoked_devices,
     'revoked_sessions', v_revoked_sessions,
