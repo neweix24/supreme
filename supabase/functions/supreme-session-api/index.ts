@@ -259,8 +259,8 @@ async function issueDeviceSession(
     }, error instanceof RangeError ? 413 : 400, requestId);
   }
 
-  const allowedKeys = new Set(["challenge_id", "challenge", "certificate_chain", "proof_signature"]);
-  if (Object.keys(payload).length !== 4 ||
+  const allowedKeys = new Set(["challenge_id", "challenge", "certificate_chain", "proof_signature", "bootstrap_authorization"]);
+  if (Object.keys(payload).length < 4 || Object.keys(payload).length > 5 ||
       Object.keys(payload).some((key) => !allowedKeys.has(key)) ||
       typeof payload.challenge_id !== "string" || !UUID_V4.test(payload.challenge_id) ||
       typeof payload.challenge !== "string" ||
@@ -268,7 +268,10 @@ async function issueDeviceSession(
       payload.certificate_chain.length < 3 ||
       payload.certificate_chain.length > 10 ||
       !payload.certificate_chain.every((item) => typeof item === "string" && item.length <= 24_000) ||
-      typeof payload.proof_signature !== "string" || payload.proof_signature.length > 512) {
+      typeof payload.proof_signature !== "string" || payload.proof_signature.length > 512 ||
+      (payload.bootstrap_authorization !== undefined &&
+        (typeof payload.bootstrap_authorization !== "string" ||
+          !/^[a-f0-9]{64}$/.test(payload.bootstrap_authorization)))) {
     return response({ error: { code: "INVALID_ATTESTATION_PAYLOAD", request_id: requestId } }, 400, requestId);
   }
 
@@ -330,6 +333,9 @@ async function issueDeviceSession(
 
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 4 * 60 * 60 * 1000).toISOString();
+  const bootstrapTokenHash = typeof payload.bootstrap_authorization === "string"
+    ? await sha256Hex(new TextEncoder().encode(payload.bootstrap_authorization))
+    : null;
   const registered = await postServiceRpc("register_supreme_attested_device_session", {
     p_user_id: auth.userId,
     p_auth_session_id: auth.authSessionId,
@@ -338,13 +344,22 @@ async function issueDeviceSession(
     p_security_level: verified.security_level,
     p_attested_at: now.toISOString(),
     p_expires_at: expiresAt,
+    p_bootstrap_token_sha256: bootstrapTokenHash,
   });
 
-  if (!registered || typeof registered !== "object" ||
-      (registered as Record<string, unknown>).registered !== true) {
+  if (!registered || typeof registered !== "object") {
     return response({ error: { code: "SESSION_REGISTRATION_FAILED", request_id: requestId } }, 503, requestId);
   }
   const value = registered as Record<string, unknown>;
+  if (value.bootstrap_required === true) {
+    return response({
+      error: { code: "SUPREME_BOOTSTRAP_AUTHORIZATION_REQUIRED", request_id: requestId },
+      bootstrap_required: true,
+    }, 409, requestId);
+  }
+  if (value.registered !== true) {
+    return response({ error: { code: "SESSION_REGISTRATION_FAILED", request_id: requestId } }, 503, requestId);
+  }
   const deviceId = value.device_id;
   const pendingApproval = value.pending_approval === true;
   const publicKeyBase64 = verified.device_public_key_spki_base64 as string;
