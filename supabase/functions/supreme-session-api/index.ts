@@ -56,9 +56,12 @@ function isUuid(value: unknown): value is string {
 
 function isFreshAal2(claims: Claims): boolean {
   if (claims.aal !== "aal2") return false;
-  const authTime = typeof claims.auth_time === "number" ? claims.auth_time : 0;
+  // Supabase can preserve auth_time from the original password event when
+  // issuing the AAL2 token. The signed JWT iat is the issuance time of the
+  // token that Supabase has just validated through /auth/v1/user.
+  const issuedAt = typeof claims.iat === "number" ? claims.iat : 0;
   const now = Date.now() / 1000;
-  if (!authTime || now - authTime > 300 || authTime > now + 30) return false;
+  if (!issuedAt || now - issuedAt > 300 || issuedAt > now + 30) return false;
 
   // Supreme currently permits password + authenticator TOTP only.
   // AAL2 alone is not sufficient if the AMR does not prove TOTP.
