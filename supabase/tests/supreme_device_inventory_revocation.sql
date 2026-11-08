@@ -14,6 +14,8 @@ DECLARE
   v_status text;
   v_session_status text;
   v_consumed timestamptz;
+  v_replay_rejected boolean := false;
+  v_self_revoke_rejected boolean := false;
 BEGIN
   INSERT INTO auth.users(id) VALUES (v_user_id);
   INSERT INTO supreme.identities(user_id, public_id, role, is_active)
@@ -73,10 +75,12 @@ BEGIN
       v_user_id, v_target_device, v_challenge, v_approver_device,
       v_approver_session, v_nonce
     );
-    RAISE EXCEPTION 'Consumed device revocation challenge was replayed';
   EXCEPTION WHEN SQLSTATE 'P0001' THEN
-    NULL;
+    v_replay_rejected := true;
   END;
+  IF NOT v_replay_rejected THEN
+    RAISE EXCEPTION 'Consumed device revocation challenge was replayed';
+  END IF;
 
   -- A device cannot revoke itself through the remote-management RPC.
   BEGIN
@@ -84,10 +88,12 @@ BEGIN
       v_user_id, v_approver_device, gen_random_uuid(), v_approver_device,
       v_approver_session, v_nonce
     );
-    RAISE EXCEPTION 'Self-revocation through remote-device RPC was accepted';
   EXCEPTION WHEN SQLSTATE '22023' THEN
-    NULL;
+    v_self_revoke_rejected := true;
   END;
+  IF NOT v_self_revoke_rejected THEN
+    RAISE EXCEPTION 'Self-revocation through remote-device RPC was accepted';
+  END IF;
 
   -- The approving device and its session remain active.
   SELECT status INTO v_status FROM supreme.devices WHERE id = v_approver_device;
