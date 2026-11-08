@@ -38,11 +38,20 @@ function decodeClaims(request: Request): Claims | null {
 
 function validFreshAal2(claims: Claims): boolean {
   const now = Date.now() / 1000;
-  const authTime = typeof claims.auth_time === "number" ? claims.auth_time : 0;
+  const amr = Array.isArray(claims.amr) ? claims.amr : [];
+  const hasFreshTotp = amr.some((entry) => {
+    if (entry === null || typeof entry !== "object") return false;
+    const method = entry as Record<string, unknown>;
+    const verifiedAt = typeof method.timestamp === "number" ? method.timestamp : 0;
+    return method.method === "totp" &&
+      verifiedAt > 0 &&
+      now - verifiedAt <= 300 &&
+      verifiedAt <= now + 30;
+  });
   return claims.iss === SUPREME_PROJECT_URL + "/auth/v1" &&
     claims.role === "authenticated" && claims.aud === "authenticated" &&
-    claims.aal === "aal2" && authTime > 0 && now - authTime <= 300 &&
-    authTime <= now + 30 && typeof claims.sub === "string" && UUID.test(claims.sub) &&
+    claims.aal === "aal2" && hasFreshTotp &&
+    typeof claims.sub === "string" && UUID.test(claims.sub) &&
     typeof claims.session_id === "string" && UUID.test(claims.session_id);
 }
 
