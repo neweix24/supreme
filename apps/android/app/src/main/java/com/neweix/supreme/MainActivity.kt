@@ -272,7 +272,7 @@ class MainActivity : FragmentActivity() {
                 setImageResource(R.drawable.supreme_logo)
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 contentDescription = "Supreme gold S emblem"
-            }, LinearLayout.LayoutParams(dp(96), dp(96)).apply {
+            }, LinearLayout.LayoutParams(dp(144), dp(144)).apply {
                 bottomMargin = dp(10)
             })
             addView(TextView(this@MainActivity).apply {
