@@ -541,11 +541,22 @@ async function approveEnrollment(
     [enrollmentRequestId, auth.userId, body.device_id],
   );
   if (target.length !== 1) return response({ error: { code: "ENROLLMENT_NOT_PENDING", request_id: requestId } }, 409, requestId);
-  const signature = Uint8Array.from(atob(body.signature), (character) => character.charCodeAt(0));
-  const valid = await verifyEnrollmentApprovalSignature(
-    approver.spki, body.challenge_id, nonce, enrollmentRequestId, body.device_id, signature,
-  );
-  if (!valid) return response({ error: { code: "DEVICE_SIGNATURE_INVALID", request_id: requestId } }, 403, requestId);
+  let valid = false;
+  try {
+    const signature = Uint8Array.from(atob(body.signature), (character) => character.charCodeAt(0));
+    valid = await verifyEnrollmentApprovalSignature(
+      approver.spki, body.challenge_id, nonce, enrollmentRequestId, body.device_id, signature,
+    );
+  } catch {
+    valid = false;
+  }
+  if (!valid) {
+    await db!.unsafe(
+      "insert into supreme.audit_events (actor_user_id, action, outcome, policy_version, details) values ($1::uuid, 'device_enrollment.approve', 'denied', 'v1', jsonb_build_object('enrollment_request_id', $2::uuid, 'approving_device_id', $3::uuid, 'reason', 'invalid_device_signature', 'request_id', $4))",
+      [auth.userId, enrollmentRequestId, approver.deviceId, requestId],
+    );
+    return response({ error: { code: "DEVICE_SIGNATURE_INVALID", request_id: requestId } }, 403, requestId);
+  }
 
   const nonceHash = await sha256Hex(nonce);
   const result = await postServiceRpc("approve_supreme_device_enrollment", {
