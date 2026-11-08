@@ -8,6 +8,7 @@ DECLARE
   v_target_device uuid := gen_random_uuid();
   v_approver_session uuid := gen_random_uuid();
   v_target_session uuid := gen_random_uuid();
+  v_target_session2 uuid := gen_random_uuid();
   v_challenge uuid := gen_random_uuid();
   v_nonce bytea := decode(repeat('ab', 32), 'hex');
   v_result jsonb;
@@ -16,6 +17,7 @@ DECLARE
   v_consumed timestamptz;
   v_replay_rejected boolean := false;
   v_self_revoke_rejected boolean := false;
+  v_wrong_nonce_rejected boolean := false;
 BEGIN
   INSERT INTO auth.users(id) VALUES (v_user_id);
   INSERT INTO supreme.identities(user_id, public_id, role, is_active)
@@ -35,7 +37,8 @@ BEGIN
     user_id, device_id, auth_session_id, status, attested_at, expires_at
   ) VALUES
     (v_user_id, v_approver_device, v_approver_session, 'active', now(), now() + interval '4 hours'),
-    (v_user_id, v_target_device, v_target_session, 'active', now(), now() + interval '4 hours');
+    (v_user_id, v_target_device, v_target_session, 'active', now(), now() + interval '4 hours'),
+    (v_user_id, v_target_device, v_target_session2, 'active', now(), now() + interval '4 hours');
 
   INSERT INTO supreme.device_management_challenges(
     id, user_id, action, target_device_id, approving_device_id,
@@ -47,13 +50,29 @@ BEGIN
 
   PERFORM set_config('request.jwt.claim.role', 'service_role', true);
 
+  -- A wrong nonce must not consume or authorize the challenge.
+  BEGIN
+    PERFORM public.revoke_supreme_device(
+      v_user_id, v_target_device, v_challenge, v_approver_device,
+      v_approver_session, decode(repeat('cd', 32), 'hex')
+    );
+  EXCEPTION WHEN SQLSTATE 'P0001' THEN
+    v_wrong_nonce_rejected := true;
+  END;
+  IF NOT v_wrong_nonce_rejected OR EXISTS (
+    SELECT 1 FROM supreme.device_management_challenges
+    WHERE id = v_challenge AND consumed_at IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'Wrong nonce was accepted or consumed the challenge';
+  END IF;
+
   -- A trusted, different device can revoke the target and every active session atomically.
   v_result := public.revoke_supreme_device(
     v_user_id, v_target_device, v_challenge, v_approver_device,
     v_approver_session, v_nonce
   );
   IF v_result ->> 'revoked' IS DISTINCT FROM 'true'
-     OR (v_result ->> 'revoked_sessions')::integer <> 1 THEN
+     OR (v_result ->> 'revoked_sessions')::integer <> 2 THEN
     RAISE EXCEPTION 'Remote device revocation returned unexpected result: %', v_result;
   END IF;
   SELECT status INTO v_status FROM supreme.devices WHERE id = v_target_device;
@@ -61,8 +80,11 @@ BEGIN
     RAISE EXCEPTION 'Target device status is not revoked: %', v_status;
   END IF;
   SELECT status INTO v_session_status FROM supreme.app_sessions WHERE auth_session_id = v_target_session;
-  IF v_session_status <> 'revoked' THEN
-    RAISE EXCEPTION 'Target device app session is not revoked: %', v_session_status;
+  IF v_session_status <> 'revoked' OR EXISTS (
+    SELECT 1 FROM supreme.app_sessions
+    WHERE auth_session_id = v_target_session2 AND status <> 'revoked'
+  ) THEN
+    RAISE EXCEPTION 'Not every target-device app session was revoked';
   END IF;
   SELECT consumed_at INTO v_consumed FROM supreme.device_management_challenges WHERE id = v_challenge;
   IF v_consumed IS NULL THEN
