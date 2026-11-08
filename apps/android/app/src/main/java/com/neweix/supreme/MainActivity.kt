@@ -65,6 +65,7 @@ class MainActivity : FragmentActivity() {
     private lateinit var recoveryRequestLabel: TextView
     private lateinit var primaryButton: Button
     private lateinit var lockOverlay: LinearLayout
+    private lateinit var lockStatusText: TextView
     private var biometricPrompt: BiometricPrompt? = null
     private var signingBiometricPrompt: BiometricPrompt? = null
     private var authInProgress = false
@@ -341,11 +342,24 @@ class MainActivity : FragmentActivity() {
                 textSize = 14f
                 gravity = Gravity.CENTER
                 setTextColor(Color.LTGRAY)
-                setPadding(0, dp(12), 0, dp(20))
+                setPadding(0, dp(12), 0, dp(12))
             }, matchWrap())
+            lockStatusText = TextView(this@MainActivity).apply {
+                text = "Checking secure biometric availability…"
+                textSize = 12f
+                gravity = Gravity.CENTER
+                setTextColor(Color.rgb(229, 197, 120))
+                setPadding(0, dp(8), 0, dp(16))
+                contentDescription = "Supreme biometric unlock status"
+            }
+            addView(lockStatusText, matchWrap())
             addView(Button(this@MainActivity).apply {
                 text = "UNLOCK SUPREME"
-                setOnClickListener { authenticateToUnlock() }
+                isAllCaps = true
+                setOnClickListener {
+                    lockStatusText.text = "Starting Android biometric verification…"
+                    authenticateToUnlock()
+                }
             }, matchWrap())
         }
         root.addView(lockOverlay, FrameLayout.LayoutParams(
@@ -1205,12 +1219,13 @@ class MainActivity : FragmentActivity() {
                         authInProgress = false
                         isUnlocked = false
                         lockOverlay.visibility = View.VISIBLE
-                        statusText.text = "Local Keystore unlock proof failed. Supreme content remains hidden."
+                        lockStatusText.text = "Keystore proof failed. Supreme remains locked. Try again or report this message."
                         return
                     }
                     proof.fill(0)
                     authInProgress = false
                     isUnlocked = true
+                    lockStatusText.text = "Device unlocked."
                     lockOverlay.visibility = View.GONE
                     resetIdleLockTimer()
                     resumeStoredSession()
@@ -1220,7 +1235,7 @@ class MainActivity : FragmentActivity() {
                     authInProgress = false
                     isUnlocked = false
                     lockOverlay.visibility = View.VISIBLE
-                    statusText.text = "Device unlock failed. Supreme content remains hidden."
+                    lockStatusText.text = "Android biometric error $errorCode: $errString. Supreme remains locked."
                 }
 
                 override fun onAuthenticationFailed() {
@@ -1281,15 +1296,42 @@ class MainActivity : FragmentActivity() {
 
     private fun authenticateToUnlock() {
         if (isUnlocked || authInProgress) return
-        val prompt = biometricPrompt ?: return
+        val prompt = biometricPrompt
+        if (prompt == null) {
+            lockStatusText.text = "Biometric service is not initialized. Close and reopen Supreme."
+            return
+        }
+        val capability = try {
+            androidx.biometric.BiometricManager.from(this).canAuthenticate(
+                androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG,
+            )
+        } catch (error: Exception) {
+            lockStatusText.text = "Biometric capability check failed: ${error.javaClass.simpleName}."
+            return
+        }
+        if (capability != androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS) {
+            lockStatusText.text = when (capability) {
+                androidx.biometric.BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE ->
+                    "This device has no supported strong biometric sensor."
+                androidx.biometric.BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE ->
+                    "The fingerprint sensor is temporarily unavailable. Try again."
+                androidx.biometric.BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED ->
+                    "No strong fingerprint is enrolled. Enroll a fingerprint in Android Settings."
+                androidx.biometric.BiometricManager.BIOMETRIC_ERROR_SECURITY_UPDATE_REQUIRED ->
+                    "Android requires a security update before strong biometric unlock."
+                else -> "Strong biometric is unavailable (code $capability)."
+            }
+            return
+        }
         authInProgress = true
         lockOverlay.visibility = View.VISIBLE
+        lockStatusText.text = "Preparing hardware-backed biometric unlock…"
         val mac = try {
             SupremeLocalUnlock.prepareMac()
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             authInProgress = false
             lockOverlay.visibility = View.VISIBLE
-            statusText.text = "A secure Android Keystore unlock key is unavailable on this device."
+            lockStatusText.text = "Secure Keystore setup failed: ${error.javaClass.simpleName}."
             return
         }
         val subtitle = "Use a strong biometric to unlock this device"
@@ -1301,10 +1343,10 @@ class MainActivity : FragmentActivity() {
             .build()
         try {
             prompt.authenticate(info, BiometricPrompt.CryptoObject(mac))
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             authInProgress = false
             lockOverlay.visibility = View.VISIBLE
-            statusText.text = "Set up a secure screen lock and strong biometric on this device before opening Supreme."
+            lockStatusText.text = "Android prompt could not start: ${error.javaClass.simpleName}."
         }
     }
 
