@@ -58,6 +58,10 @@ class MainActivity : FragmentActivity() {
     private lateinit var codeInput: EditText
     private lateinit var bootstrapLabel: TextView
     private lateinit var bootstrapInput: EditText
+    private lateinit var recoveryMaterialInput: EditText
+    private lateinit var recoveryMaterialLabel: TextView
+    private lateinit var recoveryRequestIdInput: EditText
+    private lateinit var recoveryRequestLabel: TextView
     private lateinit var primaryButton: Button
     private lateinit var lockOverlay: LinearLayout
     private var biometricPrompt: BiometricPrompt? = null
@@ -237,6 +241,28 @@ class MainActivity : FragmentActivity() {
             isSingleLine = true
         }
         card.addView(bootstrapInput, fieldParams())
+        recoveryMaterialLabel = label("Break-glass offline recovery material").apply { visibility = View.GONE }
+        card.addView(recoveryMaterialLabel, fieldParams())
+        recoveryMaterialInput = input(
+            "64-character offline recovery code",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS,
+        ).apply {
+            visibility = View.GONE
+            filters = arrayOf(android.text.InputFilter.LengthFilter(64))
+        }
+        card.addView(recoveryMaterialInput, fieldParams())
+        recoveryRequestLabel = label("Existing recovery request ID (complete after 24 hours)").apply {
+            visibility = View.GONE
+        }
+        card.addView(recoveryRequestLabel, fieldParams())
+        recoveryRequestIdInput = input(
+            "Recovery request UUID (leave blank to start recovery)",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS,
+        ).apply {
+            visibility = View.GONE
+            filters = arrayOf(android.text.InputFilter.LengthFilter(36))
+        }
+        card.addView(recoveryRequestIdInput, fieldParams())
         codeInput.imeOptions = EditorInfo.IME_ACTION_DONE
         codeInput.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) {
@@ -358,6 +384,10 @@ class MainActivity : FragmentActivity() {
                     codeInput.visibility = View.VISIBLE
                     bootstrapLabel.visibility = View.VISIBLE
                     bootstrapInput.visibility = View.VISIBLE
+                    recoveryMaterialLabel.visibility = View.VISIBLE
+                    recoveryMaterialInput.visibility = View.VISIBLE
+                    recoveryRequestLabel.visibility = View.VISIBLE
+                    recoveryRequestIdInput.visibility = View.VISIBLE
                     primaryButton.text = "VERIFY MFA"
                     statusText.text = "Enter the current code from your authenticator app."
                     setBusy(false, null)
@@ -378,6 +408,24 @@ class MainActivity : FragmentActivity() {
         val challengeId = pendingChallengeId ?: return
         val code = codeInput.text.toString().trim()
         val bootstrapAuthorization = bootstrapInput.text.toString().trim().takeIf { it.isNotEmpty() }
+        val recoveryMaterial = recoveryMaterialInput.text.toString().trim().takeIf { it.isNotEmpty() }
+        val recoveryRequestId = recoveryRequestIdInput.text.toString().trim().takeIf { it.isNotEmpty() }
+        if (recoveryMaterial != null && !Regex("^[a-f0-9]{64}$").matches(recoveryMaterial)) {
+            setBusy(false, "Offline recovery material must be exactly 64 lowercase hexadecimal characters.")
+            return
+        }
+        if (recoveryRequestId != null && !Regex("^[0-9a-fA-F-]{36}$").matches(recoveryRequestId)) {
+            setBusy(false, "Recovery request ID is invalid.")
+            return
+        }
+        if (recoveryRequestId != null && recoveryMaterial == null) {
+            setBusy(false, "Enter the same offline recovery material to complete recovery.")
+            return
+        }
+        if (recoveryMaterial != null && bootstrapAuthorization != null) {
+            setBusy(false, "Use either first-device bootstrap or break-glass recovery, not both.")
+            return
+        }
         if (bootstrapAuthorization != null && !Regex("^[a-f0-9]{64}$").matches(bootstrapAuthorization)) {
             setBusy(false, "Bootstrap authorization must be exactly 64 lowercase hexadecimal characters.")
             return
@@ -403,6 +451,30 @@ class MainActivity : FragmentActivity() {
                     throw IllegalStateException("Supreme MFA verification is no longer fresh. Sign in again.")
                 }
 
+                if (recoveryMaterial != null && recoveryRequestId == null) {
+                    val recovery = SupremeAuthClient.beginBreakGlassRecovery(
+                        session.accessToken, recoveryMaterial,
+                    )
+                    runOnUiThread {
+                        pendingPasswordSession = null
+                        pendingFactorId = null
+                        pendingChallengeId = null
+                        codeInput.text.clear()
+                        bootstrapInput.text.clear()
+                        recoveryMaterialInput.text.clear()
+                        recoveryRequestIdInput.text.clear()
+                        setBusy(
+                            false,
+                            if (recovery.notificationDelivered) {
+                                "Recovery request ${recovery.requestId} created. Independent notification sent. Wait until ${recovery.availableAt}; then sign in again and enter this request ID with the same offline code."
+                            } else {
+                                "Recovery request ${recovery.requestId} is recorded, but independent notification is not configured or delivery failed. Do not continue. Re-enter the same code to retry notification."
+                            },
+                        )
+                    }
+                    return@execute
+                }
+
                 // The attestation key is generated with per-operation biometric
                 // authorization. Its proof is completed only inside CryptoObject.
                 val prepared = SupremeAttestationClient.prepareVerification(session.accessToken)
@@ -418,6 +490,8 @@ class MainActivity : FragmentActivity() {
                                         prepared,
                                         proof,
                                         bootstrapAuthorization,
+                                        recoveryRequestId,
+                                        recoveryMaterial,
                                     )
                                     if (!device.proofOfPossessionVerified ||
                                         (device.securityLevel != "TRUSTED_ENVIRONMENT" &&
@@ -434,8 +508,14 @@ class MainActivity : FragmentActivity() {
                                             pendingChallengeId = null
                                             codeInput.text.clear()
                                             bootstrapInput.text.clear()
+                                            recoveryMaterialInput.text.clear()
+                                            recoveryRequestIdInput.text.clear()
                                             bootstrapLabel.visibility = View.GONE
                                             bootstrapInput.visibility = View.GONE
+                                            recoveryMaterialLabel.visibility = View.GONE
+                                            recoveryMaterialInput.visibility = View.GONE
+                                            recoveryRequestLabel.visibility = View.GONE
+                                            recoveryRequestIdInput.visibility = View.GONE
                                             setBusy(
                                                 false,
                                                 "This device is awaiting approval from an existing trusted Supreme device. No app session was created.",
@@ -465,8 +545,14 @@ class MainActivity : FragmentActivity() {
                                         pendingChallengeId = null
                                         codeInput.text.clear()
                                         bootstrapInput.text.clear()
+                                        recoveryMaterialInput.text.clear()
+                                        recoveryRequestIdInput.text.clear()
                                         bootstrapLabel.visibility = View.GONE
                                         bootstrapInput.visibility = View.GONE
+                                        recoveryMaterialLabel.visibility = View.GONE
+                                        recoveryMaterialInput.visibility = View.GONE
+                                        recoveryRequestLabel.visibility = View.GONE
+                                        recoveryRequestIdInput.visibility = View.GONE
                                         renderDashboard(services, requests, enrollments, devices)
                                         setBusy(false, "Biometric device attestation and Supreme session checks passed.")
                                     }
@@ -1258,6 +1344,9 @@ class MainActivity : FragmentActivity() {
             }
         }
         if (::codeInput.isInitialized) codeInput.text?.clear()
+        if (::bootstrapInput.isInitialized) bootstrapInput.text?.clear()
+        if (::recoveryMaterialInput.isInitialized) recoveryMaterialInput.text?.clear()
+        if (::recoveryRequestIdInput.isInitialized) recoveryRequestIdInput.text?.clear()
 
         // A half-completed password/MFA flow must be restarted after leaving the app.
         pendingPasswordSession = null
