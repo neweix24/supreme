@@ -320,6 +320,8 @@ async function issueDeviceSession(
   if (!verifierResponse.ok || verified.verified !== true ||
       verified.proof_of_possession_verified !== true ||
       typeof verified.device_key_sha256 !== "string" || !SHA256.test(verified.device_key_sha256) ||
+      typeof verified.device_public_key_spki_base64 !== "string" ||
+      verified.device_public_key_spki_base64.length > 1024 ||
       !["trusted_environment", "strongbox"].includes(String(verified.security_level))) {
     return response({
       error: { code: verifierResponse.status >= 500 ? "ATTESTATION_SERVICE_UNAVAILABLE" : "ATTESTATION_REJECTED", request_id: requestId },
@@ -343,6 +345,33 @@ async function issueDeviceSession(
     return response({ error: { code: "SESSION_REGISTRATION_FAILED", request_id: requestId } }, 503, requestId);
   }
   const value = registered as Record<string, unknown>;
+  const deviceId = value.device_id;
+  const publicKeyBase64 = verified.device_public_key_spki_base64 as string;
+  let publicKeyDer: Uint8Array;
+  try {
+    if (!isUuid(deviceId)) throw new TypeError("Invalid registered device ID.");
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(publicKeyBase64)) {
+      throw new TypeError("Invalid public key encoding.");
+    }
+    const binary = atob(publicKeyBase64);
+    publicKeyDer = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    if (publicKeyDer.length < 64 || publicKeyDer.length > 256 || btoa(binary) !== publicKeyBase64) {
+      throw new TypeError("Invalid public key length or encoding.");
+    }
+  } catch {
+    return response({ error: { code: "INVALID_ATTESTED_PUBLIC_KEY", request_id: requestId } }, 502, requestId);
+  }
+
+  // Persist only the SPKI extracted from the certificate whose chain, Google
+  // revocation state, Android KeyDescription and proof-of-possession passed.
+  const storedKey = await db.unsafe(
+    "update supreme.devices set device_public_key_spki = decode($1, 'base64'), updated_at = now() where id = $2::uuid and user_id = $3::uuid and device_key_sha256 = $4 and status = 'active' returning id::text",
+    [publicKeyBase64, deviceId, auth.userId, verified.device_key_sha256],
+  );
+  if (storedKey.length !== 1) {
+    return response({ error: { code: "DEVICE_PUBLIC_KEY_REGISTRATION_FAILED", request_id: requestId } }, 503, requestId);
+  }
+
   return response({
     registered: true,
     session_id: value.session_id,
