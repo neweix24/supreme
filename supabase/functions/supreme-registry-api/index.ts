@@ -693,11 +693,6 @@ async function handle(request: Request): Promise<Response> {
       return json({ control_requests: rows, request_id: requestId }, 200, requestId, cors);
     }
 
-    if (request.method === "POST" && parts.length === 3 &&
-        parts[0] === "v1" && parts[1] === "control-requests" && parts[2].endsWith("decision-challenge")) {
-      return errorResponse("ROUTE_NOT_FOUND", "Route not found.", 404, requestId);
-    }
-
     if (request.method === "POST" && parts.length === 4 &&
         parts[0] === "v1" && parts[1] === "control-requests" && parts[3] === "decision-challenge") {
       if (!isFreshAal2(claims)) {
@@ -740,7 +735,7 @@ async function handle(request: Request): Promise<Response> {
           (control_request_id, user_id, device_id, decision, reason_sha256, nonce_sha256, expires_at)
         values
           (${id}::uuid, ${userId}::uuid, ${deviceId}::uuid, ${decision},
-           ${reasonHash}, ${nonceHash}, ${challengeExpiresAt})
+           decode(${hex(reasonHash)}, 'hex'), decode(${hex(nonceHash)}, 'hex'), ${challengeExpiresAt})
         returning id::text
       `;
       await audit({ actor: userId, action: "control_requests.decision_challenge", outcome: "pending",
