@@ -63,7 +63,43 @@ The bootstrap ceremony must require:
 - a single-use bootstrap authorization generated during initial Supreme provisioning, stored offline by the owner, and verified server-side;
 - atomic consumption and immutable audit event.
 
-The bootstrap authorization must never be embedded in the APK, repository, QR code shown to an untrusted browser, or a client-side constant. If no bootstrap authorization was provisioned, initial enrollment remains disabled until a safe operator-assisted setup is performed.
+The bootstrap authorization must never be embedded in the APK, repository, QR code shown to an untrusted browser, or a client-side constant. The server stores only its SHA-256 digest. If no bootstrap authorization was provisioned, the registration RPC returns a bootstrap-required result without inserting a device row.
+
+### Offline provisioning procedure (operator only)
+
+Run this only after the migration has been reviewed and applied to the intended Supreme Supabase project.
+
+1. On the owner's trusted computer, generate a one-time 256-bit code locally. Do not send it through chat, email, issue trackers, or commit it:
+   `TOKEN="$(openssl rand -hex 32)"`
+2. Calculate the digest:
+   `printf '%s' "$TOKEN" | sha256sum`
+3. In the Supabase SQL Editor, insert **only the 64-character digest** (never the raw token):
+   ```sql
+   insert into supreme.device_bootstrap_authorizations (user_id, token_sha256, expires_at)
+   select i.user_id, '<SHA256_DIGEST>', now() + interval '7 days'
+   from supreme.identities i
+   where i.public_id = 'supreme'
+     and i.role = 'ruler'
+     and i.is_active = true
+     and (
+       select count(*) from supreme.identities
+       where public_id = 'supreme' and role = 'ruler' and is_active = true
+     ) = 1
+     and not exists (
+       select 1 from supreme.devices d where d.user_id = i.user_id
+     )
+     and not exists (
+       select 1 from supreme.device_bootstrap_authorizations b
+       where b.user_id = i.user_id
+         and b.consumed_at is null
+         and b.expires_at > now()
+     )
+   returning id, expires_at;
+   ```
+4. Keep `$TOKEN` offline. Enter it only into the Android app's first-device bootstrap field after password + TOTP. The app sends it over HTTPS; the API hashes it immediately. The raw code is never stored in the database or Android session storage.
+5. Clear the shell variable after securely recording the code offline: `unset TOKEN`.
+
+The SQL insert must return exactly one row. Zero rows means the identity/device/pre-existing authorization preconditions were not met; stop and investigate rather than weakening the checks. The code expires after seven days and is consumed atomically only when the first attested device and its four-hour app session are registered successfully. Any pre-existing device history, including revoked or blocked devices, permanently disqualifies this bootstrap path; use the separate recovery procedure instead.
 
 ## Break-glass recovery
 
@@ -88,7 +124,9 @@ If offline recovery material is lost, recovery requires a separately documented,
 - [x] A previously revoked Auth session cannot be reactivated by the registration RPC.
 - [x] Session API and Android registration flow report pending approval without persisting an app session.
 - [x] NEWEIX integration endpoint propagates the pending state instead of returning an empty session identifier.
-- [ ] First-device bootstrap authorization and secure provisioning.
+- [x] First-device bootstrap authorization: 256-bit offline code, server-side SHA-256 digest, single-use atomic consumption, fresh AAL2 + verified Android attestation, and no historical device rows.
+- [x] Android first-device bootstrap code entry is ephemeral and never persisted.
+- [ ] Operator provisioning and migration application in the intended Supabase project.
 - [x] Trusted-device approval challenge/signature verification and atomic activation API.
 - [x] Android biometric-per-operation approval flow and pending-enrollment list.
 - [x] Recheck the approver's active app session atomically when consuming an approval challenge.
@@ -98,7 +136,7 @@ If offline recovery material is lost, recovery requires a separately documented,
 - [ ] Database regression tests and CI verification for enrollment approval.
 - [ ] Physical-device validation of biometric approval and target-device re-attestation.
 
-This is an intentionally incomplete hardening stage. Trusted-device approval is now implemented as an API ceremony, but first-device bootstrap, remote revocation, recovery, automated regression coverage, and physical-device verification remain outstanding. Do not deploy this migration as a complete enrollment solution.
+This is an intentionally incomplete hardening stage. Trusted-device approval and the first-device bootstrap ceremony are implemented in code, but operator provisioning, migration application, remote revocation, break-glass recovery, automated regression coverage, and physical-device verification remain outstanding. Do not deploy this migration as a complete enrollment/recovery solution.
 
 ## Database/API implementation sequence
 
