@@ -219,6 +219,7 @@ create table if not exists supreme.device_enrollment_approval_challenges (
   enrollment_request_id uuid not null references supreme.device_enrollment_requests(id) on delete restrict,
   user_id uuid not null references auth.users(id) on delete restrict,
   approving_device_id uuid not null references supreme.devices(id) on delete restrict,
+  approving_auth_session_id uuid not null,
   nonce_sha256 bytea not null check (octet_length(nonce_sha256) = 32),
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
@@ -239,6 +240,7 @@ create or replace function public.approve_supreme_device_enrollment(
   p_challenge_id uuid,
   p_user_id uuid,
   p_approving_device_id uuid,
+  p_approving_auth_session_id uuid,
   p_nonce_sha256 bytea
 )
 returns jsonb
@@ -254,7 +256,8 @@ begin
     raise exception 'service role required' using errcode = '42501';
   end if;
   if p_enrollment_request_id is null or p_challenge_id is null or p_user_id is null
-     or p_approving_device_id is null or p_nonce_sha256 is null
+     or p_approving_device_id is null or p_approving_auth_session_id is null
+     or p_nonce_sha256 is null
      or octet_length(p_nonce_sha256) <> 32 then
     raise exception 'invalid approval parameters' using errcode = '22023';
   end if;
@@ -265,6 +268,7 @@ begin
     and enrollment_request_id = p_enrollment_request_id
     and user_id = p_user_id
     and approving_device_id = p_approving_device_id
+    and approving_auth_session_id = p_approving_auth_session_id
     and nonce_sha256 = p_nonce_sha256
     and expires_at > now()
     and consumed_at is null
@@ -284,6 +288,22 @@ begin
 
   if not found then
     raise exception 'enrollment request is no longer pending' using errcode = 'P0001';
+  end if;
+
+  if not exists (
+    select 1
+    from supreme.app_sessions s
+    join supreme.devices d on d.id = s.device_id
+    where s.auth_session_id = p_approving_auth_session_id
+      and s.user_id = p_user_id
+      and s.device_id = p_approving_device_id
+      and s.status = 'active'
+      and s.expires_at > now()
+      and d.status = 'active'
+      and d.device_key_biometric_auth_required = true
+      and d.device_public_key_spki is not null
+  ) then
+    raise exception 'approving device session is no longer active' using errcode = '42501';
   end if;
 
   if not exists (
@@ -349,7 +369,7 @@ begin
 end;
 $$;
 
-revoke all on function public.approve_supreme_device_enrollment(uuid, uuid, uuid, uuid, bytea)
+revoke all on function public.approve_supreme_device_enrollment(uuid, uuid, uuid, uuid, uuid, bytea)
   from public, anon, authenticated;
 grant execute on function public.approve_supreme_device_enrollment(uuid, uuid, uuid, uuid, bytea)
   to service_role;
