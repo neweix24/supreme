@@ -491,6 +491,8 @@ class MainActivity : FragmentActivity() {
             passwordInput.visibility = View.VISIBLE
             emailInput.isEnabled = true
             codeInput.visibility = View.GONE
+            bootstrapLabel.visibility = View.GONE
+            bootstrapInput.visibility = View.GONE
             primaryButton.text = "SIGN IN"
             val message = if (
                 error is SupremeAuthException &&
