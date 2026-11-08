@@ -173,13 +173,38 @@ internal object SupremeKeyAttestation {
             nonceBase64Url,
             enrollmentRequestId,
             targetDeviceId,
-        ).joinToString("\\n").toByteArray(StandardCharsets.UTF_8)
+        ).joinToString("\n").toByteArray(StandardCharsets.UTF_8)
 
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         val privateKey = keyStore.getKey(KEY_ALIAS, null) as? java.security.PrivateKey
             ?: throw IllegalStateException(
                 "The trusted device signing key is unavailable. Re-register this device.",
             )
+        return Signature.getInstance("SHA256withECDSA").apply {
+            initSign(privateKey)
+            update(payload)
+        }
+    }
+
+    /** Prepares a biometric-per-operation signature to revoke one other trusted device. */
+    @Synchronized
+    fun prepareDeviceRevocationSignature(
+        challengeId: String,
+        nonceBase64Url: String,
+        targetDeviceId: String,
+    ): Signature {
+        require(Regex("^[0-9a-fA-F-]{36}$").matches(challengeId))
+        require(Regex("^[A-Za-z0-9_-]{43}$").matches(nonceBase64Url))
+        require(Regex("^[0-9a-fA-F-]{36}$").matches(targetDeviceId))
+        val payload = listOf(
+            "NEWEIX-SUPREME-DEVICE-REVOKE-V1",
+            challengeId,
+            nonceBase64Url,
+            targetDeviceId,
+        ).joinToString("\n").toByteArray(StandardCharsets.UTF_8)
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        val privateKey = keyStore.getKey(KEY_ALIAS, null) as? java.security.PrivateKey
+            ?: throw IllegalStateException("The trusted device signing key is unavailable. Re-register this device.")
         return Signature.getInstance("SHA256withECDSA").apply {
             initSign(privateKey)
             update(payload)
