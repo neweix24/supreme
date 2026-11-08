@@ -19,6 +19,8 @@ DECLARE
   v_session_status text;
   v_replay_rejected boolean := false;
   v_early_rejected boolean := false;
+  v_null_security_rejected boolean := false;
+  v_null_expiry_rejected boolean := false;
 BEGIN
   INSERT INTO auth.users(id) VALUES (v_user);
   INSERT INTO auth.sessions(id, user_id, not_after)
@@ -89,6 +91,32 @@ BEGIN
 
   -- A successful independent delivery is acknowledged by the service role.
   PERFORM public.mark_supreme_recovery_notification_delivered(v_request, 'requested');
+
+  BEGIN
+    PERFORM public.complete_supreme_break_glass_recovery(
+      v_user, v_auth_session, v_request, v_hash,
+      repeat('d', 64), repeat('e', 64), NULL,
+      now(), now() + interval '4 hours'
+    );
+  EXCEPTION WHEN SQLSTATE '22023' THEN
+    v_null_security_rejected := true;
+  END;
+  IF NOT v_null_security_rejected THEN
+    RAISE EXCEPTION 'Recovery accepted a NULL attestation security level';
+  END IF;
+
+  BEGIN
+    PERFORM public.complete_supreme_break_glass_recovery(
+      v_user, v_auth_session, v_request, v_hash,
+      repeat('d', 64), repeat('e', 64), 'strongbox',
+      now(), NULL
+    );
+  EXCEPTION WHEN SQLSTATE '22023' THEN
+    v_null_expiry_rejected := true;
+  END;
+  IF NOT v_null_expiry_rejected THEN
+    RAISE EXCEPTION 'Recovery accepted a NULL app-session expiry';
+  END IF;
 
   v_result := public.complete_supreme_break_glass_recovery(
     v_user, v_auth_session, v_request, v_hash,
