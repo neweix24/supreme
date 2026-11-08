@@ -84,7 +84,7 @@ function hasVerifiedSupremeAppSession(claims: JsonObject): boolean {
 function base64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
 }
 
 function decodeCanonicalBase64(value: unknown, maxBytes: number): Uint8Array {
@@ -166,7 +166,7 @@ async function verifyControlDecisionSignature(input: {
     input.requestId,
     input.decision,
     hex(input.reasonHash),
-  ].join("\\n"));
+  ].join("\n");
   return await crypto.subtle.verify(
     { name: "ECDSA", hash: "SHA-256" },
     key,
