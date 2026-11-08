@@ -122,6 +122,24 @@ begin
     );
   end if;
 
+  -- Repeated attestation of a pending key is idempotent: it remains pending
+  -- and receives no app session until an explicit trusted-device approval.
+  if v_device_status = 'pending_approval' then
+    update supreme.devices
+    set signing_certificate_sha256 = p_signing_certificate_sha256,
+        security_level = p_security_level,
+        attested_at = p_attested_at,
+        last_seen_at = now(),
+        updated_at = now()
+    where id = v_device_id and status = 'pending_approval';
+
+    return jsonb_build_object(
+      'registered', true,
+      'pending_approval', true,
+      'device_id', v_device_id
+    );
+  end if;
+
   -- Only a previously active device can renew its own session.
   update supreme.devices
   set signing_certificate_sha256 = p_signing_certificate_sha256,
@@ -130,11 +148,6 @@ begin
       last_seen_at = now(),
       updated_at = now()
   where id = v_device_id and status = 'active';
-
-  if v_device_status <> 'active' then
-    raise exception 'device enrollment is still pending approval'
-      using errcode = '42501';
-  end if;
 
   insert into supreme.app_sessions (
     user_id, device_id, auth_session_id, status, attested_at,
