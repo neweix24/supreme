@@ -25,6 +25,7 @@ internal object SupremeAuthClient {
         val userId: String,
         val assuranceLevel: String,
         val authTime: Long,
+        val issuedAt: Long,
         val sessionId: String,
     )
 
@@ -521,13 +522,15 @@ internal object SupremeAuthClient {
         val claims = decodeClaims(access!!)
         val assurance = claims.optString("aal", "aal1")
         val authTime = claims.optLong("auth_time", 0L)
+        val issuedAt = claims.optLong("iat", 0L)
         val sessionId = claims.optString("session_id")
         require(assurance == "aal1" || assurance == "aal2") {
             "Supreme authentication assurance could not be verified."
         }
+        require(issuedAt > 0L) { "Supreme token issue time is missing." }
         require(UUID_PATTERN.matches(sessionId)) { "Supreme session identifier is invalid." }
 
-        return AuthSession(access, refresh!!, userId, assurance, authTime, sessionId)
+        return AuthSession(access, refresh!!, userId, assurance, authTime, issuedAt, sessionId)
     }
 
     private fun decodeClaims(accessToken: String): JSONObject {
