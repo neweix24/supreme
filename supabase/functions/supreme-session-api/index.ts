@@ -375,7 +375,7 @@ async function issueDeviceSession(
     if (recoveryMode) {
       await db.unsafe(
         "insert into supreme.audit_events(actor_user_id, action, outcome, policy_version, details) values ($1::uuid, 'recovery.complete', 'denied', 'v1', jsonb_build_object('recovery_request_id', $2::uuid, 'reason', 'recovery_precondition_failed', 'request_id', $3))",
-        [auth.userId, payload.recovery_request_id, requestId],
+        [auth.userId, payload.recovery_request_id as string, requestId],
       );
       return response({ error: { code: "RECOVERY_COMPLETION_DENIED", request_id: requestId } }, 409, requestId);
     }
