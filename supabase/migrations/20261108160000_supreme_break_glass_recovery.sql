@@ -84,7 +84,7 @@ begin
     raise exception 'invalid recovery request parameters' using errcode = '22023';
   end if;
 
-  perform pg_advisory_xact_lock(hashtextextended(p_user_id::text || ':break-glass', 0));
+  perform pg_advisory_xact_lock(hashtextextended(p_user_id::text, 0));
   if not exists (
     select 1 from supreme.identities i
     where i.user_id = p_user_id and i.public_id = 'supreme'
@@ -198,7 +198,7 @@ begin
     raise exception 'invalid recovery completion parameters' using errcode = '22023';
   end if;
 
-  perform pg_advisory_xact_lock(hashtextextended(p_user_id::text || ':break-glass', 0));
+  perform pg_advisory_xact_lock(hashtextextended(p_user_id::text, 0));
 
   if not exists (
     select 1 from supreme.identities i
@@ -253,9 +253,13 @@ begin
   where user_id = p_user_id and status = 'active';
   get diagnostics v_revoked_sessions = row_count;
 
+  update supreme.device_enrollment_requests
+  set status = 'rejected', decided_at = now(), updated_at = now()
+  where user_id = p_user_id and status = 'pending';
+
   update supreme.devices
   set status = 'revoked', updated_at = now()
-  where user_id = p_user_id and status = 'active';
+  where user_id = p_user_id and status in ('active', 'pending_approval');
   get diagnostics v_revoked_devices = row_count;
 
   insert into supreme.devices(
