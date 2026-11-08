@@ -478,9 +478,13 @@ class MainActivity : FragmentActivity() {
                 if (session.userId != initial.userId || session.assuranceLevel != "aal2") {
                     throw IllegalStateException("Supreme AAL2 verification was not confirmed.")
                 }
+                // Supabase may preserve auth_time from the password-authenticated
+                // session when issuing the AAL2 token. The token's iat reflects
+                // the newly minted MFA-upgraded token and is the correct freshness
+                // signal for this immediate post-MFA device-registration step.
                 val now = System.currentTimeMillis() / 1000L
-                if (now - session.authTime > 300L || session.authTime > now + 30L) {
-                    throw IllegalStateException("Supreme MFA verification is no longer fresh. Sign in again.")
+                if (now - session.issuedAt > 300L || session.issuedAt > now + 30L) {
+                    throw IllegalStateException("Supreme MFA token is no longer fresh. Sign in again.")
                 }
 
                 if (recoveryMaterial != null && recoveryRequestId == null) {
