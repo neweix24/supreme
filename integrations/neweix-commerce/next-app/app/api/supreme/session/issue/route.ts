@@ -90,6 +90,11 @@ export async function POST(request: Request) {
   const challenge = payload.challenge;
   const certificateChain = payload.certificate_chain;
   const proofSignature = payload.proof_signature;
+  const bootstrapAuthorization = payload.bootstrap_authorization;
+  if (bootstrapAuthorization !== undefined &&
+      (typeof bootstrapAuthorization !== "string" || !/^[a-f0-9]{64}$/.test(bootstrapAuthorization))) {
+    return fail("First-device bootstrap authorization is invalid.", 400);
+  }
   if (!UUID.test(String(challengeId)) || typeof challenge !== "string" ||
       !/^[A-Za-z0-9_-]{43}$/.test(challenge) ||
       !Array.isArray(certificateChain) || certificateChain.length < 3 ||
@@ -178,7 +183,10 @@ export async function POST(request: Request) {
     }
 
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + 12 * 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(now.getTime() + 4 * 60 * 60 * 1000).toISOString();
+    const bootstrapTokenHash = typeof bootstrapAuthorization === "string"
+      ? createHash("sha256").update(bootstrapAuthorization, "utf8").digest("hex")
+      : null;
     const { data: registered, error: registrationError } = await db.rpc(
       "register_supreme_attested_device_session",
       {
@@ -189,10 +197,20 @@ export async function POST(request: Request) {
         p_security_level: verified.security_level,
         p_attested_at: now.toISOString(),
         p_expires_at: expiresAt,
+        p_bootstrap_token_sha256: bootstrapTokenHash,
       },
     );
-    if (registrationError || !registered || registered.registered !== true) {
+    if (registrationError || !registered) {
       console.error("Supreme device session registration failed", registrationError?.message);
+      return fail("Supreme device session could not be created.", 503);
+    }
+    if (registered.bootstrap_required === true) {
+      return NextResponse.json(
+        { error: "A one-time offline Supreme bootstrap authorization is required.", bootstrap_required: true },
+        { status: 409, headers: NO_STORE },
+      );
+    }
+    if (registered.registered !== true) {
       return fail("Supreme device session could not be created.", 503);
     }
 
