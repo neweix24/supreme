@@ -82,14 +82,15 @@ begin
     raise exception 'approving device is not trusted' using errcode = '42501';
   end if;
 
-  if not exists (
-    select 1 from supreme.app_sessions s
-    where s.user_id = p_user_id
-      and s.device_id = p_approving_device_id
-      and s.auth_session_id = p_approving_auth_session_id
-      and s.status = 'active'
-      and s.expires_at > now()
-  ) then
+  perform 1
+  from supreme.app_sessions s
+  where s.user_id = p_user_id
+    and s.device_id = p_approving_device_id
+    and s.auth_session_id = p_approving_auth_session_id
+    and s.status = 'active'
+    and s.expires_at > now()
+  for update;
+  if not found then
     raise exception 'approving Auth session is no longer active' using errcode = '42501';
   end if;
 
