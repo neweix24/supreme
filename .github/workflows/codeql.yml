@@ -11,7 +11,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
   actions: read
 
 concurrency:
@@ -67,7 +66,19 @@ jobs:
         working-directory: apps/android
         run: gradle --no-daemon :app:assembleDebug
 
-      - name: Analyze
+      - name: Analyze without GitHub Code Scanning upload
+        id: analyze
         uses: github/codeql-action/analyze@9418214df1f2c4b8128c770156c409013b07d6b9 # v3
         with:
           category: "/language:${{ matrix.language }}"
+          output: ${{ runner.temp }}/supreme-codeql-sarif
+          upload: never
+
+      - name: Archive CodeQL SARIF results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: supreme-codeql-sarif-${{ matrix.language }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/supreme-codeql-sarif
+          if-no-files-found: warn
+          retention-days: 14
