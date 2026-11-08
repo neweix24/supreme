@@ -87,13 +87,13 @@ function isFreshAal2(claims: JsonObject): boolean {
   if (!authTime || Date.now() / 1000 - authTime > 300 || authTime > Date.now() / 1000 + 30) {
     return false;
   }
+  // Supreme currently permits password + authenticator TOTP only.
+  // Do not treat phone/email OTP as an equivalent second factor.
   const amr = Array.isArray(claims.amr) ? claims.amr : [];
   return amr.some((entry) =>
     entry !== null &&
     typeof entry === "object" &&
-    ["totp", "webauthn", "phone", "email"].includes(
-      String((entry as JsonObject).method ?? ""),
-    )
+    (entry as JsonObject).method === "totp"
   );
 }
 
