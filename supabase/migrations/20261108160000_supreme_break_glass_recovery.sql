@@ -200,6 +200,20 @@ begin
 
   perform pg_advisory_xact_lock(hashtextextended(p_user_id::text || ':break-glass', 0));
 
+  if not exists (
+    select 1 from supreme.identities i
+    where i.user_id = p_user_id and i.public_id = 'supreme'
+      and i.role = 'ruler' and i.is_active = true
+  ) then
+    raise exception 'active Supreme ruler identity required' using errcode = '42501';
+  end if;
+  if exists (
+    select 1 from supreme.devices d
+    where d.user_id = p_user_id and d.status = 'active'
+  ) then
+    raise exception 'a trusted device became active; break-glass recovery is no longer eligible' using errcode = 'P0001';
+  end if;
+
   select * into v_request
   from supreme.recovery_requests
   where id = p_request_id and user_id = p_user_id and status = 'pending'
