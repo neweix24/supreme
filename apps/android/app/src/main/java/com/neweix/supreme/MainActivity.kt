@@ -33,6 +33,7 @@ import com.neweix.supreme.auth.SupremeAuthException
 import com.neweix.supreme.auth.SupremeSessionStore
 import com.neweix.supreme.security.SupremeAttestationClient
 import com.neweix.supreme.security.SupremeKeyAttestation
+import com.neweix.supreme.security.SupremeLocalUnlock
 import java.security.Signature
 import java.util.Base64
 import java.util.concurrent.ExecutorService
