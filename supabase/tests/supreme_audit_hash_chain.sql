@@ -52,11 +52,11 @@ begin
   end if;
 
   -- Simulate a privileged/operator-level tamper that bypasses the row trigger.
-  alter table supreme.audit_events disable trigger supreme_audit_events_immutable;
+  execute 'alter table supreme.audit_events disable trigger supreme_audit_events_immutable';
   update supreme.audit_events
      set details = jsonb_build_object('tampered', true)
    where action = 'test.hash_chain.two';
-  alter table supreme.audit_events enable trigger supreme_audit_events_immutable;
+  execute 'alter table supreme.audit_events enable trigger supreme_audit_events_immutable';
 
   if supreme.verify_audit_event_hash_chain() is distinct from false then
     raise exception 'Hash-chain verifier did not detect a privileged audit-event modification';
