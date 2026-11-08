@@ -396,6 +396,167 @@ async function issueDeviceSession(
   }, 200, requestId);
 }
 
+
+function toArrayBuffer(value: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(value.length);
+  copy.set(value);
+  return copy.buffer;
+}
+
+function derEcdsaToP1363(der: Uint8Array): Uint8Array {
+  if (der.length < 8 || der[0] !== 0x30) throw new TypeError("Invalid ECDSA signature.");
+  let offset = 1;
+  let length = der[offset++];
+  if (length & 0x80) {
+    const count = length & 0x7f;
+    if (count !== 1 || offset >= der.length) throw new TypeError("Invalid ECDSA signature length.");
+    length = der[offset++];
+  }
+  if (length !== der.length - offset || der[offset++] !== 0x02) throw new TypeError("Invalid ECDSA signature sequence.");
+  const rLength = der[offset++];
+  if (rLength < 1 || offset + rLength >= der.length) throw new TypeError("Invalid ECDSA signature R.");
+  const r = der.slice(offset, offset + rLength);
+  offset += rLength;
+  if (der[offset++] !== 0x02) throw new TypeError("Invalid ECDSA signature S.");
+  const sLength = der[offset++];
+  if (sLength < 1 || offset + sLength !== der.length) throw new TypeError("Invalid ECDSA signature S.");
+  const scalar = (value: Uint8Array) => {
+    let start = 0;
+    while (start < value.length - 1 && value[start] === 0) start++;
+    const trimmed = value.slice(start);
+    if (trimmed.length > 32) throw new TypeError("ECDSA scalar is too large.");
+    const output = new Uint8Array(32);
+    output.set(trimmed, 32 - trimmed.length);
+    return output;
+  };
+  const output = new Uint8Array(64);
+  output.set(scalar(r), 0);
+  output.set(scalar(der.slice(offset)), 32);
+  return output;
+}
+
+async function verifyEnrollmentApprovalSignature(
+  spki: Uint8Array,
+  challengeId: string,
+  nonce: Uint8Array,
+  requestId: string,
+  targetDeviceId: string,
+  signatureDer: Uint8Array,
+): Promise<boolean> {
+  const key = await crypto.subtle.importKey(
+    "spki", toArrayBuffer(spki), { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"],
+  );
+  const payload = new TextEncoder().encode([
+    "NEWEIX-SUPREME-DEVICE-ENROLLMENT-APPROVAL-V1",
+    challengeId,
+    base64Url(nonce),
+    requestId,
+    targetDeviceId,
+  ].join("\n"));
+  return await crypto.subtle.verify(
+    { name: "ECDSA", hash: "SHA-256" },
+    key,
+    toArrayBuffer(derEcdsaToP1363(signatureDer)),
+    toArrayBuffer(payload),
+  );
+}
+
+async function trustedApprover(auth: AuthContext): Promise<{ deviceId: string; spki: Uint8Array } | null> {
+  if (!db || !isFreshAal2(auth.claims) || !(await assertSupremeIdentity(auth.userId))) return null;
+  const binding = auth.claims.supreme_app_session;
+  if (!binding || typeof binding !== "object" || Array.isArray(binding)) return null;
+  const claim = binding as Record<string, unknown>;
+  if (!isUuid(claim.session_id) || !isUuid(claim.device_id)) return null;
+  const rows = await db.unsafe(
+    "select d.device_public_key_spki from supreme.app_sessions s join supreme.devices d on d.id = s.device_id where s.id = $1::uuid and s.auth_session_id = $2::uuid and s.user_id = $3::uuid and s.device_id = $4::uuid and s.status = 'active' and s.expires_at > now() and d.status = 'active' and d.device_key_biometric_auth_required = true and d.device_public_key_spki is not null limit 1",
+    [claim.session_id, auth.authSessionId, auth.userId, claim.device_id],
+  );
+  if (rows.length !== 1) return null;
+  return { deviceId: claim.device_id, spki: new Uint8Array(rows[0].device_public_key_spki) };
+}
+
+async function enrollmentRequests(auth: AuthContext, requestId: string): Promise<Response> {
+  const approver = await trustedApprover(auth);
+  if (!approver) return response({ error: { code: "TRUSTED_DEVICE_REQUIRED", request_id: requestId } }, 403, requestId);
+  const rows = await db!.unsafe(
+    "select r.id::text as request_id, r.device_id::text as device_id, d.security_level, r.requested_at, r.expires_at from supreme.device_enrollment_requests r join supreme.devices d on d.id = r.device_id where r.user_id = $1::uuid and r.status = 'pending' and r.expires_at > now() and d.status = 'pending_approval' order by r.requested_at asc limit 25",
+    [auth.userId],
+  );
+  return response({ enrollment_requests: rows, request_id: requestId }, 200, requestId);
+}
+
+async function enrollmentApprovalChallenge(
+  auth: AuthContext, requestId: string, enrollmentRequestId: string,
+): Promise<Response> {
+  const approver = await trustedApprover(auth);
+  if (!approver) return response({ error: { code: "TRUSTED_DEVICE_REQUIRED", request_id: requestId } }, 403, requestId);
+  if (!isUuid(enrollmentRequestId)) return response({ error: { code: "INVALID_ENROLLMENT_ID", request_id: requestId } }, 400, requestId);
+  const target = await db!.unsafe(
+    "select r.id::text as id, r.device_id::text as device_id from supreme.device_enrollment_requests r join supreme.devices d on d.id = r.device_id where r.id = $1::uuid and r.user_id = $2::uuid and r.status = 'pending' and r.expires_at > now() and d.status = 'pending_approval' and d.id <> $3::uuid limit 1",
+    [enrollmentRequestId, auth.userId, approver.deviceId],
+  );
+  if (target.length !== 1) return response({ error: { code: "ENROLLMENT_NOT_PENDING", request_id: requestId } }, 409, requestId);
+
+  const nonce = crypto.getRandomValues(new Uint8Array(32));
+  const digest = await sha256Hex(nonce);
+  const challenges = await db!.unsafe(
+    "with lock_row as materialized (select pg_advisory_xact_lock(hashtextextended($1 || ':' || $2, 0))), recent as materialized (select count(*)::integer as n from supreme.device_enrollment_approval_challenges c cross join lock_row where c.user_id = $1::uuid and c.approving_device_id = $2::uuid and c.created_at > now() - interval '10 minutes') insert into supreme.device_enrollment_approval_challenges (enrollment_request_id, user_id, approving_device_id, nonce_sha256, expires_at) select $3::uuid, $1::uuid, $2::uuid, decode($4, 'hex'), now() + interval '90 seconds' from recent where recent.n < 10 returning id::text, expires_at",
+    [auth.userId, approver.deviceId, enrollmentRequestId, digest],
+  );
+  if (challenges.length !== 1) return response({ error: { code: "APPROVAL_RATE_LIMITED", request_id: requestId } }, 429, requestId);
+  return response({
+    challenge_id: challenges[0].id,
+    nonce: base64Url(nonce),
+    enrollment_request_id: enrollmentRequestId,
+    device_id: target[0].device_id,
+    expires_at: challenges[0].expires_at,
+    request_id: requestId,
+  }, 200, requestId);
+}
+
+async function approveEnrollment(
+  auth: AuthContext, request: Request, requestId: string, enrollmentRequestId: string,
+): Promise<Response> {
+  const approver = await trustedApprover(auth);
+  if (!approver) return response({ error: { code: "TRUSTED_DEVICE_REQUIRED", request_id: requestId } }, 403, requestId);
+  if (!isUuid(enrollmentRequestId)) return response({ error: { code: "INVALID_ENROLLMENT_ID", request_id: requestId } }, 400, requestId);
+  let body: Record<string, unknown>;
+  try { body = await boundedJson(request, 8 * 1024); }
+  catch { return response({ error: { code: "INVALID_REQUEST", request_id: requestId } }, 400, requestId); }
+  const allowed = new Set(["challenge_id", "nonce", "device_id", "signature"]);
+  if (Object.keys(body).length !== 4 || Object.keys(body).some((key) => !allowed.has(key)) ||
+      !isUuid(body.challenge_id) || !isUuid(body.device_id) ||
+      typeof body.nonce !== "string" || typeof body.signature !== "string" ||
+      !/^[A-Za-z0-9_-]{43}$/.test(body.nonce) ||
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(body.signature) || body.signature.length < 80 || body.signature.length > 160) {
+    return response({ error: { code: "INVALID_APPROVAL_PAYLOAD", request_id: requestId } }, 400, requestId);
+  }
+  const nonce = decodeBase64Url(body.nonce);
+  const target = await db!.unsafe(
+    "select d.id::text as device_id from supreme.device_enrollment_requests r join supreme.devices d on d.id = r.device_id where r.id = $1::uuid and r.user_id = $2::uuid and r.status = 'pending' and r.expires_at > now() and d.status = 'pending_approval' and d.id = $3::uuid limit 1",
+    [enrollmentRequestId, auth.userId, body.device_id],
+  );
+  if (target.length !== 1) return response({ error: { code: "ENROLLMENT_NOT_PENDING", request_id: requestId } }, 409, requestId);
+  const signature = Uint8Array.from(atob(body.signature), (character) => character.charCodeAt(0));
+  const valid = await verifyEnrollmentApprovalSignature(
+    approver.spki, body.challenge_id, nonce, enrollmentRequestId, body.device_id, signature,
+  );
+  if (!valid) return response({ error: { code: "DEVICE_SIGNATURE_INVALID", request_id: requestId } }, 403, requestId);
+
+  const nonceHash = await sha256Hex(nonce);
+  const result = await postServiceRpc("approve_supreme_device_enrollment", {
+    p_enrollment_request_id: enrollmentRequestId,
+    p_challenge_id: body.challenge_id,
+    p_user_id: auth.userId,
+    p_approving_device_id: approver.deviceId,
+    p_nonce_sha256: Array.from(Uint8Array.from(nonceHash.match(/../g)!, (byte) => parseInt(byte, 16))),
+  });
+  if (!result || typeof result !== "object" || (result as Record<string, unknown>).approved !== true) {
+    return response({ error: { code: "ENROLLMENT_APPROVAL_FAILED", request_id: requestId } }, 409, requestId);
+  }
+  return response({ approved: true, enrollment_request_id: enrollmentRequestId, device_id: body.device_id, request_id: requestId }, 200, requestId);
+}
+
 async function readOrRevokeSession(
   auth: AuthContext,
   request: Request,
@@ -492,9 +653,15 @@ async function handle(request: Request): Promise<Response> {
     });
   }
 
+  const parts = pathname.split("/").filter(Boolean);
+  const enrollmentBase = parts.length >= 3 && parts[parts.length - 2] === "enrollments";
+  const enrollmentId = enrollmentBase ? parts[parts.length - 1] : "";
+  const isEnrollmentList = request.method === "GET" && suffix === "enrollments";
+  const isEnrollmentChallenge = request.method === "POST" && parts.length >= 2 && parts[parts.length - 2] === "challenge" && parts[parts.length - 3] === "enrollments";
+  const isEnrollmentApproval = request.method === "POST" && enrollmentBase && parts.length >= 3 && parts[parts.length - 3] === "enrollments" && parts[parts.length - 1] === "approve";
   const operation = request.method === "POST" ? suffix : "";
   if (request.method !== "GET" && request.method !== "DELETE" &&
-      !(request.method === "POST" && (operation === "challenge" || operation === "issue"))) {
+      !(request.method === "POST" && (operation === "challenge" || operation === "issue" || isEnrollmentChallenge || isEnrollmentApproval))) {
     return response({ error: { code: "METHOD_NOT_ALLOWED", request_id: requestId } }, 405, requestId);
   }
   if (!db || !SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) {
@@ -512,6 +679,9 @@ async function handle(request: Request): Promise<Response> {
     if (request.method === "POST" && operation === "issue") {
       return await issueDeviceSession(auth, request, requestId);
     }
+    if (isEnrollmentList) return await enrollmentRequests(auth, requestId);
+    if (isEnrollmentChallenge) return await enrollmentApprovalChallenge(auth, requestId, parts[parts.length - 3]);
+    if (isEnrollmentApproval) return await approveEnrollment(auth, request, requestId, parts[parts.length - 2]);
     return await readOrRevokeSession(auth, request, requestId);
   } catch (error) {
     console.error("Supreme session API failed", { requestId, error: String(error) });
