@@ -116,6 +116,45 @@ Required controls:
 
 If offline recovery material is lost, recovery requires a separately documented, manually verified operator procedure. Do not add a hidden bypass or support override endpoint.
 
+### Break-glass recovery implementation
+
+The recovery path is implemented as a separate flow; it does not reuse first-device bootstrap.
+
+1. During secure owner provisioning, generate a 256-bit random recovery code locally and insert only its SHA-256 digest into `supreme.recovery_authorizations`. Keep the raw code offline and outside the phone.
+2. Configure the Edge Function secrets `SUPREME_RECOVERY_NOTIFICATION_WEBHOOK_URL` and `SUPREME_RECOVERY_NOTIFICATION_WEBHOOK_SECRET`. The URL must be HTTPS. The receiver must verify the bearer secret and independently notify the owner; return 2xx only after accepting the notification.
+3. When all trusted devices are lost, sign in with password + TOTP. Enter the offline recovery code and leave the recovery request ID empty. The API creates a pending request with a 24-hour cooling-off period and queues an independent notification.
+4. If notification delivery fails or is not configured, the request remains blocked. Re-enter the same offline code after configuring the notifier to retry delivery; completion remains impossible until delivery is acknowledged.
+5. After the cooling-off period, sign in again with password + TOTP, enter the same offline code and the recovery request UUID, and complete fresh Android hardware attestation with biometric proof-of-possession.
+6. The database atomically consumes the recovery authorization, activates the newly attested device, creates its four-hour app session, and leaves all prior devices revoked. A replay cannot create another session.
+
+Example operator provisioning (run locally; never paste the raw code into chat, a repository, or a ticket):
+
+```sh
+RECOVERY_CODE="$(openssl rand -hex 32)"
+RECOVERY_SHA256="$(printf '%s' "$RECOVERY_CODE" | sha256sum | cut -d' ' -f1)"
+printf 'Store this code offline now: %s\\n' "$RECOVERY_CODE"
+printf 'Insert only this digest in the intended Supreme Supabase project: %s\\n' "$RECOVERY_SHA256"
+unset RECOVERY_CODE
+```
+
+In the intended project's SQL Editor, insert the digest returned above:
+
+```sql
+insert into supreme.recovery_authorizations(user_id, token_sha256, expires_at)
+select i.user_id, '<64_CHARACTER_SHA256_DIGEST>', now() + interval '365 days'
+from supreme.identities i
+where i.public_id = 'supreme' and i.role = 'ruler' and i.is_active = true
+  and (select count(*) from supreme.identities
+       where public_id = 'supreme' and role = 'ruler' and is_active = true) = 1
+  and not exists (
+    select 1 from supreme.recovery_authorizations a
+    where a.user_id = i.user_id and a.consumed_at is null and a.expires_at > now()
+  )
+returning id, expires_at;
+```
+
+The insert must return exactly one row. The webhook is an external operator-controlled dependency and is intentionally not hard-coded or pointed at an unverified personal address. The application fails closed when the independent notification is unavailable.
+
 ## Implementation progress
 
 - [x] Add `pending_approval` device state and a private, service-role-only enrollment-request table.
@@ -136,9 +175,11 @@ If offline recovery material is lost, recovery requires a separately documented,
 - [x] Remote revocation atomically marks the target device revoked and invalidates every active app session on it; current device cannot be remotely revoked through this flow.
 - [x] Audit successful and invalid-signature remote revocation attempts.
 - [ ] Operator provisioning and migration application in the intended Supabase project.
-- [ ] Break-glass recovery implementation.
+- [x] Break-glass recovery request, 24-hour cooling-off, offline single-use authorization, fresh-AAL2 + hardware-attested completion, atomic old-session revocation, and independent notification outbox/webhook delivery.
 - [x] PostgreSQL regression tests and CI for bootstrap, pending-device isolation, revoked/blocked key non-reactivation, and remote device revocation/replay/self-revocation.
-- [ ] Physical-device validation of biometric approval and target-device re-attestation.
+- [ ] Configure and verify the independent recovery notification webhook in the intended Supabase project.
+- [ ] Provision the offline recovery digest in the intended Supreme Supabase project.
+- [ ] Physical-device validation of biometric approval, break-glass request/completion, and target-device re-attestation.
 
 This is an intentionally incomplete hardening stage. Trusted-device approval, first-device bootstrap, device inventory, and biometric remote revocation are implemented in code. Operator provisioning, migration/Edge Function deployment, break-glass recovery, full approval/recovery regression coverage, and physical-device verification remain outstanding. Do not deploy these migrations as a complete enrollment/recovery solution.
 
