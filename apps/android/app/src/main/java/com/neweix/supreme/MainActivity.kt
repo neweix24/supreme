@@ -436,7 +436,7 @@ class MainActivity : FragmentActivity() {
                                         pendingFactorId = null
                                         pendingChallengeId = null
                                         codeInput.text.clear()
-                                        renderDashboard(services, requests)
+                                        renderDashboard(services, requests, enrollments)
                                         setBusy(false, "Biometric device attestation and Supreme session checks passed.")
                                     }
                                 } catch (error: Exception) {
@@ -481,6 +481,7 @@ class MainActivity : FragmentActivity() {
     private fun renderDashboard(
         services: List<SupremeAuthClient.Service>,
         requests: List<SupremeAuthClient.ControlRequest>,
+        enrollments: List<SupremeAuthClient.EnrollmentRequest> = emptyList(),
     ) {
         screen.removeAllViews()
         screen.addView(ImageView(this).apply {
@@ -581,6 +582,48 @@ class MainActivity : FragmentActivity() {
         }
 
         screen.addView(TextView(this).apply {
+            text = "NEW DEVICE ENROLLMENTS · ${enrollments.size}"
+            textSize = 12f
+            setTextColor(Color.rgb(229, 197, 120))
+            setPadding(0, dp(18), 0, dp(8))
+        }, matchWrap())
+        if (enrollments.isEmpty()) {
+            screen.addView(TextView(this).apply {
+                text = "No new devices are waiting for approval."
+                textSize = 12f
+                setTextColor(Color.LTGRAY)
+                setPadding(0, 0, 0, dp(10))
+            }, matchWrap())
+        }
+        for (enrollment in enrollments) {
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                setBackgroundColor(Color.rgb(24, 24, 24))
+            }
+            item.addView(TextView(this@MainActivity).apply {
+                text = "DEVICE ${enrollment.deviceId.take(8).uppercase()}"
+                textSize = 14f
+                setTextColor(Color.WHITE)
+            }, matchWrap())
+            item.addView(TextView(this@MainActivity).apply {
+                text = "Security: ${enrollment.securityLevel.uppercase()}\nRequested: ${enrollment.requestedAt}\nExpires: ${enrollment.expiresAt}"
+                textSize = 10f
+                setTextColor(Color.rgb(160, 160, 160))
+                setPadding(0, dp(6), 0, dp(8))
+            }, matchWrap())
+            val approveDevice = Button(this@MainActivity).apply {
+                text = "APPROVE NEW DEVICE"
+                filterTouchesWhenObscured = true
+                setOnClickListener { confirmEnrollmentApproval(enrollment) }
+            }
+            item.addView(approveDevice, matchWrap())
+            val params = matchWrap()
+            params.topMargin = dp(10)
+            screen.addView(item, params)
+        }
+
+        screen.addView(TextView(this).apply {
             text = "REGISTERED SERVICES"
             textSize = 12f
             setTextColor(Color.LTGRAY)
@@ -624,6 +667,67 @@ class MainActivity : FragmentActivity() {
         val params = matchWrap()
         params.topMargin = dp(24)
         screen.addView(signOut, params)
+    }
+
+    private fun confirmEnrollmentApproval(enrollment: SupremeAuthClient.EnrollmentRequest) {
+        AlertDialog.Builder(this)
+            .setTitle("Trust this new device?")
+            .setMessage(
+                "Approve device ${enrollment.deviceId}? It will be allowed to establish its own Supreme session after approval. Only approve a device you physically control.",
+            )
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Continue") { _, _ -> submitEnrollmentApproval(enrollment) }
+            .show()
+    }
+
+    private fun submitEnrollmentApproval(enrollment: SupremeAuthClient.EnrollmentRequest) {
+        val accessToken = currentAccessToken
+        if (accessToken.isNullOrBlank()) {
+            statusText.text = "Supreme session is unavailable. Sign in again."
+            return
+        }
+        if (isBusy) return
+        setBusy(true, "Preparing trusted-device approval…")
+        background.execute {
+            try {
+                val challenge = SupremeAuthClient.issueEnrollmentApprovalChallenge(
+                    accessToken, enrollment.id,
+                )
+                val signer = SupremeKeyAttestation.prepareEnrollmentApprovalSignature(
+                    challenge.id,
+                    challenge.nonce,
+                    challenge.enrollmentRequestId,
+                    challenge.deviceId,
+                )
+                runOnUiThread {
+                    authenticateForSigning(
+                        signer,
+                        onSigned = { signature ->
+                            background.execute {
+                                try {
+                                    val encoded = Base64.getEncoder().encodeToString(signature.sign())
+                                    SupremeAuthClient.approveEnrollment(
+                                        accessToken, challenge, encoded,
+                                    )
+                                    val services = SupremeAuthClient.listServices(accessToken)
+                                    val requests = SupremeAuthClient.listPendingRequests(accessToken)
+                                    val enrollments = SupremeAuthClient.listPendingEnrollments(accessToken)
+                                    runOnUiThread {
+                                        renderDashboard(services, requests, enrollments)
+                                        setBusy(false, "New device approved. The target device must refresh its session before access is granted.")
+                                    }
+                                } catch (error: Exception) {
+                                    runOnUiThread { setBusy(false, safeMessage(error)) }
+                                }
+                            }
+                        },
+                        onFailure = { message -> setBusy(false, message) },
+                    )
+                }
+            } catch (error: Exception) {
+                runOnUiThread { setBusy(false, safeMessage(error)) }
+            }
+        }
     }
 
     private fun confirmRequestDecision(
