@@ -152,6 +152,40 @@ internal object SupremeKeyAttestation {
         }
     }
 
+    /**
+     * Prepares a biometric-per-operation signature for a pending device enrollment.
+     * The server binds the payload to the exact request, target device and nonce.
+     */
+    @Synchronized
+    fun prepareEnrollmentApprovalSignature(
+        challengeId: String,
+        nonceBase64Url: String,
+        enrollmentRequestId: String,
+        targetDeviceId: String,
+    ): Signature {
+        require(Regex("^[0-9a-fA-F-]{36}$").matches(challengeId))
+        require(Regex("^[A-Za-z0-9_-]{43}$").matches(nonceBase64Url))
+        require(Regex("^[0-9a-fA-F-]{36}$").matches(enrollmentRequestId))
+        require(Regex("^[0-9a-fA-F-]{36}$").matches(targetDeviceId))
+        val payload = listOf(
+            "NEWEIX-SUPREME-DEVICE-ENROLLMENT-APPROVAL-V1",
+            challengeId,
+            nonceBase64Url,
+            enrollmentRequestId,
+            targetDeviceId,
+        ).joinToString("\\n").toByteArray(StandardCharsets.UTF_8)
+
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        val privateKey = keyStore.getKey(KEY_ALIAS, null) as? java.security.PrivateKey
+            ?: throw IllegalStateException(
+                "The trusted device signing key is unavailable. Re-register this device.",
+            )
+        return Signature.getInstance("SHA256withECDSA").apply {
+            initSign(privateKey)
+            update(payload)
+        }
+    }
+
     /** Removes the local attestation key when a device registration is reset. */
     @Synchronized
     fun delete() {
