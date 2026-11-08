@@ -376,11 +376,10 @@ class MainActivity : FragmentActivity() {
                 if (session.userId != initial.userId || session.assuranceLevel != "aal2") {
                     throw IllegalStateException("Supreme AAL2 verification was not confirmed.")
                 }
-                val now = System.currentTimeMillis() / 1000L
-                if (now - session.authTime > 300L || session.authTime > now + 30L) {
-                    throw IllegalStateException("Supreme MFA verification is no longer fresh. Sign in again.")
-                }
-
+                // Fresh TOTP verification is enforced by supreme-session-api using
+                // the verified TOTP AMR timestamp. auth_time is the original
+                // authentication time and can be older than a successful MFA step.
+                
                 // The attestation key is generated with per-operation biometric
                 // authorization. Its proof is completed only inside CryptoObject.
                 val prepared = SupremeAttestationClient.prepareVerification(session.accessToken)
