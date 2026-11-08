@@ -46,3 +46,10 @@ $$;
 create trigger supreme_audit_events_immutable
 before update or delete on supreme.audit_events
 for each row execute function supreme.reject_audit_mutation();
+
+-- Seed legacy events before the hash-chain migration to exercise backfill.
+insert into supreme.audit_events (
+  request_id, actor_user_id, action, outcome, policy_version, details
+) values
+  (gen_random_uuid(), null, 'legacy.audit.event.one', 'success', 'v1', jsonb_build_object('legacy', 1)),
+  (gen_random_uuid(), null, 'legacy.audit.event.two', 'pending', 'v1', jsonb_build_object('legacy', 2));
