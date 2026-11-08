@@ -457,6 +457,7 @@ class MainActivity : FragmentActivity() {
                                     val services = SupremeAuthClient.listServices(refreshed.accessToken)
                                     val requests = SupremeAuthClient.listPendingRequests(refreshed.accessToken)
                                     val enrollments = SupremeAuthClient.listPendingEnrollments(refreshed.accessToken)
+                                    val devices = SupremeAuthClient.listTrustedDevices(refreshed.accessToken)
                                     runOnUiThread {
                                         currentAccessToken = refreshed.accessToken
                                         pendingPasswordSession = null
@@ -466,7 +467,7 @@ class MainActivity : FragmentActivity() {
                                         bootstrapInput.text.clear()
                                         bootstrapLabel.visibility = View.GONE
                                         bootstrapInput.visibility = View.GONE
-                                        renderDashboard(services, requests, enrollments)
+                                        renderDashboard(services, requests, enrollments, devices)
                                         setBusy(false, "Biometric device attestation and Supreme session checks passed.")
                                     }
                                 } catch (error: Exception) {
@@ -514,6 +515,7 @@ class MainActivity : FragmentActivity() {
         services: List<SupremeAuthClient.Service>,
         requests: List<SupremeAuthClient.ControlRequest>,
         enrollments: List<SupremeAuthClient.EnrollmentRequest> = emptyList(),
+        devices: List<SupremeAuthClient.TrustedDevice> = emptyList(),
     ) {
         screen.removeAllViews()
         screen.addView(ImageView(this).apply {
@@ -656,6 +658,49 @@ class MainActivity : FragmentActivity() {
         }
 
         screen.addView(TextView(this).apply {
+            text = "TRUSTED DEVICE INVENTORY · ${devices.size}"
+            textSize = 12f
+            setTextColor(Color.rgb(229, 197, 120))
+            setPadding(0, dp(18), 0, dp(8))
+        }, matchWrap())
+        if (devices.isEmpty()) {
+            screen.addView(TextView(this).apply {
+                text = "No registered devices were returned."
+                textSize = 12f
+                setTextColor(Color.LTGRAY)
+                setPadding(0, 0, 0, dp(10))
+            }, matchWrap())
+        }
+        for (device in devices) {
+            val item = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                setBackgroundColor(Color.rgb(24, 24, 24))
+            }
+            item.addView(TextView(this@MainActivity).apply {
+                text = if (device.isCurrentDevice) "THIS DEVICE · ${device.id.take(8).uppercase()}" else "DEVICE · ${device.id.take(8).uppercase()}"
+                textSize = 14f
+                setTextColor(if (device.isCurrentDevice) Color.rgb(229, 197, 120) else Color.WHITE)
+            }, matchWrap())
+            item.addView(TextView(this@MainActivity).apply {
+                text = "Status: ${device.status.uppercase()} · Security: ${device.securityLevel.uppercase()}\nActive sessions: ${device.activeSessions}\nLast seen: ${device.lastSeenAt ?: "Not recorded"}\nAttested: ${device.attestedAt}"
+                textSize = 10f
+                setTextColor(Color.rgb(160, 160, 160))
+                setPadding(0, dp(6), 0, dp(8))
+            }, matchWrap())
+            if (!device.isCurrentDevice && device.status == "active") {
+                item.addView(Button(this@MainActivity).apply {
+                    text = "REVOKE DEVICE ACCESS"
+                    filterTouchesWhenObscured = true
+                    setOnClickListener { confirmDeviceRevocation(device) }
+                }, matchWrap())
+            }
+            val params = matchWrap()
+            params.topMargin = dp(10)
+            screen.addView(item, params)
+        }
+
+        screen.addView(TextView(this).apply {
             text = "REGISTERED SERVICES"
             textSize = 12f
             setTextColor(Color.LTGRAY)
@@ -744,9 +789,60 @@ class MainActivity : FragmentActivity() {
                                     val services = SupremeAuthClient.listServices(accessToken)
                                     val requests = SupremeAuthClient.listPendingRequests(accessToken)
                                     val enrollments = SupremeAuthClient.listPendingEnrollments(accessToken)
+                                    val devices = SupremeAuthClient.listTrustedDevices(accessToken)
                                     runOnUiThread {
-                                        renderDashboard(services, requests, enrollments)
+                                        renderDashboard(services, requests, enrollments, devices)
                                         setBusy(false, "New device approved. The target device must refresh its session before access is granted.")
+                                    }
+                                } catch (error: Exception) {
+                                    runOnUiThread { setBusy(false, safeMessage(error)) }
+                                }
+                            }
+                        },
+                        onFailure = { message -> setBusy(false, message) },
+                    )
+                }
+            } catch (error: Exception) {
+                runOnUiThread { setBusy(false, safeMessage(error)) }
+            }
+        }
+    }
+
+    private fun confirmDeviceRevocation(device: SupremeAuthClient.TrustedDevice) {
+        if (device.isCurrentDevice || device.status != "active") return
+        AlertDialog.Builder(this)
+            .setTitle("Revoke device access?")
+            .setMessage("This permanently revokes device ${device.id} and every active Supreme app session on it. The device cannot be reactivated; it must be enrolled again through the approved process.")
+            .setNegativeButton("CANCEL", null)
+            .setPositiveButton("REVOKE") { _, _ -> beginDeviceRevocation(device) }
+            .show()
+    }
+
+    private fun beginDeviceRevocation(device: SupremeAuthClient.TrustedDevice) {
+        val accessToken = currentAccessToken
+        if (accessToken.isNullOrBlank() || isBusy || device.isCurrentDevice) return
+        setBusy(true, "Preparing secure device revocation…")
+        background.execute {
+            try {
+                val challenge = SupremeAuthClient.issueDeviceRevocationChallenge(accessToken, device.id)
+                val signer = SupremeKeyAttestation.prepareDeviceRevocationSignature(
+                    challenge.id, challenge.nonce, challenge.deviceId,
+                )
+                runOnUiThread {
+                    authenticateForSigning(
+                        signer,
+                        onSigned = { signature ->
+                            background.execute {
+                                try {
+                                    val encoded = Base64.getEncoder().encodeToString(signature.sign())
+                                    SupremeAuthClient.revokeTrustedDevice(accessToken, challenge, encoded)
+                                    val services = SupremeAuthClient.listServices(accessToken)
+                                    val requests = SupremeAuthClient.listPendingRequests(accessToken)
+                                    val enrollments = SupremeAuthClient.listPendingEnrollments(accessToken)
+                                    val devices = SupremeAuthClient.listTrustedDevices(accessToken)
+                                    runOnUiThread {
+                                        renderDashboard(services, requests, enrollments, devices)
+                                        setBusy(false, "Device access revoked. All sessions on that device are invalidated.")
                                     }
                                 } catch (error: Exception) {
                                     runOnUiThread { setBusy(false, safeMessage(error)) }
@@ -896,8 +992,9 @@ class MainActivity : FragmentActivity() {
                                     val services = SupremeAuthClient.listServices(activeAccessToken)
                                     val requests = SupremeAuthClient.listPendingRequests(activeAccessToken)
                                     val enrollments = SupremeAuthClient.listPendingEnrollments(activeAccessToken)
+                                    val devices = SupremeAuthClient.listTrustedDevices(activeAccessToken)
                                     runOnUiThread {
-                                        renderDashboard(services, requests, enrollments)
+                                        renderDashboard(services, requests, enrollments, devices)
                                         setBusy(false, if (decision == "approve") {
                                             "Biometric approval recorded. Provider execution has not been triggered."
                                         } else {
@@ -938,10 +1035,11 @@ class MainActivity : FragmentActivity() {
                 val services = SupremeAuthClient.listServices(session.accessToken)
                 val requests = SupremeAuthClient.listPendingRequests(session.accessToken)
                 val enrollments = SupremeAuthClient.listPendingEnrollments(session.accessToken)
+                val devices = SupremeAuthClient.listTrustedDevices(session.accessToken)
                 runOnUiThread {
                     currentAccessToken = session.accessToken
                     resumeSessionCheck = false
-                    renderDashboard(services, requests, enrollments)
+                    renderDashboard(services, requests, enrollments, devices)
                     setBusy(false, "Supreme session restored.")
                 }
             } catch (error: Exception) {
