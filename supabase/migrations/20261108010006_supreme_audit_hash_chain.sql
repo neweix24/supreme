@@ -108,7 +108,7 @@ declare
   v_payload jsonb;
 begin
   for v_event in
-    select * from supreme.audit_events order by id asc
+    select * from supreme.audit_events order by chain_position asc
   loop
     if v_event.previous_hash is distinct from v_previous_hash then
       return false;
