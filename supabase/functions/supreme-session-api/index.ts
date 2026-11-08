@@ -725,6 +725,7 @@ async function dispatchRecoveryNotification(requestId: string, eventType: "reque
         "content-type": "application/json",
         authorization: "Bearer " + RECOVERY_NOTIFICATION_SECRET,
         "x-neweix-supreme-event": eventType,
+        "idempotency-key": "supreme-recovery:" + requestId + ":" + eventType,
       },
       body: JSON.stringify(rows[0].payload),
       redirect: "error",
