@@ -5,6 +5,7 @@ DO $$
 DECLARE
   v_user uuid := gen_random_uuid();
   v_auth_session uuid := gen_random_uuid();
+  v_expired_auth_session uuid := gen_random_uuid();
   v_old_device uuid := gen_random_uuid();
   v_pending_device uuid := gen_random_uuid();
   v_pending_enrollment uuid := gen_random_uuid();
@@ -21,11 +22,14 @@ DECLARE
   v_early_rejected boolean := false;
   v_null_security_rejected boolean := false;
   v_null_expiry_rejected boolean := false;
+  v_expired_session_rejected boolean := false;
 BEGIN
   INSERT INTO auth.users(id) VALUES (v_user);
   -- Supabase sessions have no maximum lifetime by default; NULL not_after is valid.
   INSERT INTO auth.sessions(id, user_id, not_after)
-  VALUES (v_auth_session, v_user, NULL);
+  VALUES
+    (v_auth_session, v_user, NULL),
+    (v_expired_auth_session, v_user, now() - interval '1 minute');
   INSERT INTO supreme.identities(user_id, public_id, role, is_active)
   VALUES (v_user, 'supreme', 'ruler', true);
 
@@ -48,6 +52,15 @@ BEGIN
   RETURNING id INTO v_auth_id;
 
   PERFORM set_config('request.jwt.claim.role', 'service_role', true);
+  BEGIN
+    PERFORM public.begin_supreme_break_glass_recovery(v_user, v_expired_auth_session, v_hash);
+  EXCEPTION WHEN SQLSTATE '42501' THEN
+    v_expired_session_rejected := true;
+  END;
+  IF NOT v_expired_session_rejected THEN
+    RAISE EXCEPTION 'Recovery accepted an Auth session whose not_after is in the past';
+  END IF;
+
   v_result := public.begin_supreme_break_glass_recovery(v_user, v_auth_session, v_hash);
   v_request := (v_result ->> 'request_id')::uuid;
   v_available := (v_result ->> 'available_at')::timestamptz;
