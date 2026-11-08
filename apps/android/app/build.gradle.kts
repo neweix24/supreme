@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+
+apply(from = "logo-guard.gradle.kts")
 val releaseKeystorePath = providers.environmentVariable("SUPREME_RELEASE_KEYSTORE_PATH").orNull
 val releaseStorePassword = providers.environmentVariable("SUPREME_RELEASE_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("SUPREME_RELEASE_KEY_ALIAS").orNull
@@ -46,7 +48,9 @@ android {
     buildTypes {
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
@@ -87,5 +91,4 @@ tasks.configureEach {
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.biometric:biometric:1.1.0")
-    implementation("androidx.webkit:webkit:1.12.1")
 }

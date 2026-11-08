@@ -1,0 +1,93 @@
+name: Supreme audit hash-chain SQL test
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+      - "supabase/tests/**"
+      - ".github/workflows/supreme-audit-chain-check.yml"
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+      - "supabase/tests/**"
+      - ".github/workflows/supreme-audit-chain-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supreme-audit-chain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: postgres
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGDATABASE: postgres
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Create isolated Supreme audit fixture
+        run: psql --set ON_ERROR_STOP=1 --file supabase/tests/supreme_audit_hash_chain_setup.sql
+
+      - name: Apply audit hash-chain migration
+        run: psql --set ON_ERROR_STOP=1 --file supabase/migrations/20261108010006_supreme_audit_hash_chain.sql
+
+      - name: Verify append-only and tamper-evident behavior
+        run: psql --set ON_ERROR_STOP=1 --file supabase/tests/supreme_audit_hash_chain.sql
+
+      - name: Verify concurrent audit writers remain in one valid chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          pids=()
+          for worker in 1 2; do
+            (
+              for sequence in $(seq 1 20); do
+                printf "insert into supreme.audit_events (request_id, actor_user_id, action, outcome, policy_version, details) values (gen_random_uuid(), null, 'test.concurrent.%s.%s', 'success', 'test', jsonb_build_object('worker', %s, 'sequence', %s));\n" "$worker" "$sequence" "$worker" "$sequence"
+              done | psql --set ON_ERROR_STOP=1
+            ) &
+            pids+=("$!")
+          done
+          for pid in "${pids[@]}"; do wait "$pid"; done
+          psql --set ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF (SELECT count(*) FROM supreme.audit_events WHERE action LIKE 'test.concurrent.%') <> 40 THEN
+              RAISE EXCEPTION 'Expected 40 concurrent audit events';
+            END IF;
+            IF supreme.verify_audit_event_hash_chain() IS DISTINCT FROM true THEN
+              RAISE EXCEPTION 'Audit hash chain invalid after concurrent inserts';
+            END IF;
+          END;
+          $$;
+          SQL

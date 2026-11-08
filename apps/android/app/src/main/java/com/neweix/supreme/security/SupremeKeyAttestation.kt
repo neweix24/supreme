@@ -24,7 +24,7 @@ internal object SupremeKeyAttestation {
 
     data class Material(
         val certificateChainBase64: List<String>,
-        val challengeProofBase64: String,
+        val proofSigner: Signature,
     )
 
     /**
@@ -61,7 +61,18 @@ internal object SupremeKeyAttestation {
                 .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
                 .setDigests(KeyProperties.DIGEST_SHA256)
                 .setAttestationChallenge(challenge.copyOf())
-                .setUserAuthenticationRequired(false)
+                .setUserAuthenticationRequired(true)
+                .apply {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                        setUserAuthenticationParameters(
+                            0,
+                            KeyProperties.AUTH_BIOMETRIC_STRONG,
+                        )
+                    } else {
+                        @Suppress("DEPRECATION")
+                        setUserAuthenticationValidityDurationSeconds(-1)
+                    }
+                }
                 .build()
 
             generator.initialize(spec)
@@ -85,17 +96,59 @@ internal object SupremeKeyAttestation {
             val signer = Signature.getInstance("SHA256withECDSA")
             signer.initSign(privateKey)
             signer.update(proofPayload)
-            val proof = signer.sign()
 
             return Material(
                 certificateChainBase64 = chain.map { certificate ->
                     Base64.getEncoder().encodeToString(certificate.encoded)
                 },
-                challengeProofBase64 = Base64.getEncoder().encodeToString(proof),
+                proofSigner = signer,
             )
         } catch (error: Exception) {
             keyStore.deleteEntry(KEY_ALIAS)
             throw error
+        }
+    }
+
+    /**
+     * Signs a server-issued, one-time Supreme control-decision challenge with
+     * the same non-exportable key whose public key was verified at registration.
+     * The server binds the signature to the request, decision and reason digest.
+     */
+    /**
+     * Prepares a device-bound control-decision signature. The returned Signature
+     * must be passed to BiometricPrompt.CryptoObject; signing before successful
+     * BIOMETRIC_STRONG authentication is rejected by Android Keystore.
+     */
+    @Synchronized
+    fun prepareControlDecisionSignature(
+        challengeId: String,
+        nonceBase64Url: String,
+        requestId: String,
+        decision: String,
+        reason: String?,
+    ): Signature {
+        require(Regex("^[0-9a-fA-F-]{36}$").matches(challengeId))
+        require(Regex("^[A-Za-z0-9_-]{43}$").matches(nonceBase64Url))
+        require(Regex("^[0-9a-fA-F-]{36}$").matches(requestId))
+        require(decision == "approve" || decision == "reject")
+        val reasonHash = java.security.MessageDigest.getInstance("SHA-256")
+            .digest((reason ?: "").toByteArray(StandardCharsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        val payload = listOf(
+            "NEWEIX-SUPREME-CONTROL-DECISION-V1",
+            challengeId,
+            nonceBase64Url,
+            requestId,
+            decision,
+            reasonHash,
+        ).joinToString("\n").toByteArray(StandardCharsets.UTF_8)
+
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        val privateKey = keyStore.getKey(KEY_ALIAS, null) as? java.security.PrivateKey
+            ?: throw IllegalStateException("The registered Supreme device signing key is unavailable. Re-register this device.")
+        return Signature.getInstance("SHA256withECDSA").apply {
+            initSign(privateKey)
+            update(payload)
         }
     }
 

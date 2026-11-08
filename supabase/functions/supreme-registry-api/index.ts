@@ -58,7 +58,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
   return headers;
 }
 
-function decodeJwtClaims(token: string): JsonObject {
+function decodeClaimsAfterSupabaseUserVerification(token: string): JsonObject {
   const part = token.split(".")[1];
   if (!part) throw new Error("Invalid bearer token.");
   const normalized = part.replace(/-/g, "+").replace(/_/g, "/");
@@ -81,19 +81,134 @@ function hasVerifiedSupremeAppSession(claims: JsonObject): boolean {
     session.attested_at > 0 && session.attested_at <= Date.now() / 1000 + 30;
 }
 
+function toArrayBuffer(value: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(value.length);
+  copy.set(value);
+  return copy.buffer;
+}
+
+function base64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
+}
+
+function decodeCanonicalBase64(value: unknown, maxBytes: number): Uint8Array {
+  if (typeof value !== "string" || value.length === 0 || value.length > Math.ceil(maxBytes * 4 / 3) + 4 ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+    throw new TypeError("Invalid base64 encoding.");
+  }
+  const binary = atob(value);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  if (bytes.length > maxBytes || btoa(binary) !== value) throw new TypeError("Invalid base64 encoding.");
+  return bytes;
+}
+
+function decodeCanonicalBase64Url(value: unknown, expectedBytes: number): Uint8Array {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]+$/.test(value) ||
+      value.length !== Math.ceil(expectedBytes * 4 / 3)) {
+    throw new TypeError("Invalid base64url encoding.");
+  }
+  const standard = value.replaceAll("-", "+").replaceAll("_", "/") +
+    "=".repeat((4 - value.length % 4) % 4);
+  const binary = atob(standard);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  if (bytes.length !== expectedBytes || base64Url(bytes) !== value) {
+    throw new TypeError("Invalid base64url encoding.");
+  }
+  return bytes;
+}
+
+function derEcdsaToP1363(der: Uint8Array): Uint8Array {
+  if (der.length < 8 || der[0] !== 0x30) throw new TypeError("Invalid ECDSA signature.");
+  let offset = 1;
+  let sequenceLength = der[offset++];
+  if (sequenceLength & 0x80) {
+    const count = sequenceLength & 0x7f;
+    if (count !== 1 || offset >= der.length) throw new TypeError("Invalid ECDSA signature length.");
+    sequenceLength = der[offset++];
+  }
+  if (sequenceLength !== der.length - offset || der[offset++] !== 0x02) {
+    throw new TypeError("Invalid ECDSA signature sequence.");
+  }
+  const rLength = der[offset++];
+  if (rLength < 1 || offset + rLength >= der.length) throw new TypeError("Invalid ECDSA signature R.");
+  const r = der.slice(offset, offset + rLength);
+  offset += rLength;
+  if (der[offset++] !== 0x02) throw new TypeError("Invalid ECDSA signature S.");
+  const sLength = der[offset++];
+  if (sLength < 1 || offset + sLength !== der.length) throw new TypeError("Invalid ECDSA signature S.");
+  const s = der.slice(offset, offset + sLength);
+  const normalize = (value: Uint8Array): Uint8Array => {
+    let start = 0;
+    while (start < value.length - 1 && value[start] === 0) start++;
+    const trimmed = value.slice(start);
+    if (trimmed.length > 32) throw new TypeError("ECDSA integer exceeds P-256 size.");
+    const out = new Uint8Array(32);
+    out.set(trimmed, 32 - trimmed.length);
+    return out;
+  };
+  const output = new Uint8Array(64);
+  output.set(normalize(r), 0);
+  output.set(normalize(s), 32);
+  return output;
+}
+
+async function sha256Bytes(value: Uint8Array): Promise<Uint8Array> {
+  const copy = new Uint8Array(value.length);
+  copy.set(value);
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", copy.buffer));
+}
+
+function hex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function verifyControlDecisionSignature(input: {
+  spki: Uint8Array;
+  signatureDer: Uint8Array;
+  challengeId: string;
+  nonce: Uint8Array;
+  requestId: string;
+  decision: string;
+  reasonHash: Uint8Array;
+}): Promise<boolean> {
+  const key = await crypto.subtle.importKey(
+    "spki",
+    toArrayBuffer(input.spki),
+    { name: "ECDSA", namedCurve: "P-256" },
+    false,
+    ["verify"],
+  );
+  const payload = new TextEncoder().encode([
+    "NEWEIX-SUPREME-CONTROL-DECISION-V1",
+    input.challengeId,
+    base64Url(input.nonce),
+    input.requestId,
+    input.decision,
+    hex(input.reasonHash),
+  ].join("\n"));
+  return await crypto.subtle.verify(
+    { name: "ECDSA", hash: "SHA-256" },
+    key,
+    toArrayBuffer(derEcdsaToP1363(input.signatureDer)),
+    toArrayBuffer(payload),
+  );
+}
+
 function isFreshAal2(claims: JsonObject): boolean {
   if (claims.aal !== "aal2") return false;
   const authTime = typeof claims.auth_time === "number" ? claims.auth_time : 0;
   if (!authTime || Date.now() / 1000 - authTime > 300 || authTime > Date.now() / 1000 + 30) {
     return false;
   }
+  // Supreme currently permits password + authenticator TOTP only.
+  // Do not treat phone/email OTP as an equivalent second factor.
   const amr = Array.isArray(claims.amr) ? claims.amr : [];
   return amr.some((entry) =>
     entry !== null &&
     typeof entry === "object" &&
-    ["totp", "webauthn", "phone", "email"].includes(
-      String((entry as JsonObject).method ?? ""),
-    )
+    (entry as JsonObject).method === "totp"
   );
 }
 
@@ -305,7 +420,7 @@ async function authenticate(request: Request): Promise<{
   if (!principal || principal.user_id !== user.id || count?.active_count !== 1) {
     throw new Response("Forbidden", { status: 403 });
   }
-  const claims = decodeJwtClaims(token);
+  const claims = decodeClaimsAfterSupabaseUserVerification(token);
   if (claims.sub !== user.id) {
     throw new Response("Unauthorized", { status: 401 });
   }
@@ -600,6 +715,84 @@ async function handle(request: Request): Promise<Response> {
     }
 
     if (request.method === "POST" && parts.length === 4 &&
+        parts[0] === "v1" && parts[1] === "control-requests" && parts[3] === "decision-challenge") {
+      if (!isFreshAal2(claims)) {
+        return errorResponse("MFA_REQUIRED", "Fresh MFA (AAL2) is required to request a decision challenge.", 403, requestId);
+      }
+      const id = parts[2];
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+        throw new TypeError("Invalid control request ID.");
+      }
+      const body = await readJson(request, 8 * 1024);
+      assertOnlyKeys(body, ["decision", "reason"], "decision challenge");
+      const decision = requireString(body.decision, "decision", 16);
+      if (decision !== "approve" && decision !== "reject") throw new TypeError("Decision must be approve or reject.");
+      const reason = body.reason === undefined ? null : requireString(body.reason, "reason", 500);
+      if (decision === "reject" && (!reason || reason.length < 8)) {
+        throw new TypeError("A rejection reason of at least 8 characters is required.");
+      }
+      const binding = claims.supreme_app_session as JsonObject;
+      const deviceId = requireString(binding.device_id, "device_id", 36);
+      const [pending] = await db`
+        select id::text from supreme.control_requests
+        where id = ${id}::uuid and status = 'pending' and approval_required = true and expires_at > now()
+        limit 1
+      `;
+      if (!pending) return errorResponse("CONTROL_REQUEST_NOT_PENDING", "Only pending control requests can be decided.", 409, requestId);
+      const [device] = await db`
+        select device_public_key_spki from supreme.devices
+        where id = ${deviceId}::uuid and status = 'active'
+          and device_key_biometric_auth_required = true and device_public_key_spki is not null
+        limit 1
+      `;
+      if (!device?.device_public_key_spki) {
+        return errorResponse("DEVICE_SIGNING_KEY_UNAVAILABLE", "This device must be re-registered before signing decisions.", 403, requestId);
+      }
+      const nonce = crypto.getRandomValues(new Uint8Array(32));
+      const nonceHash = await sha256Bytes(nonce);
+      const reasonHash = await sha256Bytes(new TextEncoder().encode(reason ?? ""));
+      // Serialize challenge issuance per device so concurrent requests cannot
+      // race past the rolling-window limit. The lock and insert share one SQL
+      // statement/transaction; no client-provided identity or IP is trusted.
+      const [challenge] = await db`
+        with rate_limit_lock as materialized (
+          select pg_advisory_xact_lock(
+            hashtextextended(${userId}::text || ':' || ${deviceId}::text, 0)
+          )
+        ),
+        recent as materialized (
+          select count(*)::integer as challenge_count
+          from supreme.control_decision_challenges c
+          cross join rate_limit_lock
+          where c.user_id = ${userId}::uuid
+            and c.device_id = ${deviceId}::uuid
+            and c.created_at > now() - interval '10 minutes'
+        )
+        insert into supreme.control_decision_challenges
+          (control_request_id, user_id, device_id, decision, reason_sha256, nonce_sha256, expires_at)
+        select
+          ${id}::uuid, ${userId}::uuid, ${deviceId}::uuid, ${decision},
+          decode(${hex(reasonHash)}, 'hex'), decode(${hex(nonceHash)}, 'hex'),
+          now() + interval '90 seconds'
+        from recent
+        where recent.challenge_count < 10
+        returning id::text, expires_at
+      `;
+      if (!challenge) {
+        return errorResponse("DECISION_CHALLENGE_RATE_LIMITED",
+          "Too many decision challenges were requested for this device. Try again later.", 429, requestId);
+      }
+      await audit({ actor: userId, action: "control_requests.decision_challenge", outcome: "pending",
+        requestId, details: { control_request_id: id, decision, challenge_id: challenge.id } });
+      return json({
+        challenge_id: challenge.id,
+        nonce: base64Url(nonce),
+        expires_at: challenge.expires_at,
+        request_id: requestId,
+      }, 200, requestId, cors);
+    }
+
+    if (request.method === "POST" && parts.length === 4 &&
         parts[0] === "v1" && parts[1] === "control-requests" && parts[3] === "decision") {
       if (!isFreshAal2(claims)) {
         await audit({ actor: userId, action: "control_requests.decision.denied", outcome: "denied",
@@ -611,12 +804,67 @@ async function handle(request: Request): Promise<Response> {
         throw new TypeError("Invalid control request ID.");
       }
       const body = await readJson(request, 8 * 1024);
-      assertOnlyKeys(body, ["decision", "reason"], "decision");
+      assertOnlyKeys(body, ["decision", "reason", "challenge_id", "nonce", "signature"], "decision");
       const decision = requireString(body.decision, "decision", 16);
       if (decision !== "approve" && decision !== "reject") throw new TypeError("Decision must be approve or reject.");
       const reason = body.reason === undefined ? null : requireString(body.reason, "reason", 500);
       if (decision === "reject" && (!reason || reason.length < 8)) {
         throw new TypeError("A rejection reason of at least 8 characters is required.");
+      }
+      const challengeId = requireString(body.challenge_id, "challenge_id", 36);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(challengeId)) {
+        throw new TypeError("Invalid decision challenge ID.");
+      }
+      const nonce = decodeCanonicalBase64Url(body.nonce, 32);
+      if (nonce.length !== 32) throw new TypeError("Invalid decision nonce.");
+      const signatureDer = decodeCanonicalBase64(body.signature, 80);
+      const binding = claims.supreme_app_session as JsonObject;
+      const deviceId = requireString(binding.device_id, "device_id", 36);
+      const reasonHash = await sha256Bytes(new TextEncoder().encode(reason ?? ""));
+      const nonceHash = await sha256Bytes(nonce);
+      const [challenge] = await db`
+        select id::text, nonce_sha256, reason_sha256
+        from supreme.control_decision_challenges
+        where id = ${challengeId}::uuid
+          and control_request_id = ${id}::uuid
+          and user_id = ${userId}::uuid
+          and device_id = ${deviceId}::uuid
+          and decision = ${decision}
+          and expires_at > now()
+          and consumed_at is null
+        limit 1
+      `;
+      if (!challenge || hex(new Uint8Array(challenge.nonce_sha256)) !== hex(nonceHash) ||
+          hex(new Uint8Array(challenge.reason_sha256)) !== hex(reasonHash)) {
+        return errorResponse("DECISION_CHALLENGE_INVALID", "The decision challenge is invalid, expired, or already used.", 409, requestId);
+      }
+      const [deviceKey] = await db`
+        select device_public_key_spki from supreme.devices
+        where id = ${deviceId}::uuid and user_id = ${userId}::uuid and status = 'active'
+          and device_key_biometric_auth_required = true
+        limit 1
+      `;
+      if (!deviceKey?.device_public_key_spki) {
+        return errorResponse("DEVICE_SIGNING_KEY_UNAVAILABLE", "The registered device signing key is unavailable.", 403, requestId);
+      }
+      const spki = new Uint8Array(deviceKey.device_public_key_spki);
+      const signatureValid = await verifyControlDecisionSignature({
+        spki, signatureDer, challengeId, nonce, requestId: id, decision, reasonHash,
+      });
+      if (!signatureValid) {
+        await audit({ actor: userId, action: "control_requests.decision.denied", outcome: "denied",
+          requestId, details: { reason: "invalid_device_signature", control_request_id: id } });
+        return errorResponse("DEVICE_SIGNATURE_INVALID", "The device signature could not be verified.", 403, requestId);
+      }
+      const [consumed] = await db`
+        update supreme.control_decision_challenges
+        set consumed_at = now()
+        where id = ${challengeId}::uuid and nonce_sha256 = ${nonceHash}
+          and consumed_at is null and expires_at > now()
+        returning id::text
+      `;
+      if (!consumed) {
+        return errorResponse("DECISION_CHALLENGE_REPLAYED", "The decision challenge has already been used.", 409, requestId);
       }
       const nextStatus = decision === "approve" ? "approved" : "rejected";
       const [changed] = await db`

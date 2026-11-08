@@ -49,6 +49,8 @@ export type SupremeAttestationVerificationResult = {
   keyPolicy: SupremeAndroidKeyPolicyResult;
   /** SHA-256 of the verified leaf SubjectPublicKeyInfo DER. */
   deviceKeySha256: string;
+  /** Canonical Base64 of the verified P-256 SubjectPublicKeyInfo DER. */
+  devicePublicKeySpkiBase64: string;
   proofOfPossessionVerified: true;
 };
 
@@ -167,5 +169,15 @@ export async function verifySupremeAndroidAttestation(
     byte.toString(16).padStart(2, "0")
   ).join("");
 
-  return { chain, keyPolicy, deviceKeySha256, proofOfPossessionVerified: true };
+  let spkiBinary = "";
+  for (const byte of leaf.subjectPublicKeyInfo) spkiBinary += String.fromCharCode(byte);
+  const devicePublicKeySpkiBase64 = btoa(spkiBinary);
+
+  return {
+    chain,
+    keyPolicy,
+    deviceKeySha256,
+    devicePublicKeySpkiBase64,
+    proofOfPossessionVerified: true,
+  };
 }

@@ -113,7 +113,7 @@ internal object SupremeAuthClient {
     }
 
     fun refresh(refreshToken: String): AuthSession {
-        require(refreshToken.length in 20..8192) { "Supreme session is invalid. Sign in again." }
+        require(refreshToken.isNotBlank() && refreshToken.length <= 8192 && refreshToken != "null") { "Supreme session is invalid. Sign in again." }
         val response = request(
             "POST",
             "/auth/v1/token?grant_type=refresh_token",
@@ -217,11 +217,44 @@ internal object SupremeAuthClient {
         return result
     }
 
+    data class DecisionChallenge(
+        val id: String,
+        val nonce: String,
+    )
+
+    fun issueControlDecisionChallenge(
+        accessToken: String,
+        requestId: String,
+        decision: String,
+        reason: String?,
+    ): DecisionChallenge {
+        require(UUID_PATTERN.matches(requestId)) { "Invalid Supreme request ID." }
+        require(decision == "approve" || decision == "reject") { "Invalid Supreme decision." }
+        val body = JSONObject().put("decision", decision).apply {
+            if (!reason.isNullOrBlank()) put("reason", reason)
+        }
+        val response = request(
+            "POST",
+            "/functions/v1/supreme-registry-api/v1/control-requests/$requestId/decision-challenge",
+            accessToken,
+            body,
+        )
+        val id = response.optString("challenge_id")
+        val nonce = response.optString("nonce")
+        require(UUID_PATTERN.matches(id) && Regex("^[A-Za-z0-9_-]{43}$").matches(nonce)) {
+            "Supreme decision challenge response was invalid."
+        }
+        return DecisionChallenge(id, nonce)
+    }
+
     fun decideControlRequest(
         accessToken: String,
         requestId: String,
         decision: String,
         reason: String? = null,
+        challengeId: String,
+        nonce: String,
+        signature: String,
     ) {
         require(UUID_PATTERN.matches(requestId)) { "Invalid Supreme request ID." }
         require(decision == "approve" || decision == "reject") { "Invalid Supreme decision." }
@@ -230,13 +263,20 @@ internal object SupremeAuthClient {
                 "A rejection reason of at least 8 characters is required."
             }
         }
+        require(UUID_PATTERN.matches(challengeId) && Regex("^[A-Za-z0-9_-]{43}$").matches(nonce))
+        require(signature.length in 80..160 && Regex("^[A-Za-z0-9+/]+={0,2}$").matches(signature))
         request(
             "POST",
             "/functions/v1/supreme-registry-api/v1/control-requests/$requestId/decision",
             accessToken,
-            JSONObject().put("decision", decision).apply {
-                if (!reason.isNullOrBlank()) put("reason", reason)
-            },
+            JSONObject()
+                .put("decision", decision)
+                .put("challenge_id", challengeId)
+                .put("nonce", nonce)
+                .put("signature", signature)
+                .apply {
+                    if (!reason.isNullOrBlank()) put("reason", reason)
+                },
         )
     }
 
@@ -249,13 +289,13 @@ internal object SupremeAuthClient {
         val access = response.optString("access_token")
             .takeIf { it.length in 40..16_384 }
         val responseRefresh = response.optString("refresh_token")
-            .takeIf { it.length in 20..8192 }
+            .takeIf { it.isNotBlank() && it.length <= 8192 && it != "null" }
         // Supabase MFA upgrades may omit a replacement refresh token in a
         // response. Reuse only the refresh token from this same pre-MFA
         // session; the caller must still refresh it and prove AAL2 continuity
         // with the server before opening any privileged screen.
         val refresh = responseRefresh ?: fallbackRefreshToken
-            ?.takeIf { it.length in 20..8192 }
+            ?.takeIf { it.isNotBlank() && it.length <= 8192 && it != "null" }
 
         val responseUserId = response.optJSONObject("user")
             ?.optString("id")

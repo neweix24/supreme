@@ -7,12 +7,16 @@ on:
     paths:
       - "supabase/functions/supreme-registry-api/**"
       - "supabase/functions/supreme-neweix-api/**"
+      - "supabase/functions/supreme-session-api/**"
+      - "services/android-attestation/supabase/functions/**"
       - ".github/workflows/supreme-registry-check.yml"
   push:
     branches: [main]
     paths:
       - "supabase/functions/supreme-registry-api/**"
       - "supabase/functions/supreme-neweix-api/**"
+      - "supabase/functions/supreme-session-api/**"
+      - "services/android-attestation/supabase/functions/**"
       - ".github/workflows/supreme-registry-check.yml"
 
 permissions:
@@ -27,12 +31,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Set up Deno
-        uses: denoland/setup-deno@v2
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
         with:
           deno-version: v2.x
       - name: Type-check registry Edge Function
         run: deno check --config supabase/functions/supreme-registry-api/deno.json supabase/functions/supreme-registry-api/index.ts
       - name: Type-check Neweix control-plane Edge Function
         run: deno check supabase/functions/supreme-neweix-api/index.ts
+      - name: Type-check Supreme session Edge Function
+        run: deno check supabase/functions/supreme-session-api/index.ts
+      - name: Run Android attestation parser and verifier tests
+        run: deno test --allow-env --allow-read services/android-attestation/supabase/functions

@@ -8,7 +8,7 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowSplashScreenBackground">#050505</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/supreme_emblem</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/supreme_splash_icon</item>
         <item name="android:windowSplashScreenIconBackgroundColor">#050505</item>
     </style>
 </resources>

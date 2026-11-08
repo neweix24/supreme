@@ -19,7 +19,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SHA256 = /^[a-f0-9]{64}$/;
 
-function response(body: unknown, status = 200, requestId = crypto.randomUUID()): Response {
+function response(body: unknown, status = 200, requestId: string = crypto.randomUUID()): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
@@ -38,7 +38,7 @@ function bearer(request: Request): string | null {
   return match?.[1] ?? null;
 }
 
-function decodeVerifiedClaims(token: string): Claims {
+function decodeClaimsAfterSupabaseUserVerification(token: string): Claims {
   const part = token.split(".")[1];
   if (!part) throw new Error("Invalid access token.");
   const normalized = part.replace(/-/g, "+").replace(/_/g, "/");
@@ -58,7 +58,16 @@ function isFreshAal2(claims: Claims): boolean {
   if (claims.aal !== "aal2") return false;
   const authTime = typeof claims.auth_time === "number" ? claims.auth_time : 0;
   const now = Date.now() / 1000;
-  return !!authTime && now - authTime <= 300 && authTime <= now + 30;
+  if (!authTime || now - authTime > 300 || authTime > now + 30) return false;
+
+  // Supreme currently permits password + authenticator TOTP only.
+  // AAL2 alone is not sufficient if the AMR does not prove TOTP.
+  const amr = Array.isArray(claims.amr) ? claims.amr : [];
+  return amr.some((entry) =>
+    entry !== null &&
+    typeof entry === "object" &&
+    (entry as Record<string, unknown>).method === "totp"
+  );
 }
 
 async function authenticate(request: Request): Promise<AuthContext | null> {
@@ -84,7 +93,7 @@ async function authenticate(request: Request): Promise<AuthContext | null> {
   if (!user || typeof user !== "object" || Array.isArray(user) ||
       !isUuid((user as Record<string, unknown>).id)) return null;
 
-  const claims = decodeVerifiedClaims(token);
+  const claims = decodeClaimsAfterSupabaseUserVerification(token);
   const userId = (user as Record<string, unknown>).id as string;
   const authSessionId = claims.session_id;
   if (claims.sub !== userId || !isUuid(authSessionId)) return null;
@@ -326,6 +335,8 @@ async function issueDeviceSession(
   if (!verifierResponse.ok || verified.verified !== true ||
       verified.proof_of_possession_verified !== true ||
       typeof verified.device_key_sha256 !== "string" || !SHA256.test(verified.device_key_sha256) ||
+      typeof verified.device_public_key_spki_base64 !== "string" ||
+      verified.device_public_key_spki_base64.length > 1024 ||
       !["trusted_environment", "strongbox"].includes(String(verified.security_level))) {
     return response({
       error: { code: verifierResponse.status >= 500 ? "ATTESTATION_SERVICE_UNAVAILABLE" : "ATTESTATION_REJECTED", request_id: requestId },
@@ -333,7 +344,7 @@ async function issueDeviceSession(
   }
 
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + 12 * 60 * 60 * 1000).toISOString();
+  const expiresAt = new Date(now.getTime() + 4 * 60 * 60 * 1000).toISOString();
   const registered = await postServiceRpc("register_supreme_attested_device_session", {
     p_user_id: auth.userId,
     p_auth_session_id: auth.authSessionId,
@@ -349,6 +360,33 @@ async function issueDeviceSession(
     return response({ error: { code: "SESSION_REGISTRATION_FAILED", request_id: requestId } }, 503, requestId);
   }
   const value = registered as Record<string, unknown>;
+  const deviceId = value.device_id;
+  const publicKeyBase64 = verified.device_public_key_spki_base64 as string;
+  let publicKeyDer: Uint8Array;
+  try {
+    if (!isUuid(deviceId)) throw new TypeError("Invalid registered device ID.");
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(publicKeyBase64)) {
+      throw new TypeError("Invalid public key encoding.");
+    }
+    const binary = atob(publicKeyBase64);
+    publicKeyDer = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    if (publicKeyDer.length < 64 || publicKeyDer.length > 256 || btoa(binary) !== publicKeyBase64) {
+      throw new TypeError("Invalid public key length or encoding.");
+    }
+  } catch {
+    return response({ error: { code: "INVALID_ATTESTED_PUBLIC_KEY", request_id: requestId } }, 502, requestId);
+  }
+
+  // Persist only the SPKI extracted from the certificate whose chain, Google
+  // revocation state, Android KeyDescription and proof-of-possession passed.
+  const storedKey = await db.unsafe(
+    "update supreme.devices set device_public_key_spki = decode($1, 'base64'), device_key_biometric_auth_required = true, updated_at = now() where id = $2::uuid and user_id = $3::uuid and device_key_sha256 = $4 and status = 'active' returning id::text",
+    [publicKeyBase64, deviceId, auth.userId, verified.device_key_sha256],
+  );
+  if (storedKey.length !== 1) {
+    return response({ error: { code: "DEVICE_PUBLIC_KEY_REGISTRATION_FAILED", request_id: requestId } }, 503, requestId);
+  }
+
   return response({
     registered: true,
     session_id: value.session_id,
@@ -382,12 +420,18 @@ async function readOrRevokeSession(
     return response({ error: { code: "INVALID_DEVICE_SESSION_CLAIM", request_id: requestId } }, 403, requestId);
   }
   const rows = await db.unsafe(
-    "select s.id::text as session_id, s.device_id::text as device_id, s.status, s.attested_at, s.expires_at, d.security_level, d.status as device_status, d.last_seen_at from supreme.app_sessions s join supreme.devices d on d.id = s.device_id where s.id = $1::uuid and s.user_id = $2::uuid and s.auth_session_id = $3::uuid and d.id = $4::uuid and d.user_id = $2::uuid limit 1",
+    "select s.id::text as session_id, s.device_id::text as device_id, s.status, s.attested_at, s.expires_at, d.security_level, d.status as device_status, d.device_key_biometric_auth_required, d.last_seen_at from supreme.app_sessions s join supreme.devices d on d.id = s.device_id where s.id = $1::uuid and s.user_id = $2::uuid and s.auth_session_id = $3::uuid and d.id = $4::uuid and d.user_id = $2::uuid limit 1",
     [claim.session_id, auth.userId, auth.authSessionId, claim.device_id],
   );
   const session = rows[0];
 
   if (request.method === "GET") {
+    if (session && session.status === "active" && session.device_status === "active" &&
+        session.device_key_biometric_auth_required !== true) {
+      return response({
+        error: { code: "BIOMETRIC_DEVICE_REENROLLMENT_REQUIRED", request_id: requestId },
+      }, 403, requestId);
+    }
     const active = Boolean(
       session &&
       session.status === "active" &&

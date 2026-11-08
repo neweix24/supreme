@@ -3,10 +3,13 @@ package com.neweix.supreme
 import android.app.AlertDialog
 import android.graphics.Color
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
 import android.text.method.PasswordTransformationMethod
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.Window
 import android.os.Build
@@ -29,11 +32,22 @@ import com.neweix.supreme.auth.SupremeAuthClient
 import com.neweix.supreme.auth.SupremeAuthException
 import com.neweix.supreme.auth.SupremeSessionStore
 import com.neweix.supreme.security.SupremeAttestationClient
+import com.neweix.supreme.security.SupremeKeyAttestation
+import java.security.Signature
+import java.util.Base64
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class MainActivity : FragmentActivity() {
     private val background: ExecutorService = Executors.newSingleThreadExecutor()
+    private val idleHandler = Handler(Looper.getMainLooper())
+    private val idleLockRunnable = Runnable {
+        if (isUnlocked && pendingFactorId == null && !isBusy) {
+            isUnlocked = false
+            if (::lockOverlay.isInitialized) lockOverlay.visibility = View.VISIBLE
+            authenticateToUnlock()
+        }
+    }
     private lateinit var sessionStore: SupremeSessionStore
     private lateinit var screen: LinearLayout
     private lateinit var statusText: TextView
@@ -45,6 +59,7 @@ class MainActivity : FragmentActivity() {
     private lateinit var primaryButton: Button
     private lateinit var lockOverlay: LinearLayout
     private var biometricPrompt: BiometricPrompt? = null
+    private var signingBiometricPrompt: BiometricPrompt? = null
     private var authInProgress = false
     private var isUnlocked = false
     private var isBusy = false
@@ -104,7 +119,7 @@ class MainActivity : FragmentActivity() {
         }
 
         screen.addView(ImageView(this).apply {
-            setImageResource(R.drawable.supreme_emblem)
+            setImageResource(R.drawable.supreme_logo)
             scaleType = ImageView.ScaleType.FIT_CENTER
             contentDescription = "Supreme gold S emblem"
         }, LinearLayout.LayoutParams(dp(84), dp(84)).apply {
@@ -219,6 +234,8 @@ class MainActivity : FragmentActivity() {
 
         primaryButton = Button(this).apply {
             text = "SIGN IN"
+            isEnabled = true
+            alpha = 1f
             setTextColor(Color.rgb(18, 16, 10))
             setBackgroundColor(Color.rgb(212, 175, 55))
             setOnClickListener {
@@ -259,10 +276,10 @@ class MainActivity : FragmentActivity() {
             setPadding(dp(30), dp(30), dp(30), dp(30))
             setBackgroundColor(Color.rgb(7, 7, 7))
             addView(ImageView(this@MainActivity).apply {
-                setImageResource(R.drawable.supreme_emblem)
+                setImageResource(R.drawable.supreme_logo)
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 contentDescription = "Supreme gold S emblem"
-            }, LinearLayout.LayoutParams(dp(96), dp(96)).apply {
+            }, LinearLayout.LayoutParams(dp(144), dp(144)).apply {
                 bottomMargin = dp(10)
             })
             addView(TextView(this@MainActivity).apply {
@@ -364,59 +381,87 @@ class MainActivity : FragmentActivity() {
                     throw IllegalStateException("Supreme MFA verification is no longer fresh. Sign in again.")
                 }
 
-                val device = SupremeAttestationClient.verifyAndRegister(session.accessToken)
-                if (!device.proofOfPossessionVerified ||
-                    (device.securityLevel != "TRUSTED_ENVIRONMENT" && device.securityLevel != "STRONG_BOX")
-                ) {
-                    throw IllegalStateException("This device did not pass Supreme hardware security verification.")
-                }
-
-                // The access-token hook signs the newly registered device session
-                // only after refresh. Verify that claim against the live server row
-                // before any registry data or control actions are loaded.
-                val refreshed = SupremeAuthClient.refresh(session.refreshToken)
-                if (refreshed.userId != session.userId ||
-                    refreshed.sessionId != session.sessionId ||
-                    refreshed.assuranceLevel != "aal2"
-                ) {
-                    throw IllegalStateException("Supreme AAL2 session continuity could not be confirmed.")
-                }
-                SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
-                val services = SupremeAuthClient.listServices(refreshed.accessToken)
-                val requests = SupremeAuthClient.listPendingRequests(refreshed.accessToken)
-                sessionStore.saveRefreshToken(refreshed.refreshToken)
-
+                // The attestation key is generated with per-operation biometric
+                // authorization. Its proof is completed only inside CryptoObject.
+                val prepared = SupremeAttestationClient.prepareVerification(session.accessToken)
                 runOnUiThread {
-                    currentAccessToken = refreshed.accessToken
-                    pendingPasswordSession = null
-                    pendingFactorId = null
-                    pendingChallengeId = null
-                    codeInput.text.clear()
-                    renderDashboard(services, requests)
-                    setBusy(false, "Supreme device and session checks passed.")
+                    authenticateForSigning(
+                        prepared.material.proofSigner,
+                        onSigned = { signature ->
+                            val proof = Base64.getEncoder().encodeToString(signature.sign())
+                            background.execute {
+                                try {
+                                    val device = SupremeAttestationClient.completeVerification(
+                                        session.accessToken,
+                                        prepared,
+                                        proof,
+                                    )
+                                    if (!device.proofOfPossessionVerified ||
+                                        (device.securityLevel != "TRUSTED_ENVIRONMENT" &&
+                                            device.securityLevel != "STRONG_BOX")
+                                    ) {
+                                        throw IllegalStateException(
+                                            "This device did not pass Supreme hardware security verification.",
+                                        )
+                                    }
+                                    val refreshed = SupremeAuthClient.refresh(session.refreshToken)
+                                    if (refreshed.userId != session.userId ||
+                                        refreshed.sessionId != session.sessionId ||
+                                        refreshed.assuranceLevel != "aal2"
+                                    ) {
+                                        throw IllegalStateException(
+                                            "Supreme AAL2 session continuity could not be confirmed.",
+                                        )
+                                    }
+                                    SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
+                                    sessionStore.saveRefreshToken(refreshed.refreshToken)
+                                    val services = SupremeAuthClient.listServices(refreshed.accessToken)
+                                    val requests = SupremeAuthClient.listPendingRequests(refreshed.accessToken)
+                                    runOnUiThread {
+                                        currentAccessToken = refreshed.accessToken
+                                        pendingPasswordSession = null
+                                        pendingFactorId = null
+                                        pendingChallengeId = null
+                                        codeInput.text.clear()
+                                        renderDashboard(services, requests)
+                                        setBusy(false, "Biometric device attestation and Supreme session checks passed.")
+                                    }
+                                } catch (error: Exception) {
+                                    handleMfaDeviceRegistrationFailure(error)
+                                }
+                            }
+                        },
+                        onFailure = { message -> handleMfaDeviceRegistrationFailure(
+                            IllegalStateException(message),
+                        ) },
+                    )
                 }
             } catch (error: Exception) {
-                runOnUiThread {
-                    sessionStore.clear()
-                    pendingPasswordSession = null
-                    pendingFactorId = null
-                    pendingChallengeId = null
-                    codeInput.text.clear()
-                    passwordInput.visibility = View.VISIBLE
-                    emailInput.isEnabled = true
-                    codeInput.visibility = View.GONE
-                    primaryButton.text = "SIGN IN"
-                    val message = if (
-                        error is SupremeAuthException &&
-                        (error.statusCode == 400 || error.statusCode == 422)
-                    ) {
-                        "Authenticator code was rejected. Wait for a fresh six-digit code and try again."
-                    } else {
-                        safeMessage(error)
-                    }
-                    setBusy(false, message)
-                }
+                handleMfaDeviceRegistrationFailure(error)
             }
+        }
+    }
+
+    private fun handleMfaDeviceRegistrationFailure(error: Exception) {
+        runOnUiThread {
+            sessionStore.clear()
+            pendingPasswordSession = null
+            pendingFactorId = null
+            pendingChallengeId = null
+            codeInput.text.clear()
+            passwordInput.visibility = View.VISIBLE
+            emailInput.isEnabled = true
+            codeInput.visibility = View.GONE
+            primaryButton.text = "SIGN IN"
+            val message = if (
+                error is SupremeAuthException &&
+                (error.statusCode == 400 || error.statusCode == 422)
+            ) {
+                "Authenticator code was rejected. Wait for a fresh six-digit code and try again."
+            } else {
+                safeMessage(error)
+            }
+            setBusy(false, message)
         }
     }
 
@@ -426,7 +471,7 @@ class MainActivity : FragmentActivity() {
     ) {
         screen.removeAllViews()
         screen.addView(ImageView(this).apply {
-            setImageResource(R.drawable.supreme_emblem)
+            setImageResource(R.drawable.supreme_logo)
             scaleType = ImageView.ScaleType.FIT_CENTER
             contentDescription = "Supreme gold S emblem"
         }, LinearLayout.LayoutParams(dp(96), dp(96)).apply {
@@ -506,10 +551,12 @@ class MainActivity : FragmentActivity() {
             }
             val reject = Button(this@MainActivity).apply {
                 text = "REJECT"
+                filterTouchesWhenObscured = true
                 setOnClickListener { confirmRequestDecision(request, approve = false) }
             }
             val approve = Button(this@MainActivity).apply {
                 text = "APPROVE"
+                filterTouchesWhenObscured = true
                 setOnClickListener { confirmRequestDecision(request, approve = true) }
             }
             actions.addView(reject, LinearLayout.LayoutParams(0, dp(44), 1f))
@@ -618,29 +665,107 @@ class MainActivity : FragmentActivity() {
             return
         }
         if (isBusy) return
-        setBusy(true, "Recording Supreme approval decision…")
+        setBusy(true, "Preparing biometric approval signature…")
         background.execute {
             try {
-                SupremeAuthClient.decideControlRequest(
-                    accessToken = accessToken,
+                var activeAccessToken: String = accessToken
+                val decisionChallenge = try {
+                    SupremeAuthClient.issueControlDecisionChallenge(
+                        accessToken = activeAccessToken,
+                        requestId = request.id,
+                        decision = decision,
+                        reason = reason,
+                    )
+                } catch (error: SupremeAuthException) {
+                    if (error.statusCode != 401) throw error
+                    val storedRefreshToken = sessionStore.readRefreshToken()
+                        ?: throw IllegalStateException("Supreme session expired. Sign in again.")
+                    val refreshed = SupremeAuthClient.refresh(storedRefreshToken)
+                    if (refreshed.assuranceLevel != "aal2") {
+                        throw IllegalStateException("Supreme MFA session expired. Sign in again.")
+                    }
+                    SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
+                    sessionStore.saveRefreshToken(refreshed.refreshToken)
+                    activeAccessToken = refreshed.accessToken
+                    currentAccessToken = refreshed.accessToken
+                    SupremeAuthClient.issueControlDecisionChallenge(
+                        accessToken = activeAccessToken,
+                        requestId = request.id,
+                        decision = decision,
+                        reason = reason,
+                    )
+                }
+
+                val signer = SupremeKeyAttestation.prepareControlDecisionSignature(
+                    challengeId = decisionChallenge.id,
+                    nonceBase64Url = decisionChallenge.nonce,
                     requestId = request.id,
                     decision = decision,
                     reason = reason,
                 )
-                val services = SupremeAuthClient.listServices(accessToken)
-                val requests = SupremeAuthClient.listPendingRequests(accessToken)
                 runOnUiThread {
-                    renderDashboard(services, requests)
-                    setBusy(false, if (decision == "approve") {
-                        "Approval recorded. Provider execution has not been triggered."
-                    } else {
-                        "Rejection recorded in the Supreme audit log."
-                    })
+                    authenticateForSigning(
+                        signer,
+                        onSigned = { authorizedSigner ->
+                            val signature = Base64.getEncoder().encodeToString(authorizedSigner.sign())
+                            background.execute {
+                                try {
+                                    try {
+                                        SupremeAuthClient.decideControlRequest(
+                                            accessToken = activeAccessToken,
+                                            requestId = request.id,
+                                            decision = decision,
+                                            reason = reason,
+                                            challengeId = decisionChallenge.id,
+                                            nonce = decisionChallenge.nonce,
+                                            signature = signature,
+                                        )
+                                    } catch (error: SupremeAuthException) {
+                                        if (error.statusCode != 401) throw error
+                                        // A 401 occurs before route execution; the challenge
+                                        // remains unconsumed and can be retried after rotation.
+                                        val storedRefreshToken = sessionStore.readRefreshToken()
+                                            ?: throw IllegalStateException("Supreme session expired. Sign in again.")
+                                        val refreshed = SupremeAuthClient.refresh(storedRefreshToken)
+                                        if (refreshed.assuranceLevel != "aal2") {
+                                            throw IllegalStateException("Supreme MFA session expired. Sign in again.")
+                                        }
+                                        SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
+                                        sessionStore.saveRefreshToken(refreshed.refreshToken)
+                                        activeAccessToken = refreshed.accessToken
+                                        currentAccessToken = refreshed.accessToken
+                                        SupremeAuthClient.decideControlRequest(
+                                            accessToken = activeAccessToken,
+                                            requestId = request.id,
+                                            decision = decision,
+                                            reason = reason,
+                                            challengeId = decisionChallenge.id,
+                                            nonce = decisionChallenge.nonce,
+                                            signature = signature,
+                                        )
+                                    }
+                                    val services = SupremeAuthClient.listServices(activeAccessToken)
+                                    val requests = SupremeAuthClient.listPendingRequests(activeAccessToken)
+                                    runOnUiThread {
+                                        renderDashboard(services, requests)
+                                        setBusy(false, if (decision == "approve") {
+                                            "Biometric approval recorded. Provider execution has not been triggered."
+                                        } else {
+                                            "Biometric rejection recorded in the Supreme audit log."
+                                        })
+                                    }
+                                } catch (error: Exception) {
+                                    runOnUiThread { setBusy(false, safeMessage(error)) }
+                                }
+                            }
+                        },
+                        onFailure = { message ->
+                            setBusy(false, message)
+                        },
+                    )
                 }
             } catch (error: Exception) {
-                runOnUiThread {
-                    setBusy(false, safeMessage(error))
-                }
+                runOnUiThread { setBusy(false, safeMessage(error)) }
             }
         }
     }
@@ -657,9 +782,11 @@ class MainActivity : FragmentActivity() {
                     throw IllegalStateException("Supreme session has fallen below AAL2. Sign in again.")
                 }
                 SupremeAuthClient.verifyDeviceSession(session.accessToken)
+                // Refresh-token rotation is committed by Supabase before the next
+                // API request. Save the replacement before any downstream operation.
+                sessionStore.saveRefreshToken(session.refreshToken)
                 val services = SupremeAuthClient.listServices(session.accessToken)
                 val requests = SupremeAuthClient.listPendingRequests(session.accessToken)
-                sessionStore.saveRefreshToken(session.refreshToken)
                 runOnUiThread {
                     currentAccessToken = session.accessToken
                     resumeSessionCheck = false
@@ -713,6 +840,7 @@ class MainActivity : FragmentActivity() {
         buildInterface()
         lockOverlay.visibility = View.GONE
         isUnlocked = true
+        resetIdleLockTimer()
     }
 
     private fun configureAppLock() {
@@ -724,6 +852,7 @@ class MainActivity : FragmentActivity() {
                     authInProgress = false
                     isUnlocked = true
                     lockOverlay.visibility = View.GONE
+                    resetIdleLockTimer()
                     resumeStoredSession()
                 }
 
@@ -739,6 +868,55 @@ class MainActivity : FragmentActivity() {
                 }
             },
         )
+    }
+
+    /**
+     * A separate BIOMETRIC_STRONG prompt is required for Android Keystore
+     * CryptoObject operations. Device-credential fallback is intentionally not
+     * allowed because the registered key is configured for biometric auth.
+     */
+    private fun authenticateForSigning(
+        signature: Signature,
+        onSigned: (Signature) -> Unit,
+        onFailure: (String) -> Unit,
+    ) {
+        val prompt = BiometricPrompt(
+            this,
+            ContextCompat.getMainExecutor(this),
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    signingBiometricPrompt = null
+                    val authorized = result.cryptoObject?.signature
+                    if (authorized == null) {
+                        onFailure("Biometric signing authorization was not returned by Android.")
+                    } else {
+                        onSigned(authorized)
+                    }
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    signingBiometricPrompt = null
+                    onFailure("Fingerprint verification was cancelled or failed. No signature was created.")
+                }
+
+                override fun onAuthenticationFailed() {
+                    // Keep the biometric prompt active for another strong-biometric attempt.
+                }
+            },
+        )
+        signingBiometricPrompt = prompt
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Confirm Supreme security operation")
+            .setSubtitle("Fingerprint verification is required to authorize this signature")
+            .setDescription("The private key remains protected inside Android Keystore.")
+            .setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG)
+            .build()
+        try {
+            prompt.authenticate(info, BiometricPrompt.CryptoObject(signature))
+        } catch (error: Exception) {
+            signingBiometricPrompt = null
+            onFailure("Strong biometric signing is unavailable on this device.")
+        }
     }
 
     private fun authenticateToUnlock() {
@@ -763,19 +941,20 @@ class MainActivity : FragmentActivity() {
 
     private fun setBusy(busy: Boolean, message: String?) {
         isBusy = busy
-        primaryButton.isEnabled = !busy
-        primaryButton.alpha = if (busy) 0.6f else 1f
+        val hasAuthorizedAction = currentAccessToken != null ||
+            pendingFactorId != null ||
+            primaryButton.text.toString() == "SIGN IN" ||
+            primaryButton.text.toString() == "SIGN OUT"
+        primaryButton.isEnabled = !busy && hasAuthorizedAction
+        primaryButton.alpha = if (primaryButton.isEnabled) 1f else 0.6f
         if (!message.isNullOrBlank()) statusText.text = message
     }
 
     private fun safeMessage(error: Exception): String {
         return when (error) {
             is SupremeAuthException -> when (error.statusCode) {
-                400, 401, 422 -> if (error.message?.contains("captcha", ignoreCase = true) == true) {
-                    "Security verification was rejected. Complete the check and try again."
-                } else {
-                    "Supreme sign-in could not be verified. Check the account credentials."
-                }
+                400, 422 -> "Supreme sign-in could not be verified. Check the account credentials."
+                401 -> "Supreme session expired or is no longer valid. Sign in again."
                 403 -> "Supreme access is denied. The account or verified device is not authorized."
                 429 -> "Too many attempts. Wait before trying again."
                 503 -> "Supreme security verification is not configured yet. Access remains locked."
@@ -845,10 +1024,31 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    private fun resetIdleLockTimer() {
+        idleHandler.removeCallbacks(idleLockRunnable)
+        if (isUnlocked && pendingFactorId == null) {
+            idleHandler.postDelayed(idleLockRunnable, 5 * 60 * 1000L)
+        }
+    }
+
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        resetIdleLockTimer()
+    }
+
     override fun onStop() {
-        clearTransientCredentials()
+        idleHandler.removeCallbacks(idleLockRunnable)
+        // Opening an authenticator app temporarily backgrounds Supreme. Keep the
+        // in-memory, short-lived MFA transaction so the user can return and enter
+        // the TOTP code; clear the typed code itself and all state on destruction.
+        val mfaInProgress = pendingPasswordSession != null && pendingFactorId != null
+        if (mfaInProgress) {
+            if (::codeInput.isInitialized) codeInput.text?.clear()
+        } else {
+            clearTransientCredentials()
+        }
         super.onStop()
-        if (!isChangingConfigurations) {
+        if (!isChangingConfigurations && !mfaInProgress) {
             isUnlocked = false
             if (::lockOverlay.isInitialized) lockOverlay.visibility = View.VISIBLE
         }
@@ -856,10 +1056,13 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (!isUnlocked && biometricPrompt != null) authenticateToUnlock()
+        resetIdleLockTimer()
+        val mfaInProgress = pendingPasswordSession != null && pendingFactorId != null
+        if (!isUnlocked && !mfaInProgress && biometricPrompt != null) authenticateToUnlock()
     }
 
     override fun onDestroy() {
+        idleHandler.removeCallbacks(idleLockRunnable)
         clearTransientCredentials()
         background.shutdownNow()
         biometricPrompt = null
