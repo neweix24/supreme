@@ -1194,6 +1194,21 @@ class MainActivity : FragmentActivity() {
             ContextCompat.getMainExecutor(this),
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    val authorizedMac = result.cryptoObject?.mac
+                    val proof = try {
+                        authorizedMac?.doFinal()
+                    } catch (_: Exception) {
+                        null
+                    }
+                    if (proof == null || proof.size != 32) {
+                        proof?.fill(0)
+                        authInProgress = false
+                        isUnlocked = false
+                        lockOverlay.visibility = View.VISIBLE
+                        statusText.text = "Local Keystore unlock proof failed. Supreme content remains hidden."
+                        return
+                    }
+                    proof.fill(0)
                     authInProgress = false
                     isUnlocked = true
                     lockOverlay.visibility = View.GONE
@@ -1269,18 +1284,31 @@ class MainActivity : FragmentActivity() {
         val prompt = biometricPrompt ?: return
         authInProgress = true
         lockOverlay.visibility = View.VISIBLE
-        val info = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Unlock Supreme")
-            .setSubtitle("Use fingerprint or the device screen-lock PIN")
-            .setDescription("This only unlocks the app on this device. Server authentication is still required.")
-            .setDeviceCredentialAllowed(true)
-            .build()
-        try {
-            prompt.authenticate(info)
+        val mac = try {
+            SupremeLocalUnlock.prepareMac()
         } catch (_: Exception) {
             authInProgress = false
             lockOverlay.visibility = View.VISIBLE
-            statusText.text = "Set up a secure screen lock on this device before opening Supreme."
+            statusText.text = "A secure Android Keystore unlock key is unavailable on this device."
+            return
+        }
+        val subtitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            "Use fingerprint or the device screen-lock PIN"
+        } else {
+            "Use fingerprint to unlock this device"
+        }
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Unlock Supreme")
+            .setSubtitle(subtitle)
+            .setDescription("Android Keystore must authorize a local cryptographic proof. Server authentication is still required.")
+            .setAllowedAuthenticators(SupremeLocalUnlock.allowedAuthenticators())
+            .build()
+        try {
+            prompt.authenticate(info, BiometricPrompt.CryptoObject(mac))
+        } catch (_: Exception) {
+            authInProgress = false
+            lockOverlay.visibility = View.VISIBLE
+            statusText.text = "Set up a secure screen lock and strong biometric on this device before opening Supreme."
         }
     }
 
