@@ -13,7 +13,7 @@ CREATE TABLE auth.users (id uuid PRIMARY KEY);
 CREATE TABLE auth.sessions (
   id uuid PRIMARY KEY,
   user_id uuid NOT NULL REFERENCES auth.users(id),
-  not_after timestamptz NOT NULL
+  not_after timestamptz
 );
 
 CREATE SCHEMA supreme;
