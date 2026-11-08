@@ -2,6 +2,12 @@ package com.neweix.supreme
 
 import android.app.AlertDialog
 import android.graphics.Color
+import android.net.Uri
+import android.webkit.SslErrorHandler
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -9,6 +15,7 @@ import android.text.InputType
 import android.text.method.PasswordTransformationMethod
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.Window
 import android.os.Build
@@ -32,6 +39,10 @@ import com.neweix.supreme.auth.SupremeAuthException
 import com.neweix.supreme.auth.SupremeSessionStore
 import com.neweix.supreme.security.SupremeAttestationClient
 import com.neweix.supreme.security.SupremeKeyAttestation
+import androidx.webkit.JavaScriptReplyProxy
+import androidx.webkit.WebMessageCompat
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import java.security.Signature
 import java.util.Base64
 import java.util.concurrent.ExecutorService
@@ -53,6 +64,8 @@ class MainActivity : FragmentActivity() {
     private lateinit var emailInput: EditText
     private lateinit var passwordInput: EditText
     private lateinit var passwordVisibilityButton: Button
+    private var captchaView: WebView? = null
+    private var captchaToken: String? = null
     private var isPasswordVisible = false
     private lateinit var codeInput: EditText
     private lateinit var primaryButton: Button
@@ -95,6 +108,8 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun buildInterface() {
+        destroyCaptchaView()
+        captchaToken = null
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.rgb(7, 7, 7))
         }
@@ -204,6 +219,15 @@ class MainActivity : FragmentActivity() {
             addView(passwordVisibilityButton, LinearLayout.LayoutParams(dp(76), dp(50)))
         }
         card.addView(passwordRow, fieldParams())
+        val turnstileView = createCaptchaView()
+        captchaView = turnstileView
+        card.addView(turnstileView, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(88),
+        ).apply {
+            topMargin = dp(8)
+            bottomMargin = dp(4)
+        })
         passwordInput.imeOptions = EditorInfo.IME_ACTION_DONE
         passwordInput.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) {
@@ -233,6 +257,8 @@ class MainActivity : FragmentActivity() {
 
         primaryButton = Button(this).apply {
             text = "SIGN IN"
+            isEnabled = false
+            alpha = 0.6f
             setTextColor(Color.rgb(18, 16, 10))
             setBackgroundColor(Color.rgb(212, 175, 55))
             setOnClickListener {
@@ -307,10 +333,156 @@ class MainActivity : FragmentActivity() {
         ViewCompat.requestApplyInsets(root)
     }
 
+    private fun createCaptchaView(): WebView {
+        val webView = WebView(this).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            isVerticalScrollBarEnabled = false
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            settings.apply {
+                javaScriptEnabled = true
+                domStorageEnabled = false
+                allowFileAccess = false
+                allowContentAccess = false
+                allowFileAccessFromFileURLs = false
+                allowUniversalAccessFromFileURLs = false
+                javaScriptCanOpenWindowsAutomatically = false
+                setSupportMultipleWindows(false)
+                mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                cacheMode = WebSettings.LOAD_NO_CACHE
+                safeBrowsingEnabled = true
+            }
+        }
+
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            webView.post {
+                if (::statusText.isInitialized) {
+                    statusText.text = "Secure verification is unavailable in this Android WebView. Update Android System WebView."
+                }
+            }
+            return webView
+        }
+
+        WebViewCompat.addWebMessageListener(
+            webView,
+            "SupremeCaptcha",
+            setOf("https://neweix.com"),
+            object : WebViewCompat.WebMessageListener {
+                override fun onPostMessage(
+                    view: WebView,
+                    message: WebMessageCompat,
+                    sourceOrigin: Uri,
+                    isMainFrame: Boolean,
+                    replyProxy: JavaScriptReplyProxy,
+                ) {
+                    if (!isMainFrame || sourceOrigin.scheme != "https" ||
+                        sourceOrigin.host != "neweix.com"
+                    ) return
+
+                    val payload = runCatching { org.json.JSONObject(message.data) }.getOrNull()
+                        ?: return
+                    val type = payload.optString("type")
+                    val token = payload.optString("token")
+                    runOnUiThread {
+                        if (captchaView !== view || isFinishing) return@runOnUiThread
+                        when (type) {
+                            "success" -> {
+                                if (token.length in 1..2048 && token.none { it.isISOControl() }) {
+                                    captchaToken = token
+                                    setBusy(false, "Security verification complete.")
+                                } else {
+                                    resetCaptchaChallenge()
+                                    setBusy(false, "Security verification returned an invalid token. Try again.")
+                                }
+                            }
+                            "expired" -> {
+                                captchaToken = null
+                                setBusy(false, "Security verification expired. Complete it again.")
+                            }
+                            "error" -> {
+                                captchaToken = null
+                                setBusy(false, "Security verification failed to load. Check your connection and retry.")
+                            }
+                            "ready" -> {
+                                setBusy(false, "Complete the security verification to continue.")
+                            }
+                        }
+                    }
+                }
+            },
+        )
+
+        webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(
+                view: WebView,
+                request: WebResourceRequest,
+            ): Boolean = true
+
+            override fun onReceivedSslError(
+                view: WebView,
+                handler: SslErrorHandler,
+                error: android.net.http.SslError,
+            ) {
+                handler.cancel()
+                runOnUiThread {
+                    if (captchaView === view && !isFinishing) {
+                        captchaToken = null
+                        setBusy(false, "Secure verification connection failed. Check your network.")
+                    }
+                }
+            }
+        }
+
+        webView.loadDataWithBaseURL(
+            "https://neweix.com/",
+            TURNSTILE_HTML.replace("__SITE_KEY__", BuildConfig.SUPREME_TURNSTILE_SITE_KEY),
+            "text/html",
+            "UTF-8",
+            null,
+        )
+        return webView
+    }
+
+    private fun resetCaptchaChallenge() {
+        captchaToken = null
+        captchaView?.post {
+            captchaView?.evaluateJavascript(
+                "if (window.turnstile && window.supremeWidgetId) { window.turnstile.reset(window.supremeWidgetId); }",
+                null,
+            )
+        }
+        if (::primaryButton.isInitialized && currentAccessToken == null && pendingFactorId == null) {
+            primaryButton.isEnabled = false
+            primaryButton.alpha = 0.6f
+        }
+    }
+
+    private fun destroyCaptchaView() {
+        val view = captchaView ?: return
+        captchaView = null
+        captchaToken = null
+        runCatching {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+                WebViewCompat.removeWebMessageListener(view, "SupremeCaptcha")
+            }
+        }
+        (view.parent as? ViewGroup)?.removeView(view)
+        view.stopLoading()
+        view.loadUrl("about:blank")
+        view.removeAllViews()
+        view.destroy()
+    }
+
     private fun beginPasswordSignIn() {
         val email = emailInput.text.toString().trim()
         val password = passwordInput.text.toString()
+        val verifiedCaptchaToken = captchaToken
         if (isBusy) return
+        if (verifiedCaptchaToken.isNullOrBlank()) {
+            setBusy(false, "Complete the security verification before signing in.")
+            return
+        }
+        captchaToken = null
         if (email.isBlank() || password.isBlank()) {
             setBusy(false, "Enter the Supreme account email and password.")
             return
@@ -319,11 +491,13 @@ class MainActivity : FragmentActivity() {
         setBusy(true, "Authenticating Supreme Account…")
         background.execute {
             try {
-                val session = SupremeAuthClient.signIn(email, password)
+                val session = SupremeAuthClient.signIn(email, password, verifiedCaptchaToken)
                 val factors = SupremeAuthClient.verifiedTotpFactors(session.accessToken)
                 if (factors.isEmpty()) {
                     runOnUiThread {
                         passwordInput.text.clear()
+                        captchaView?.visibility = View.VISIBLE
+                        resetCaptchaChallenge()
                         setBusy(false, "TOTP MFA is not enrolled on the Supreme Account. Access remains locked.")
                     }
                     return@execute
@@ -335,6 +509,7 @@ class MainActivity : FragmentActivity() {
                     pendingFactorId = factor.id
                     pendingChallengeId = challenge
                     passwordInput.text.clear()
+                    captchaView?.visibility = View.GONE
                     emailInput.isEnabled = false
                     passwordInput.visibility = View.GONE
                     codeInput.visibility = View.VISIBLE
@@ -346,6 +521,8 @@ class MainActivity : FragmentActivity() {
             } catch (error: Exception) {
                 runOnUiThread {
                     passwordInput.text.clear()
+                    captchaView?.visibility = View.VISIBLE
+                    resetCaptchaChallenge()
                     setBusy(false, safeMessage(error))
                 }
             }
@@ -447,6 +624,8 @@ class MainActivity : FragmentActivity() {
             pendingChallengeId = null
             codeInput.text.clear()
             passwordInput.visibility = View.VISIBLE
+            captchaView?.visibility = View.VISIBLE
+            resetCaptchaChallenge()
             emailInput.isEnabled = true
             codeInput.visibility = View.GONE
             primaryButton.text = "SIGN IN"
@@ -466,6 +645,7 @@ class MainActivity : FragmentActivity() {
         services: List<SupremeAuthClient.Service>,
         requests: List<SupremeAuthClient.ControlRequest>,
     ) {
+        destroyCaptchaView()
         screen.removeAllViews()
         screen.addView(ImageView(this).apply {
             setImageResource(R.drawable.supreme_logo)
@@ -938,8 +1118,12 @@ class MainActivity : FragmentActivity() {
 
     private fun setBusy(busy: Boolean, message: String?) {
         isBusy = busy
-        primaryButton.isEnabled = !busy
-        primaryButton.alpha = if (busy) 0.6f else 1f
+        val hasAuthorizedAction = currentAccessToken != null ||
+            pendingFactorId != null ||
+            captchaToken != null ||
+            primaryButton.text.toString() == "SIGN OUT"
+        primaryButton.isEnabled = !busy && hasAuthorizedAction
+        primaryButton.alpha = if (primaryButton.isEnabled) 1f else 0.6f
         if (!message.isNullOrBlank()) statusText.text = message
     }
 
@@ -1007,6 +1191,9 @@ class MainActivity : FragmentActivity() {
         }
         if (::codeInput.isInitialized) codeInput.text?.clear()
 
+        // CAPTCHA tokens are single-use and are never persisted across app backgrounding.
+        resetCaptchaChallenge()
+
         // A half-completed password/MFA flow must be restarted after leaving the app.
         pendingPasswordSession = null
         pendingFactorId = null
@@ -1058,9 +1245,53 @@ class MainActivity : FragmentActivity() {
         if (!isUnlocked && !mfaInProgress && biometricPrompt != null) authenticateToUnlock()
     }
 
+    private companion object {
+        const val TURNSTILE_HTML = """
+            <!doctype html>
+            <html lang="en">
+            <head>
+              <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+              <meta name="color-scheme" content="dark">
+              <style>
+                html, body { margin: 0; padding: 0; background: transparent; color: #d8c18a; font-family: sans-serif; }
+                body { display: flex; justify-content: center; align-items: center; min-height: 82px; }
+                #turnstile { min-height: 65px; }
+              </style>
+              <script>
+                function send(type, token) {
+                  if (window.SupremeCaptcha) {
+                    window.SupremeCaptcha.postMessage(JSON.stringify({ type: type, token: token || "" }));
+                  }
+                }
+                function initTurnstile() {
+                  if (!window.turnstile) { send("error"); return; }
+                  try {
+                    window.supremeWidgetId = window.turnstile.render("#turnstile", {
+                      sitekey: "__SITE_KEY__",
+                      action: "supreme_login",
+                      theme: "dark",
+                      callback: function(token) { send("success", token); },
+                      "expired-callback": function() { send("expired"); },
+                      "error-callback": function() { send("error"); }
+                    });
+                    send("ready");
+                  } catch (_) {
+                    send("error");
+                  }
+                }
+              </script>
+              <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+                      async defer onload="initTurnstile()" onerror="send('error')"></script>
+            </head>
+            <body><div id="turnstile"></div></body>
+            </html>
+        """
+    }
+
     override fun onDestroy() {
         idleHandler.removeCallbacks(idleLockRunnable)
         clearTransientCredentials()
+        destroyCaptchaView()
         background.shutdownNow()
         biometricPrompt = null
         super.onDestroy()
