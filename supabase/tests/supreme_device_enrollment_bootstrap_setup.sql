@@ -9,6 +9,11 @@ $$;
 
 CREATE SCHEMA auth;
 CREATE TABLE auth.users (id uuid PRIMARY KEY);
+CREATE TABLE auth.sessions (
+  id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES auth.users(id),
+  not_after timestamptz NOT NULL
+);
 
 CREATE SCHEMA supreme;
 CREATE TABLE supreme.identities (
