@@ -118,7 +118,7 @@ internal object SupremeKeyAttestation {
         require(decision == "approve" || decision == "reject")
         val reasonHash = java.security.MessageDigest.getInstance("SHA-256")
             .digest((reason ?: "").toByteArray(StandardCharsets.UTF_8))
-        ).joinToString("\n").toByteArray(StandardCharsets.UTF_8)
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
         val payload = listOf(
             "NEWEIX-SUPREME-CONTROL-DECISION-V1",
             challengeId,
@@ -126,7 +126,7 @@ internal object SupremeKeyAttestation {
             requestId,
             decision,
             reasonHash,
-        ).joinToString("\\n").toByteArray(StandardCharsets.UTF_8)
+        ).joinToString("\n").toByteArray(StandardCharsets.UTF_8)
 
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         val privateKey = keyStore.getKey(KEY_ALIAS, null) as? java.security.PrivateKey
