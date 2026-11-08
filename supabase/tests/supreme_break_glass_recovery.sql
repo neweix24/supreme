@@ -9,6 +9,7 @@ DECLARE
   v_completion_auth_session uuid := gen_random_uuid();
   v_expired_auth_session uuid := gen_random_uuid();
   v_old_device uuid := gen_random_uuid();
+  v_old_app_session uuid := gen_random_uuid();
   v_pending_device uuid := gen_random_uuid();
   v_pending_enrollment uuid := gen_random_uuid();
   v_request uuid;
@@ -49,6 +50,14 @@ BEGIN
   INSERT INTO supreme.device_enrollment_requests(id, user_id, device_id)
   VALUES (v_pending_enrollment, v_user, v_pending_device);
 
+  INSERT INTO supreme.app_sessions(
+    id, user_id, device_id, auth_session_id, status,
+    attested_at, expires_at, created_at, updated_at
+  ) VALUES (
+    v_old_app_session, v_user, v_old_device, v_auth_session, 'active',
+    now() - interval '1 day', now() + interval '1 hour', now(), now()
+  );
+
   v_hash := encode(digest(v_token, 'sha256'), 'hex');
   INSERT INTO supreme.recovery_authorizations(user_id, token_sha256, expires_at)
   VALUES (v_user, v_hash, now() + interval '30 days')
@@ -68,6 +77,12 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM auth.sessions WHERE id = v_auth_session)
      OR EXISTS (SELECT 1 FROM auth.sessions WHERE id IN (v_old_auth_session, v_expired_auth_session)) THEN
     RAISE EXCEPTION 'Recovery request did not retain only its fresh Auth session';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM supreme.app_sessions
+    WHERE id = v_old_app_session AND status = 'revoked' AND revoked_at IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'Recovery request did not immediately revoke old device app sessions';
   END IF;
   v_request := (v_result ->> 'request_id')::uuid;
   v_available := (v_result ->> 'available_at')::timestamptz;
