@@ -549,7 +549,7 @@ async function approveEnrollment(
     p_challenge_id: body.challenge_id,
     p_user_id: auth.userId,
     p_approving_device_id: approver.deviceId,
-    p_nonce_sha256: Array.from(Uint8Array.from(nonceHash.match(/../g)!, (byte) => parseInt(byte, 16))),
+    p_nonce_sha256: "\\\\x" + nonceHash,
   });
   if (!result || typeof result !== "object" || (result as Record<string, unknown>).approved !== true) {
     return response({ error: { code: "ENROLLMENT_APPROVAL_FAILED", request_id: requestId } }, 409, requestId);
@@ -657,7 +657,7 @@ async function handle(request: Request): Promise<Response> {
   const enrollmentBase = parts.length >= 3 && parts[parts.length - 2] === "enrollments";
   const enrollmentId = enrollmentBase ? parts[parts.length - 1] : "";
   const isEnrollmentList = request.method === "GET" && suffix === "enrollments";
-  const isEnrollmentChallenge = request.method === "POST" && parts.length >= 2 && parts[parts.length - 2] === "challenge" && parts[parts.length - 3] === "enrollments";
+  const isEnrollmentChallenge = request.method === "POST" && parts.length >= 4 && parts[parts.length - 1] === "challenge" && parts[parts.length - 3] === "enrollments";
   const isEnrollmentApproval = request.method === "POST" && enrollmentBase && parts.length >= 3 && parts[parts.length - 3] === "enrollments" && parts[parts.length - 1] === "approve";
   const operation = request.method === "POST" ? suffix : "";
   if (request.method !== "GET" && request.method !== "DELETE" &&
@@ -680,7 +680,7 @@ async function handle(request: Request): Promise<Response> {
       return await issueDeviceSession(auth, request, requestId);
     }
     if (isEnrollmentList) return await enrollmentRequests(auth, requestId);
-    if (isEnrollmentChallenge) return await enrollmentApprovalChallenge(auth, requestId, parts[parts.length - 3]);
+    if (isEnrollmentChallenge) return await enrollmentApprovalChallenge(auth, requestId, parts[parts.length - 2]);
     if (isEnrollmentApproval) return await approveEnrollment(auth, request, requestId, parts[parts.length - 2]);
     return await readOrRevokeSession(auth, request, requestId);
   } catch (error) {
