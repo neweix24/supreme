@@ -31,30 +31,31 @@ internal object SupremeAttestationClient {
         val proofOfPossessionVerified: Boolean,
     )
 
-    /**
-     * Performs challenge issuance, hardware-backed key creation, and server
-     * verification. Call from a worker thread; never from the Android UI thread.
-     */
-    fun verifyAndRegister(accessToken: String): Verification {
-        check(Looper.myLooper() != Looper.getMainLooper()) {
-            "Supreme attestation must run off the main thread."
-        }
+    data class PreparedVerification internal constructor(
+        internal val challengeId: String,
+        internal val challengeEncoded: String,
+        internal val material: SupremeKeyAttestation.Material,
+    )
 
+    /**
+     * Fetches the server challenge and prepares an attested key operation.
+     * The caller MUST complete material.proofSigner through BIOMETRIC_STRONG
+     * BiometricPrompt.CryptoObject before submitting the proof.
+     */
+    fun prepareVerification(accessToken: String): PreparedVerification {
+        check(Looper.myLooper() != Looper.getMainLooper()) {
+            "Supreme attestation must run off the Android UI thread."
+        }
         val challengeResponse = postJson("/functions/v1/supreme-session-api/challenge", null, accessToken)
         if (challengeResponse.first != HttpURLConnection.HTTP_OK) {
             throw IllegalStateException("Supreme device challenge could not be issued.")
         }
-
         val challengeJson = JSONObject(challengeResponse.second)
         check(challengeJson.optBoolean("success", false)) {
             "Supreme device challenge response was invalid."
         }
-
         val challengeId = challengeJson.optString("challenge_id")
-        require(UUID_V4.matches(challengeId)) {
-            "Supreme device challenge ID was invalid."
-        }
-
+        require(UUID_V4.matches(challengeId)) { "Supreme device challenge ID was invalid." }
         val challengeEncoded = challengeJson.optString("challenge")
         require(challengeEncoded.isNotEmpty() && challengeEncoded.length <= 64) {
             "Supreme device challenge was invalid."
@@ -62,40 +63,52 @@ internal object SupremeAttestationClient {
         val challenge = Base64.getUrlDecoder().decode(challengeEncoded)
         require(challenge.size == 32 &&
             Base64.getUrlEncoder().withoutPadding().encodeToString(challenge) == challengeEncoded
-        ) {
-            "Supreme device challenge was not canonical."
-        }
-
+        ) { "Supreme device challenge was not canonical." }
         val material = SupremeKeyAttestation.create(challengeId, challenge)
         require(material.certificateChainBase64.size in 3..MAX_CERTIFICATES) {
             "This device did not provide a usable Android attestation chain."
         }
+        return PreparedVerification(challengeId, challengeEncoded, material)
+    }
+
+    /**
+     * Completes server verification using a proof signature produced only after
+     * the prepared Signature was authorized by Android BIOMETRIC_STRONG.
+     */
+    fun completeVerification(
+        accessToken: String,
+        prepared: PreparedVerification,
+        proofSignatureBase64: String,
+    ): Verification {
+        check(Looper.myLooper() != Looper.getMainLooper()) {
+            "Supreme attestation must run off the Android UI thread."
+        }
+        require(accessToken.isNotBlank()) { "Supreme AAL2 access token is required." }
+        require(proofSignatureBase64.length in 80..160 &&
+            Regex("^[A-Za-z0-9+/]+={0,2}$").matches(proofSignatureBase64)
+        ) { "Supreme biometric attestation proof is malformed." }
 
         val certificateArray = JSONArray()
-        material.certificateChainBase64.forEach { certificateArray.put(it) }
+        prepared.material.certificateChainBase64.forEach { certificateArray.put(it) }
         val verifyPayload = JSONObject()
-            .put("challenge_id", challengeId)
-            .put("challenge", challengeEncoded)
+            .put("challenge_id", prepared.challengeId)
+            .put("challenge", prepared.challengeEncoded)
             .put("certificate_chain", certificateArray)
-            .put("proof_signature", material.challengeProofBase64)
-
-        require(accessToken.isNotBlank()) { "Supreme AAL2 access token is required." }
-        val verificationResponse = postJson(
+            .put("proof_signature", proofSignatureBase64)
+        val response = postJson(
             "/functions/v1/supreme-session-api/issue",
             verifyPayload.toString().toByteArray(StandardCharsets.UTF_8),
             accessToken,
         )
-        if (verificationResponse.first != HttpURLConnection.HTTP_OK) {
+        if (response.first != HttpURLConnection.HTTP_OK) {
             throw IllegalStateException(
-                "Supreme device verification was rejected (HTTP ${verificationResponse.first}).",
+                "Supreme device verification was rejected (HTTP ${response.first}).",
             )
         }
-
-        val result = JSONObject(verificationResponse.second)
+        val result = JSONObject(response.second)
         check(result.optBoolean("registered", false)) {
             "Supreme device-bound session registration was not confirmed."
         }
-
         return Verification(
             securityLevel = when (result.optString("security_level")) {
                 "strongbox" -> "STRONG_BOX"
