@@ -720,7 +720,8 @@ async function handle(request: Request): Promise<Response> {
       if (!pending) return errorResponse("CONTROL_REQUEST_NOT_PENDING", "Only pending control requests can be decided.", 409, requestId);
       const [device] = await db`
         select device_public_key_spki from supreme.devices
-        where id = ${deviceId}::uuid and status = 'active' and device_public_key_spki is not null
+        where id = ${deviceId}::uuid and status = 'active'
+          and device_key_biometric_auth_required = true and device_public_key_spki is not null
         limit 1
       `;
       if (!device?.device_public_key_spki) {
@@ -797,6 +798,7 @@ async function handle(request: Request): Promise<Response> {
       const [deviceKey] = await db`
         select device_public_key_spki from supreme.devices
         where id = ${deviceId}::uuid and user_id = ${userId}::uuid and status = 'active'
+          and device_key_biometric_auth_required = true
         limit 1
       `;
       if (!deviceKey?.device_public_key_spki) {
