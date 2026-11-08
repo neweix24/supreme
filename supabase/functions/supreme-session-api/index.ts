@@ -549,7 +549,7 @@ async function approveEnrollment(
     p_challenge_id: body.challenge_id,
     p_user_id: auth.userId,
     p_approving_device_id: approver.deviceId,
-    p_nonce_sha256: "\\\\x" + nonceHash,
+    p_nonce_sha256: "\\x" + nonceHash,
   });
   if (!result || typeof result !== "object" || (result as Record<string, unknown>).approved !== true) {
     return response({ error: { code: "ENROLLMENT_APPROVAL_FAILED", request_id: requestId } }, 409, requestId);
