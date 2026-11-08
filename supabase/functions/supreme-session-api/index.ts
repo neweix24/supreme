@@ -654,11 +654,9 @@ async function handle(request: Request): Promise<Response> {
   }
 
   const parts = pathname.split("/").filter(Boolean);
-  const enrollmentBase = parts.length >= 3 && parts[parts.length - 2] === "enrollments";
-  const enrollmentId = enrollmentBase ? parts[parts.length - 1] : "";
   const isEnrollmentList = request.method === "GET" && suffix === "enrollments";
   const isEnrollmentChallenge = request.method === "POST" && parts.length >= 4 && parts[parts.length - 1] === "challenge" && parts[parts.length - 3] === "enrollments";
-  const isEnrollmentApproval = request.method === "POST" && enrollmentBase && parts.length >= 3 && parts[parts.length - 3] === "enrollments" && parts[parts.length - 1] === "approve";
+  const isEnrollmentApproval = request.method === "POST" && parts.length >= 4 && parts[parts.length - 3] === "enrollments" && parts[parts.length - 1] === "approve";
   const operation = request.method === "POST" ? suffix : "";
   if (request.method !== "GET" && request.method !== "DELETE" &&
       !(request.method === "POST" && (operation === "challenge" || operation === "issue" || isEnrollmentChallenge || isEnrollmentApproval))) {
@@ -673,7 +671,7 @@ async function handle(request: Request): Promise<Response> {
     if (!auth) {
       return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId);
     }
-    if (request.method === "POST" && operation === "challenge") {
+    if (request.method === "POST" && operation === "challenge" && !isEnrollmentChallenge) {
       return await issueChallenge(auth, requestId);
     }
     if (request.method === "POST" && operation === "issue") {
