@@ -133,8 +133,13 @@ export async function POST(request: Request) {
     const claims = jwtClaims(token);
     const userId = String((authUser as Record<string, unknown>).id);
     const authSessionId = claims.session_id;
-    if (claims.sub !== userId || !UUID.test(String(authSessionId)) || claims.aal !== "aal2") {
-      return fail("Verified Supreme MFA (AAL2) is required.", 403);
+    const authTime = claims.auth_time;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    if (claims.sub !== userId || !UUID.test(String(authSessionId)) ||
+        claims.aal !== "aal2" || typeof authTime !== "number" ||
+        !Number.isSafeInteger(authTime) || nowSeconds - authTime > 300 ||
+        authTime > nowSeconds + 30) {
+      return fail("Fresh verified Supreme MFA (AAL2) is required.", 403);
     }
 
     const productionSigner = runtimeEnv.SUPREME_ANDROID_SIGNING_CERT_SHA256 ?? process.env.SUPREME_ANDROID_SIGNING_CERT_SHA256;
