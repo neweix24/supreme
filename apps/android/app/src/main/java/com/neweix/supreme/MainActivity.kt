@@ -416,7 +416,11 @@ class MainActivity : FragmentActivity() {
             override fun shouldOverrideUrlLoading(
                 view: WebView,
                 request: WebResourceRequest,
-            ): Boolean = true
+            ): Boolean {
+                if (request.isForMainFrame) return true
+                val target = request.url
+                return target.scheme != "https" || target.host != "challenges.cloudflare.com"
+            }
 
             override fun onReceivedSslError(
                 view: WebView,
@@ -478,15 +482,15 @@ class MainActivity : FragmentActivity() {
         val password = passwordInput.text.toString()
         val verifiedCaptchaToken = captchaToken
         if (isBusy) return
+        if (email.isBlank() || password.isBlank()) {
+            setBusy(false, "Enter the Supreme account email and password.")
+            return
+        }
         if (verifiedCaptchaToken.isNullOrBlank()) {
             setBusy(false, "Complete the security verification before signing in.")
             return
         }
         captchaToken = null
-        if (email.isBlank() || password.isBlank()) {
-            setBusy(false, "Enter the Supreme account email and password.")
-            return
-        }
 
         setBusy(true, "Authenticating Supreme Account…")
         background.execute {
