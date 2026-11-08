@@ -25,12 +25,7 @@ internal object SupremeLocalUnlock {
     private const val CHALLENGE_BYTES = 32
 
     fun allowedAuthenticators(): Int =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
-        } else {
-            androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
-        }
+        androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 
     @Synchronized
     fun prepareMac(): Mac {
