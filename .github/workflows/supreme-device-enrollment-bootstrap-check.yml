@@ -62,5 +62,11 @@ jobs:
       - name: Apply device enrollment migration
         run: psql --set ON_ERROR_STOP=1 --file supabase/migrations/20261108123000_supreme_pending_device_enrollment.sql
 
+      - name: Apply device inventory and revocation migration
+        run: psql --set ON_ERROR_STOP=1 --file supabase/migrations/20261108140000_supreme_device_inventory_revocation.sql
+
       - name: Verify bootstrap and pending-device security invariants
         run: psql --set ON_ERROR_STOP=1 --file supabase/tests/supreme_device_enrollment_bootstrap.sql
+
+      - name: Verify biometric remote device revocation invariants
+        run: psql --set ON_ERROR_STOP=1 --file supabase/tests/supreme_device_inventory_revocation.sql
