@@ -381,7 +381,7 @@ async function issueDeviceSession(
       security_level: verified.security_level,
       provisioning_method: verified.provisioning_method ?? "unknown",
       request_id: requestId,
-    }, 202, requestId);
+    }, 200, requestId);
   }
 
   return response({
