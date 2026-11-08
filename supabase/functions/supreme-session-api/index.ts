@@ -778,7 +778,7 @@ async function handle(request: Request): Promise<Response> {
     if (!auth) {
       return response({ error: { code: "UNAUTHENTICATED", request_id: requestId } }, 401, requestId);
     }
-    if (request.method === "POST" && operation === "challenge" && !isEnrollmentChallenge) {
+    if (request.method === "POST" && operation === "challenge" && !isEnrollmentChallenge && !isDeviceRevocationChallenge) {
       return await issueChallenge(auth, requestId);
     }
     if (request.method === "POST" && operation === "issue") {
