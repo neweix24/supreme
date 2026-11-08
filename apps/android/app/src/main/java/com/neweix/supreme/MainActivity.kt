@@ -434,6 +434,8 @@ class MainActivity : FragmentActivity() {
                                             pendingChallengeId = null
                                             codeInput.text.clear()
                                             bootstrapInput.text.clear()
+                                            bootstrapLabel.visibility = View.GONE
+                                            bootstrapInput.visibility = View.GONE
                                             setBusy(
                                                 false,
                                                 "This device is awaiting approval from an existing trusted Supreme device. No app session was created.",
@@ -462,6 +464,8 @@ class MainActivity : FragmentActivity() {
                                         pendingChallengeId = null
                                         codeInput.text.clear()
                                         bootstrapInput.text.clear()
+                                        bootstrapLabel.visibility = View.GONE
+                                        bootstrapInput.visibility = View.GONE
                                         renderDashboard(services, requests, enrollments)
                                         setBusy(false, "Biometric device attestation and Supreme session checks passed.")
                                     }
