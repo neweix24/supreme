@@ -90,8 +90,8 @@ jobs:
           set -euo pipefail
           APK="apps/android/app/build/outputs/apk/release/app-release.apk"
           test -s "$APK"
-          apksigner verify --verbose "$APK"
-          DIGEST="$(apksigner verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {gsub(":", "", $2); print tolower($2); exit}')"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          DIGEST="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest/ {gsub(":", "", $2); print tolower($2); exit}')"
           if [[ ! "$DIGEST" =~ ^[0-9a-f]{64}$ ]]; then
             echo "::error::Could not extract the production signer SHA-256 digest."
             exit 1
