@@ -33,7 +33,6 @@ import com.neweix.supreme.auth.SupremeAuthException
 import com.neweix.supreme.auth.SupremeSessionStore
 import com.neweix.supreme.security.SupremeAttestationClient
 import com.neweix.supreme.security.SupremeKeyAttestation
-import com.neweix.supreme.security.SupremeLocalUnlock
 import java.security.Signature
 import java.util.Base64
 import java.util.concurrent.ExecutorService
@@ -69,7 +68,6 @@ class MainActivity : FragmentActivity() {
     private var biometricPrompt: BiometricPrompt? = null
     private var signingBiometricPrompt: BiometricPrompt? = null
     private var authInProgress = false
-    private var pendingUnlockChallenge: ByteArray? = null
     private var isUnlocked = false
     private var isBusy = false
     private var resumeSessionCheck = false
@@ -1218,29 +1216,10 @@ class MainActivity : FragmentActivity() {
             ContextCompat.getMainExecutor(this),
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    val authorizedCipher = result.cryptoObject?.cipher
-                    val challenge = pendingUnlockChallenge
-                    pendingUnlockChallenge = null
-                    val proof = try {
-                        if (authorizedCipher != null && challenge != null) {
-                            authorizedCipher.doFinal(challenge)
-                        } else {
-                            null
-                        }
-                    } catch (_: Exception) {
-                        null
-                    } finally {
-                        challenge?.fill(0)
-                    }
-                    if (proof == null || proof.size != 48) {
-                        proof?.fill(0)
-                        authInProgress = false
-                        isUnlocked = false
-                        lockOverlay.visibility = View.VISIBLE
-                        lockStatusText.text = "Keystore proof failed. Supreme remains locked. Try again or report this message."
-                        return
-                    }
-                    proof.fill(0)
+                    // For the local privacy lock, Android's successful strong-biometric
+                    // callback is the authorization result. Do not add a second
+                    // Keystore CryptoObject operation here: it can fail on OEM
+                    // Keystore implementations even after the system verified the user.
                     authInProgress = false
                     isUnlocked = true
                     lockStatusText.text = "Device unlocked."
@@ -1251,8 +1230,6 @@ class MainActivity : FragmentActivity() {
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     authInProgress = false
-                    pendingUnlockChallenge?.fill(0)
-                    pendingUnlockChallenge = null
                     isUnlocked = false
                     lockOverlay.visibility = View.VISIBLE
                     lockStatusText.text = "Android biometric error $errorCode: $errString. Supreme remains locked."
@@ -1315,7 +1292,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun authenticateToUnlock() {
-        if (isUnlocked || authInProgress) return
+        if (isUnlocked || authInProgress || isFinishing || isDestroyed) return
         val prompt = biometricPrompt
         if (prompt == null) {
             lockStatusText.text = "Biometric service is not initialized. Close and reopen Supreme."
@@ -1343,32 +1320,25 @@ class MainActivity : FragmentActivity() {
             }
             return
         }
+
         authInProgress = true
         lockOverlay.visibility = View.VISIBLE
-        lockStatusText.text = "Preparing hardware-backed biometric unlock…"
-        val operation = try {
-            SupremeLocalUnlock.prepareCipher()
-        } catch (error: Exception) {
-            authInProgress = false
-            lockOverlay.visibility = View.VISIBLE
-            lockStatusText.text = "Secure Keystore setup failed: ${error.javaClass.simpleName}."
-            return
-        }
-        pendingUnlockChallenge?.fill(0)
-        pendingUnlockChallenge = operation.challenge
-        val subtitle = "Use a strong biometric to unlock this device"
+        lockStatusText.text = "Waiting for Android strong-biometric verification…"
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle("Unlock Supreme")
-            .setSubtitle(subtitle)
-            .setDescription("Android Keystore must authorize a local cryptographic proof. Server authentication is still required.")
-            .setAllowedAuthenticators(SupremeLocalUnlock.allowedAuthenticators())
+            .setSubtitle("Use your enrolled fingerprint to continue")
+            .setDescription("Android verifies your biometric. Server authentication and device authorization remain required.")
+            .setAllowedAuthenticators(
+                androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG,
+            )
             .build()
         try {
-            prompt.authenticate(info, BiometricPrompt.CryptoObject(operation.cipher))
+            // This is a local privacy gate, not a cryptographic signing operation.
+            // Keep the prompt callback-only. CryptoObjects remain mandatory for
+            // attestation and sensitive device-bound signatures elsewhere.
+            prompt.authenticate(info)
         } catch (error: Exception) {
             authInProgress = false
-            pendingUnlockChallenge?.fill(0)
-            pendingUnlockChallenge = null
             lockOverlay.visibility = View.VISIBLE
             lockStatusText.text = "Android prompt could not start: ${error.javaClass.simpleName}."
         }
@@ -1493,6 +1463,10 @@ class MainActivity : FragmentActivity() {
         }
         super.onStop()
         if (!isChangingConfigurations && !mfaInProgress) {
+            // Clear a stale in-flight guard when the Activity is backgrounded.
+            // onResume() will start a fresh prompt after the window is attached.
+            biometricPrompt?.cancelAuthentication()
+            authInProgress = false
             isUnlocked = false
             if (::lockOverlay.isInitialized) lockOverlay.visibility = View.VISIBLE
         }
