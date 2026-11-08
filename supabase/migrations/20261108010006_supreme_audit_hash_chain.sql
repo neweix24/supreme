@@ -2,7 +2,6 @@
 -- The advisory lock serializes inserts so concurrent writers cannot fork the chain.
 create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
-alter extension pgcrypto set schema extensions;
 
 alter table supreme.audit_events
   add column if not exists chain_position bigint,
@@ -28,7 +27,7 @@ begin
   loop
     v_position := v_position + 1;
     v_payload := to_jsonb(v_event) - 'chain_position' - 'previous_hash' - 'event_hash';
-    v_event_hash := extensions.digest(
+    v_event_hash := digest(
       convert_to(coalesce(encode(v_previous_hash, 'hex'), '') || E'\\n' || v_payload::text, 'UTF8'),
       'sha256'
     );
@@ -59,7 +58,7 @@ create index if not exists supreme_audit_events_hash_idx
 create or replace function supreme.append_audit_event_hash()
 returns trigger
 language plpgsql
-set search_path = pg_catalog, supreme, extensions
+set search_path = pg_catalog, supreme, extensions, public
 as $$
 declare
   v_previous_hash bytea;
@@ -79,7 +78,7 @@ begin
 
   new.previous_hash := v_previous_hash;
   v_payload := to_jsonb(new) - 'chain_position' - 'previous_hash' - 'event_hash';
-  new.event_hash := extensions.digest(
+  new.event_hash := digest(
     convert_to(coalesce(encode(v_previous_hash, 'hex'), '') || E'\\n' || v_payload::text, 'UTF8'),
     'sha256'
   );
@@ -99,7 +98,7 @@ returns boolean
 language plpgsql
 stable
 security invoker
-set search_path = pg_catalog, supreme, extensions
+set search_path = pg_catalog, supreme, extensions, public
 as $$
 declare
   v_event record;
@@ -115,7 +114,7 @@ begin
     end if;
 
     v_payload := to_jsonb(v_event) - 'chain_position' - 'previous_hash' - 'event_hash';
-    v_expected_hash := extensions.digest(
+    v_expected_hash := digest(
       convert_to(coalesce(encode(v_previous_hash, 'hex'), '') || E'\\n' || v_payload::text, 'UTF8'),
       'sha256'
     );
