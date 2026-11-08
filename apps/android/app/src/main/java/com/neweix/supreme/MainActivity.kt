@@ -83,7 +83,6 @@ class MainActivity : FragmentActivity() {
         sessionStore = SupremeSessionStore(this)
         buildInterface()
         configureAppLock()
-        authenticateToUnlock()
     }
 
     private fun configureEdgeToEdge(targetWindow: Window) {
@@ -1437,7 +1436,12 @@ class MainActivity : FragmentActivity() {
         super.onResume()
         resetIdleLockTimer()
         val mfaInProgress = pendingPasswordSession != null && pendingFactorId != null
-        if (!isUnlocked && !mfaInProgress && biometricPrompt != null) authenticateToUnlock()
+        if (!isUnlocked && !mfaInProgress && biometricPrompt != null) {
+            // Wait until the Activity is resumed and its window is attached before
+            // launching BiometricPrompt. Calling it from onCreate can leave the
+            // in-progress guard set without ever displaying the system prompt.
+            window.decorView.post { authenticateToUnlock() }
+        }
     }
 
     override fun onDestroy() {
