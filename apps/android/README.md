@@ -97,28 +97,30 @@ Only changes that genuinely need native Android capabilities or a change to the 
 4. Enable `public.supreme_custom_access_token_hook` under Supabase Authentication → Hooks → Custom Access Token.
 5. Configure the attestation verifier's production signer digest and minimum package version; build and sign the APK with that same permanent key.
 6. Deploy and verify the complete flow on a physical production-signed Android device, including session refresh, device revocation, and browser-denial cases.
-## Production signing identity — not configured yet
+## Production signing identity and release workflow
 
-The production signer certificate digest is a security input to Android Key Attestation's
-application-identity check. It must come from the actual APK signed with the permanent
-production key; it must never be copied from a debug APK or guessed from the package name.
+The production Android signing key is stored only in the GitHub Actions `production`
+Environment as these secrets:
 
-After the production APK is signed, run this helper from the repository root:
+- `SUPREME_RELEASE_KEYSTORE_BASE64`
+- `SUPREME_RELEASE_KEY_ALIAS`
+- `SUPREME_RELEASE_KEY_PASSWORD`
+- `SUPREME_RELEASE_STORE_PASSWORD`
 
-```sh
-bash scripts/security/print-android-signing-cert.sh path/to/supreme-production.apk
-```
+The **Build Supreme Android production release** workflow is manually dispatched and
+uses the `production` Environment. It decodes the Base64 keystore into the runner's
+temporary directory, restricts its file permissions, validates the alias/password,
+and passes the temporary file path to Gradle. The keystore and passwords are never
+written to the repository or uploaded as artifacts.
 
-It verifies the APK signature with Android SDK `apksigner` and prints the signer
-certificate SHA-256 digest in lowercase hexadecimal without separators. Compare it
-against the independently recorded certificate fingerprint for the permanent signing
-key before configuring the server allowlist.
+After a successful build, the workflow verifies the APK signature and prints the
+signer's SHA-256 certificate digest. Configure that exact 64-character lowercase
+hexadecimal digest in the server-side Android attestation allowlist before expecting
+production device attestation to pass. Do not use a debug signer digest or guess it
+from the package name. The workflow uploads only the signed APK artifact.
 
-The repository intentionally does not contain a production keystore, signing password,
-or release-signing workflow secrets. Do not create or upload a signing key to GitHub,
-commit a keystore, or use the CI debug signer as the production identity. The app
-package ID is `com.neweix.supreme`; the package ID alone is not a trusted signer identity.
-
+To run it, open **Actions → Build Supreme Android production release → Run workflow**
+and select the `main` branch. Keep the GitHub Environment named exactly `production`.
 
 ## Download an installable debug APK
 
