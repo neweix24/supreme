@@ -99,6 +99,44 @@ internal object SupremeKeyAttestation {
         }
     }
 
+    /**
+     * Signs a server-issued, one-time Supreme control-decision challenge with
+     * the same non-exportable key whose public key was verified at registration.
+     * The server binds the signature to the request, decision and reason digest.
+     */
+    @Synchronized
+    fun signControlDecision(
+        challengeId: String,
+        nonceBase64Url: String,
+        requestId: String,
+        decision: String,
+        reason: String?,
+    ): String {
+        require(Regex("^[0-9a-fA-F-]{36}$").matches(challengeId))
+        require(Regex("^[A-Za-z0-9_-]{43}$").matches(nonceBase64Url))
+        require(Regex("^[0-9a-fA-F-]{36}$").matches(requestId))
+        require(decision == "approve" || decision == "reject")
+        val reasonHash = java.security.MessageDigest.getInstance("SHA-256")
+            .digest((reason ?: "").toByteArray(StandardCharsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        val payload = listOf(
+            "NEWEIX-SUPREME-CONTROL-DECISION-V1",
+            challengeId,
+            nonceBase64Url,
+            requestId,
+            decision,
+            reasonHash,
+        ).joinToString("\\n").toByteArray(StandardCharsets.UTF_8)
+
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        val privateKey = keyStore.getKey(KEY_ALIAS, null) as? java.security.PrivateKey
+            ?: throw IllegalStateException("The registered Supreme device signing key is unavailable. Re-register this device.")
+        val signer = Signature.getInstance("SHA256withECDSA")
+        signer.initSign(privateKey)
+        signer.update(payload)
+        return Base64.getEncoder().encodeToString(signer.sign())
+    }
+
     /** Removes the local attestation key when a device registration is reset. */
     @Synchronized
     fun delete() {
