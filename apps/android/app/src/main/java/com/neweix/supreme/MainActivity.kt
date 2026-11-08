@@ -1281,6 +1281,7 @@ class MainActivity : FragmentActivity() {
             .setTitle("Confirm Supreme security operation")
             .setSubtitle("Fingerprint verification is required to authorize this signature")
             .setDescription("The private key remains protected inside Android Keystore.")
+            .setNegativeButtonText("CANCEL")
             .setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG)
             .build()
         try {
@@ -1328,6 +1329,7 @@ class MainActivity : FragmentActivity() {
             .setTitle("Unlock Supreme")
             .setSubtitle("Use your enrolled fingerprint to continue")
             .setDescription("Android verifies your biometric. Server authentication and device authorization remain required.")
+            .setNegativeButtonText("CANCEL")
             .setAllowedAuthenticators(
                 androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG,
             )
