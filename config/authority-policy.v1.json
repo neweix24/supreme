@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "status": "design_only_not_runtime_enforced",
+  "purpose": "Defines proposed authority boundaries. This file does not grant permissions and must not be treated as an authorization source until reviewed, implemented, and tested.",
+  "identities": {
+    "supreme": {
+      "source_of_truth": "supreme.identities",
+      "public_id": "supreme",
+      "role": "ruler",
+      "cardinality": "exactly_one"
+    },
+    "admin": {
+      "source_of_truth": "employees_workforce_domain",
+      "role": "admin",
+      "delegated_by": "supreme",
+      "may_self_delegate": false
+    },
+    "employee": {
+      "source_of_truth": "employees_workforce_domain",
+      "role": "employee",
+      "delegated_by": "admin_within_grant",
+      "may_self_delegate": false
+    },
+    "customer": {
+      "source_of_truth": "account",
+      "role": "customer"
+    },
+    "service": {
+      "source_of_truth": "service_specific_machine_identity",
+      "role": "service_principal"
+    }
+  },
+  "defaults": {
+    "allow": false,
+    "wildcard_capabilities_allowed": false,
+    "enforce_server_side": true,
+    "audit_privileged_decisions": true
+  },
+  "admin_capabilities": [
+    "admin.customers.read",
+    "admin.support.manage",
+    "shop.products.manage",
+    "shop.inventory.manage",
+    "shop.orders.process",
+    "shop.returns.process",
+    "connect.support.respond",
+    "eixora.content.moderate",
+    "reports.operations.read",
+    "services.health.read"
+  ],
+  "supreme_only_capabilities": [
+    "supreme.policy.manage",
+    "supreme.admin.delegate",
+    "supreme.authority.manage",
+    "supreme.security.manage",
+    "supreme.approvals.decide",
+    "supreme.service.suspend",
+    "supreme.integration.credentials.manage",
+    "supreme.production.execute",
+    "supreme.financial.policy.manage",
+    "supreme.audit.retention.manage"
+  ],
+  "approval_classes": {
+    "routine": {
+      "approval": "admin_grant",
+      "audit": true
+    },
+    "guarded": {
+      "approval": "explicit_capability_and_limits",
+      "audit": true,
+      "reauthentication": "when_configured"
+    },
+    "high_impact": {
+      "approval": "supreme",
+      "fresh_aal2": true,
+      "bind_exact_target_and_parameters": true,
+      "idempotency": true,
+      "audit": true
+    },
+    "critical": {
+      "enabled_by_default": false,
+      "approval": "separately_designed_break_glass"
+    }
+  },
+  "grant_requirements": [
+    "explicit_capabilities",
+    "service_scope",
+    "environment_scope",
+    "operation_limits",
+    "start_time",
+    "expiry_or_review_date",
+    "delegator_identity",
+    "policy_version",
+    "audit_event"
+  ],
+  "enforcement_requirements": [
+    "customer_cannot_call_admin_or_supreme_endpoints",
+    "employee_without_grant_is_denied",
+    "admin_is_limited_to_delegated_capabilities",
+    "admin_cannot_self_delegate",
+    "admin_cannot_invoke_supreme_only_capabilities",
+    "expired_or_revoked_grants_fail_closed",
+    "only_supreme_can_decide_supreme_control_requests",
+    "approval_is_bound_to_exact_action_target_parameters_and_expiry",
+    "privileged_allow_and_deny_decisions_are_audited",
+    "authorization_failures_fail_closed"
+  ]
+}
