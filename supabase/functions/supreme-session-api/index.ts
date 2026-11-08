@@ -347,28 +347,40 @@ async function issueDeviceSession(
   const recoveryMaterialHash = recoveryMode
     ? await sha256Hex(new TextEncoder().encode(payload.recovery_material as string))
     : null;
-  const registered = recoveryMode
-    ? await postServiceRpc("complete_supreme_break_glass_recovery", {
-        p_user_id: auth.userId,
-        p_auth_session_id: auth.authSessionId,
-        p_request_id: payload.recovery_request_id,
-        p_token_sha256: recoveryMaterialHash,
-        p_device_key_sha256: verified.device_key_sha256,
-        p_signing_certificate_sha256: SIGNING_CERT_SHA256,
-        p_security_level: verified.security_level,
-        p_attested_at: now.toISOString(),
-        p_expires_at: expiresAt,
-      })
-    : await postServiceRpc("register_supreme_attested_device_session", {
-        p_user_id: auth.userId,
-        p_auth_session_id: auth.authSessionId,
-        p_device_key_sha256: verified.device_key_sha256,
-        p_signing_certificate_sha256: SIGNING_CERT_SHA256,
-        p_security_level: verified.security_level,
-        p_attested_at: now.toISOString(),
-        p_expires_at: expiresAt,
-        p_bootstrap_token_sha256: bootstrapTokenHash,
-      });
+  let registered: unknown;
+  try {
+    registered = recoveryMode
+      ? await postServiceRpc("complete_supreme_break_glass_recovery", {
+          p_user_id: auth.userId,
+          p_auth_session_id: auth.authSessionId,
+          p_request_id: payload.recovery_request_id,
+          p_token_sha256: recoveryMaterialHash,
+          p_device_key_sha256: verified.device_key_sha256,
+          p_signing_certificate_sha256: SIGNING_CERT_SHA256,
+          p_security_level: verified.security_level,
+          p_attested_at: now.toISOString(),
+          p_expires_at: expiresAt,
+        })
+      : await postServiceRpc("register_supreme_attested_device_session", {
+          p_user_id: auth.userId,
+          p_auth_session_id: auth.authSessionId,
+          p_device_key_sha256: verified.device_key_sha256,
+          p_signing_certificate_sha256: SIGNING_CERT_SHA256,
+          p_security_level: verified.security_level,
+          p_attested_at: now.toISOString(),
+          p_expires_at: expiresAt,
+          p_bootstrap_token_sha256: bootstrapTokenHash,
+        });
+  } catch {
+    if (recoveryMode) {
+      await db.unsafe(
+        "insert into supreme.audit_events(actor_user_id, action, outcome, policy_version, details) values ($1::uuid, 'recovery.complete', 'denied', 'v1', jsonb_build_object('recovery_request_id', $2::uuid, 'reason', 'recovery_precondition_failed', 'request_id', $3))",
+        [auth.userId, payload.recovery_request_id, requestId],
+      );
+      return response({ error: { code: "RECOVERY_COMPLETION_DENIED", request_id: requestId } }, 409, requestId);
+    }
+    return response({ error: { code: "SESSION_REGISTRATION_FAILED", request_id: requestId } }, 503, requestId);
+  }
 
   if (!registered || typeof registered !== "object") {
     return response({ error: { code: "SESSION_REGISTRATION_FAILED", request_id: requestId } }, 503, requestId);
@@ -756,11 +768,20 @@ async function beginBreakGlassRecovery(auth: AuthContext, request: Request, requ
     return response({ error: { code: "INVALID_RECOVERY_MATERIAL", request_id: requestId } }, 400, requestId);
   }
   const tokenHash = await sha256Hex(new TextEncoder().encode(body.recovery_material));
-  const result = await postServiceRpc("begin_supreme_break_glass_recovery", {
-    p_user_id: auth.userId,
-    p_auth_session_id: auth.authSessionId,
-    p_token_sha256: tokenHash,
-  });
+  let result: unknown;
+  try {
+    result = await postServiceRpc("begin_supreme_break_glass_recovery", {
+      p_user_id: auth.userId,
+      p_auth_session_id: auth.authSessionId,
+      p_token_sha256: tokenHash,
+    });
+  } catch {
+    await db.unsafe(
+      "insert into supreme.audit_events(actor_user_id, action, outcome, policy_version, details) values ($1::uuid, 'recovery.request', 'denied', 'v1', jsonb_build_object('reason', 'recovery_precondition_failed', 'request_id', $2))",
+      [auth.userId, requestId],
+    );
+    return response({ error: { code: "RECOVERY_REQUEST_DENIED", request_id: requestId } }, 409, requestId);
+  }
   if (!result || typeof result !== "object" || !isUuid((result as Record<string, unknown>).request_id)) {
     return response({ error: { code: "RECOVERY_REQUEST_FAILED", request_id: requestId } }, 409, requestId);
   }
