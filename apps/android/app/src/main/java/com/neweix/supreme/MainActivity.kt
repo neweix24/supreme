@@ -1293,11 +1293,7 @@ class MainActivity : FragmentActivity() {
             statusText.text = "A secure Android Keystore unlock key is unavailable on this device."
             return
         }
-        val subtitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            "Use fingerprint or the device screen-lock PIN"
-        } else {
-            "Use fingerprint to unlock this device"
-        }
+        val subtitle = "Use a strong biometric to unlock this device"
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle("Unlock Supreme")
             .setSubtitle(subtitle)
