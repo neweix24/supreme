@@ -24,7 +24,7 @@ begin
   perform pg_advisory_xact_lock(731904221);
 
   for v_event in
-    select * from supreme.audit_events order by chain_position asc
+    select * from supreme.audit_events order by id asc
   loop
     v_position := v_position + 1;
     v_payload := to_jsonb(v_event) - 'chain_position' - 'previous_hash' - 'event_hash';
