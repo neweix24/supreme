@@ -122,10 +122,10 @@ The recovery path is implemented as a separate flow; it does not reuse first-dev
 
 1. During secure owner provisioning, generate a 256-bit random recovery code locally and insert only its SHA-256 digest into `supreme.recovery_authorizations`. Keep the raw code offline and outside the phone.
 2. Configure the Edge Function secrets `SUPREME_RECOVERY_NOTIFICATION_WEBHOOK_URL` and `SUPREME_RECOVERY_NOTIFICATION_WEBHOOK_SECRET`. The URL must be HTTPS. The receiver must verify the bearer secret and independently notify the owner; return 2xx only after accepting the notification. Honor the `Idempotency-Key` header (`supreme-recovery:<request-id>:<event-type>`) so retries cannot send duplicate alerts.
-3. When all trusted devices are lost, sign in with password + TOTP. Enter the offline recovery code and leave the recovery request ID empty. The API creates a pending request with a 24-hour cooling-off period and queues an independent notification.
+3. When all trusted devices are lost, sign in with password + TOTP. Enter the offline recovery code and leave the recovery request ID empty. The API creates a pending request with a 24-hour cooling-off period and queues an independent notification. It immediately revokes every existing Supreme app session and every other Supabase Auth session, retaining only the fresh session used to request recovery.
 4. If notification delivery fails or is not configured, the request remains blocked. Re-enter the same offline code after configuring the notifier to retry delivery; completion remains impossible until delivery is acknowledged.
 5. After the cooling-off period, sign in again with password + TOTP, enter the same offline code and the recovery request UUID, and complete fresh Android hardware attestation with biometric proof-of-possession.
-6. The database atomically consumes the recovery authorization, activates the newly attested device, creates its four-hour app session, and leaves all prior devices revoked. A replay cannot create another session.
+6. The database atomically consumes the recovery authorization, activates the newly attested device, creates its four-hour app session, revokes every other Supabase Auth session (including the original request session), and leaves all prior devices revoked. A replay cannot create another session.
 
 Example operator provisioning (run locally; never paste the raw code into chat, a repository, or a ticket):
 
