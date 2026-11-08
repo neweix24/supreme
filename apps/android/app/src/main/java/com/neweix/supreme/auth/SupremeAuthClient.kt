@@ -122,6 +122,38 @@ internal object SupremeAuthClient {
         return parseSession(response, stage = "Session refresh")
     }
 
+    data class BreakGlassRecoveryRequest(
+        val requestId: String,
+        val availableAt: String,
+        val expiresAt: String,
+        val notificationDelivered: Boolean,
+    )
+
+    fun beginBreakGlassRecovery(accessToken: String, recoveryMaterial: String): BreakGlassRecoveryRequest {
+        require(accessToken.isNotBlank()) { "A fresh Supreme AAL2 session is required." }
+        require(Regex("^[a-f0-9]{64}$").matches(recoveryMaterial)) {
+            "Offline recovery material must be 64 lowercase hexadecimal characters."
+        }
+        val response = request(
+            "POST",
+            "/functions/v1/supreme-session-api/recovery/request",
+            accessToken,
+            JSONObject().put("recovery_material", recoveryMaterial),
+        )
+        val requestId = response.optString("request_id")
+        val availableAt = response.optString("available_at")
+        val expiresAt = response.optString("expires_at")
+        require(UUID_PATTERN.matches(requestId) && availableAt.isNotBlank() && expiresAt.isNotBlank()) {
+            "Supreme recovery request response was incomplete."
+        }
+        return BreakGlassRecoveryRequest(
+            requestId = requestId,
+            availableAt = availableAt,
+            expiresAt = expiresAt,
+            notificationDelivered = response.optBoolean("notification_delivered", false),
+        )
+    }
+
     fun signOut(accessToken: String) {
         request("POST", "/auth/v1/logout?scope=global", accessToken, JSONObject())
     }
