@@ -58,7 +58,16 @@ function isFreshAal2(claims: Claims): boolean {
   if (claims.aal !== "aal2") return false;
   const authTime = typeof claims.auth_time === "number" ? claims.auth_time : 0;
   const now = Date.now() / 1000;
-  return !!authTime && now - authTime <= 300 && authTime <= now + 30;
+  if (!authTime || now - authTime > 300 || authTime > now + 30) return false;
+
+  // Supreme currently permits password + authenticator TOTP only.
+  // AAL2 alone is not sufficient if the AMR does not prove TOTP.
+  const amr = Array.isArray(claims.amr) ? claims.amr : [];
+  return amr.some((entry) =>
+    entry !== null &&
+    typeof entry === "object" &&
+    (entry as Record<string, unknown>).method === "totp"
+  );
 }
 
 async function authenticate(request: Request): Promise<AuthContext | null> {
