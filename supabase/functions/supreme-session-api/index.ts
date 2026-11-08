@@ -56,18 +56,20 @@ function isUuid(value: unknown): value is string {
 
 function isFreshAal2(claims: Claims): boolean {
   if (claims.aal !== "aal2") return false;
-  const authTime = typeof claims.auth_time === "number" ? claims.auth_time : 0;
+  // auth_time and iat describe the session/token, not necessarily the
+  // moment the second factor was completed. Use Supabase's TOTP AMR timestamp
+  // so refreshing an old AAL2 token cannot extend MFA freshness.
   const now = Date.now() / 1000;
-  if (!authTime || now - authTime > 300 || authTime > now + 30) return false;
-
-  // Supreme currently permits password + authenticator TOTP only.
-  // AAL2 alone is not sufficient if the AMR does not prove TOTP.
   const amr = Array.isArray(claims.amr) ? claims.amr : [];
-  return amr.some((entry) =>
-    entry !== null &&
-    typeof entry === "object" &&
-    (entry as Record<string, unknown>).method === "totp"
-  );
+  return amr.some((entry) => {
+    if (!entry || typeof entry !== "object") return false;
+    const method = entry as Record<string, unknown>;
+    const verifiedAt = typeof method.timestamp === "number" ? method.timestamp : 0;
+    return method.method === "totp" &&
+      verifiedAt > 0 &&
+      now - verifiedAt <= 300 &&
+      verifiedAt <= now + 30;
+  });
 }
 
 async function authenticate(request: Request): Promise<AuthContext | null> {
