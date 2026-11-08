@@ -23,8 +23,9 @@ DECLARE
   v_null_expiry_rejected boolean := false;
 BEGIN
   INSERT INTO auth.users(id) VALUES (v_user);
+  -- Supabase sessions have no maximum lifetime by default; NULL not_after is valid.
   INSERT INTO auth.sessions(id, user_id, not_after)
-  VALUES (v_auth_session, v_user, now() + interval '2 days');
+  VALUES (v_auth_session, v_user, NULL);
   INSERT INTO supreme.identities(user_id, public_id, role, is_active)
   VALUES (v_user, 'supreme', 'ruler', true);
 
