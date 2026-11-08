@@ -1,4 +1,5 @@
--- Minimal disposable PostgreSQL fixture for the Supreme device-enrollment migration.
+-- Minimal disposable PostgreSQL fixture for Supreme device and recovery migrations.
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon; END IF;
