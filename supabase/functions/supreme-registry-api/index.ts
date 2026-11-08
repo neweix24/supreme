@@ -81,6 +81,12 @@ function hasVerifiedSupremeAppSession(claims: JsonObject): boolean {
     session.attested_at > 0 && session.attested_at <= Date.now() / 1000 + 30;
 }
 
+function toArrayBuffer(value: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(value.length);
+  copy.set(value);
+  return copy.buffer;
+}
+
 function base64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -154,7 +160,7 @@ async function verifyControlDecisionSignature(input: {
 }): Promise<boolean> {
   const key = await crypto.subtle.importKey(
     "spki",
-    input.spki,
+    toArrayBuffer(input.spki),
     { name: "ECDSA", namedCurve: "P-256" },
     false,
     ["verify"],
@@ -170,8 +176,8 @@ async function verifyControlDecisionSignature(input: {
   return await crypto.subtle.verify(
     { name: "ECDSA", hash: "SHA-256" },
     key,
-    derEcdsaToP1363(input.signatureDer),
-    payload,
+    toArrayBuffer(derEcdsaToP1363(input.signatureDer)),
+    toArrayBuffer(payload),
   );
 }
 
