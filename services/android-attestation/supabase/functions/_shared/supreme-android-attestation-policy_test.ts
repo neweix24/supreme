@@ -94,6 +94,10 @@ type FixtureOptions = {
   applicationIdInHardware?: boolean;
   includeApplicationId?: boolean;
   minimumVersion?: bigint;
+  biometricAuthType?: bigint;
+  authTimeout?: bigint;
+  noAuthRequired?: boolean;
+  biometricAuthInSoftware?: boolean;
 };
 
 function makeDescription(options: FixtureOptions = {}) {
@@ -110,6 +114,8 @@ function makeDescription(options: FixtureOptions = {}) {
     contextTag(3, integer(options.keySize ?? 256n)),
     contextTag(5, setOf(...(options.digests ?? [4n]).map(integer))),
     contextTag(10, integer(options.curve ?? 1n)),
+    contextTag(504, setOf(integer(options.biometricAuthType ?? 2n))),
+    contextTag(505, integer(options.authTimeout ?? 0n)),
     contextTag(702, integer(options.origin ?? 0n)),
     contextTag(704, seq(
       octets(bootKey),
@@ -118,6 +124,15 @@ function makeDescription(options: FixtureOptions = {}) {
       octets(bootHash),
     )),
   ];
+  if (options.noAuthRequired) {
+    hardwareEntries.push(contextTag(503, tlv([0x05], [])));
+  }
+  if (options.biometricAuthInSoftware) {
+    softwareEntries.push(
+      contextTag(504, setOf(integer(2n))),
+      contextTag(505, integer(0n)),
+    );
+  }
   if (options.rootOfTrustInSoftware) {
     const index = softwareEntries.length;
     softwareEntries.splice(index, 0, contextTag(704, seq(
@@ -221,6 +236,14 @@ Deno.test("Supreme Android policy requires generated P-256 EC signing and SHA-25
   assertRejected(makeDescription({ purposes: [3n] }), policy(), "missing SIGN purpose");
   assertRejected(makeDescription({ purposes: [2n] }), policy(), "missing VERIFY purpose");
   assertRejected(makeDescription({ digests: [3n] }), policy(), "missing SHA-256 digest");
+});
+
+Deno.test("Supreme Android policy requires per-operation hardware biometric authorization", () => {
+  assertRejected(makeDescription({ biometricAuthType: 1n }), policy(), "password-only authenticator");
+  assertRejected(makeDescription({ biometricAuthType: 0xffffffffn }), policy(), "any authenticator type");
+  assertRejected(makeDescription({ authTimeout: 30n }), policy(), "cached biometric authorization");
+  assertRejected(makeDescription({ noAuthRequired: true }), policy(), "no-auth-required key");
+  assertRejected(makeDescription({ biometricAuthInSoftware: true }), policy(), "software-enforced biometric authorization");
 });
 
 Deno.test("Supreme Android policy requires a hardware-enforced locked VERIFIED RootOfTrust", () => {
