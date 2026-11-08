@@ -129,7 +129,7 @@ function makeDescription(options: FixtureOptions = {}) {
   }
   if (options.biometricAuthInSoftware) {
     softwareEntries.push(
-      contextTag(504, setOf(integer(2n))),
+      contextTag(504, integer(2n)),
       contextTag(505, integer(0n)),
     );
   }
