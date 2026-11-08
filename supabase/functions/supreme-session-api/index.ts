@@ -501,7 +501,7 @@ async function enrollmentApprovalChallenge(
   const digest = await sha256Hex(nonce);
   const challenges = await db!.unsafe(
     "with lock_row as materialized (select pg_advisory_xact_lock(hashtextextended($1 || ':' || $2, 0))), recent as materialized (select count(*)::integer as n from supreme.device_enrollment_approval_challenges c cross join lock_row where c.user_id = $1::uuid and c.approving_device_id = $2::uuid and c.created_at > now() - interval '10 minutes') insert into supreme.device_enrollment_approval_challenges (enrollment_request_id, user_id, approving_device_id, nonce_sha256, expires_at) select $3::uuid, $1::uuid, $2::uuid, decode($4, 'hex'), now() + interval '90 seconds' from recent where recent.n < 10 returning id::text, expires_at",
-    [auth.userId, approver.deviceId, enrollmentRequestId, digest],
+    [auth.userId, approver.deviceId, enrollmentRequestId, digest, auth.authSessionId],
   );
   if (challenges.length !== 1) return response({ error: { code: "APPROVAL_RATE_LIMITED", request_id: requestId } }, 429, requestId);
   return response({
@@ -549,6 +549,7 @@ async function approveEnrollment(
     p_challenge_id: body.challenge_id,
     p_user_id: auth.userId,
     p_approving_device_id: approver.deviceId,
+    p_approving_auth_session_id: auth.authSessionId,
     p_nonce_sha256: "\\x" + nonceHash,
   });
   if (!result || typeof result !== "object" || (result as Record<string, unknown>).approved !== true) {
