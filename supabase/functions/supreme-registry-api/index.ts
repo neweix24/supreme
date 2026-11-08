@@ -751,15 +751,37 @@ async function handle(request: Request): Promise<Response> {
       const nonce = crypto.getRandomValues(new Uint8Array(32));
       const nonceHash = await sha256Bytes(nonce);
       const reasonHash = await sha256Bytes(new TextEncoder().encode(reason ?? ""));
+      // Serialize challenge issuance per device so concurrent requests cannot
+      // race past the rolling-window limit. The lock and insert share one SQL
+      // statement/transaction; no client-provided identity or IP is trusted.
       const [challenge] = await db`
+        with rate_limit_lock as materialized (
+          select pg_advisory_xact_lock(
+            hashtextextended(${userId}::text || ':' || ${deviceId}::text, 0)
+          )
+        ),
+        recent as materialized (
+          select count(*)::integer as challenge_count
+          from supreme.control_decision_challenges c
+          cross join rate_limit_lock
+          where c.user_id = ${userId}::uuid
+            and c.device_id = ${deviceId}::uuid
+            and c.created_at > now() - interval '10 minutes'
+        )
         insert into supreme.control_decision_challenges
           (control_request_id, user_id, device_id, decision, reason_sha256, nonce_sha256, expires_at)
-        values
-          (${id}::uuid, ${userId}::uuid, ${deviceId}::uuid, ${decision},
-           decode(${hex(reasonHash)}, 'hex'), decode(${hex(nonceHash)}, 'hex'),
-           now() + interval '90 seconds')
+        select
+          ${id}::uuid, ${userId}::uuid, ${deviceId}::uuid, ${decision},
+          decode(${hex(reasonHash)}, 'hex'), decode(${hex(nonceHash)}, 'hex'),
+          now() + interval '90 seconds'
+        from recent
+        where recent.challenge_count < 10
         returning id::text, expires_at
       `;
+      if (!challenge) {
+        return errorResponse("DECISION_CHALLENGE_RATE_LIMITED",
+          "Too many decision challenges were requested for this device. Try again later.", 429, requestId);
+      }
       await audit({ actor: userId, action: "control_requests.decision_challenge", outcome: "pending",
         requestId, details: { control_request_id: id, decision, challenge_id: challenge.id } });
       return json({
