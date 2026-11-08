@@ -80,6 +80,22 @@ Required controls:
 
 If offline recovery material is lost, recovery requires a separately documented, manually verified operator procedure. Do not add a hidden bypass or support override endpoint.
 
+## Implementation progress
+
+- [x] Add `pending_approval` device state and a private, service-role-only enrollment-request table.
+- [x] New attested device keys are inserted as pending and do not receive an app session.
+- [x] Existing active devices may renew; revoked and blocked keys are rejected without changing their state.
+- [x] A previously revoked Auth session cannot be reactivated by the registration RPC.
+- [x] Session API and Android registration flow report pending approval without persisting an app session.
+- [x] NEWEIX integration endpoint propagates the pending state instead of returning an empty session identifier.
+- [ ] First-device bootstrap authorization and secure provisioning.
+- [ ] Trusted-device approval challenge/signature verification and atomic activation.
+- [ ] Device inventory and remote revocation APIs/UI.
+- [ ] Break-glass recovery implementation.
+- [ ] Database regression tests, CI verification, and physical-device validation.
+
+This is an intentionally incomplete hardening stage. Until the approval and bootstrap ceremonies are implemented, newly enrolled devices remain pending and cannot access privileged Supreme APIs. Do not deploy this migration as a complete enrollment solution.
+
 ## Database/API implementation sequence
 
 1. Add a migration for `pending_approval`, enrollment requests, approval challenges, recovery requests, and consumed recovery credentials. Keep all tables in the private `supreme` schema with RLS enabled and service-role-only access.
