@@ -588,6 +588,79 @@ async function approveEnrollment(
   return response({ approved: true, enrollment_request_id: enrollmentRequestId, device_id: body.device_id, request_id: requestId }, 200, requestId);
 }
 
+
+async function deviceInventory(auth: AuthContext, requestId: string): Promise<Response> {
+  const approver = await trustedApprover(auth, false);
+  if (!approver) return response({ error: { code: "TRUSTED_DEVICE_REQUIRED", request_id: requestId } }, 403, requestId);
+  const rows = await db!.unsafe(
+    "select d.id::text as device_id, d.status, d.security_level, d.attested_at, d.last_seen_at, d.created_at, (d.id = $2::uuid) as is_current_device, (select count(*)::integer from supreme.app_sessions s where s.device_id = d.id and s.user_id = d.user_id and s.status = 'active' and s.expires_at > now()) as active_sessions from supreme.devices d where d.user_id = $1::uuid order by case d.status when 'active' then 0 when 'pending_approval' then 1 when 'revoked' then 2 else 3 end, d.created_at desc limit 50",
+    [auth.userId, approver.deviceId],
+  );
+  return response({ devices: rows, request_id: requestId }, 200, requestId);
+}
+
+async function deviceRevocationChallenge(auth: AuthContext, requestId: string, targetDeviceId: string): Promise<Response> {
+  const approver = await trustedApprover(auth, true);
+  if (!approver) return response({ error: { code: "TRUSTED_DEVICE_REQUIRED", request_id: requestId } }, 403, requestId);
+  if (!isUuid(targetDeviceId) || targetDeviceId === approver.deviceId) return response({ error: { code: "INVALID_REVOCATION_TARGET", request_id: requestId } }, 400, requestId);
+  const target = await db!.unsafe(
+    "select id::text from supreme.devices where id = $1::uuid and user_id = $2::uuid and status = 'active' limit 1",
+    [targetDeviceId, auth.userId],
+  );
+  if (target.length !== 1) return response({ error: { code: "DEVICE_NOT_ACTIVE", request_id: requestId } }, 409, requestId);
+  const nonce = crypto.getRandomValues(new Uint8Array(32));
+  const digest = await sha256Hex(nonce);
+  const challenges = await db!.unsafe(
+    "with lock_row as materialized (select pg_advisory_xact_lock(hashtextextended($1 || ':' || $2, 0))), recent as materialized (select count(*)::integer as n from supreme.device_management_challenges c cross join lock_row where c.user_id = $1::uuid and c.approving_device_id = $2::uuid and c.created_at > now() - interval '10 minutes') insert into supreme.device_management_challenges (user_id, action, target_device_id, approving_device_id, approving_auth_session_id, nonce_sha256, expires_at) select $1::uuid, 'revoke_device', $3::uuid, $2::uuid, $5::uuid, decode($4, 'hex'), now() + interval '90 seconds' from recent where recent.n < 10 returning id::text, expires_at",
+    [auth.userId, approver.deviceId, targetDeviceId, digest, auth.authSessionId],
+  );
+  if (challenges.length !== 1) return response({ error: { code: "DEVICE_ACTION_RATE_LIMITED", request_id: requestId } }, 429, requestId);
+  return response({ challenge_id: challenges[0].id, nonce: base64Url(nonce), device_id: targetDeviceId, expires_at: challenges[0].expires_at, request_id: requestId }, 200, requestId);
+}
+
+async function revokeRemoteDevice(auth: AuthContext, request: Request, requestId: string, targetDeviceId: string): Promise<Response> {
+  const approver = await trustedApprover(auth, true);
+  if (!approver) return response({ error: { code: "TRUSTED_DEVICE_REQUIRED", request_id: requestId } }, 403, requestId);
+  if (!isUuid(targetDeviceId) || targetDeviceId === approver.deviceId) return response({ error: { code: "INVALID_REVOCATION_TARGET", request_id: requestId } }, 400, requestId);
+  let body: Record<string, unknown>;
+  try { body = await boundedJson(request, 8 * 1024); }
+  catch { return response({ error: { code: "INVALID_REQUEST", request_id: requestId } }, 400, requestId); }
+  const allowed = new Set(["challenge_id", "nonce", "signature"]);
+  if (Object.keys(body).length !== 3 || Object.keys(body).some((key) => !allowed.has(key)) ||
+      !isUuid(body.challenge_id) || typeof body.nonce !== "string" || typeof body.signature !== "string" ||
+      !/^[A-Za-z0-9_-]{43}$/.test(body.nonce) || !/^[A-Za-z0-9+/]+={0,2}$/.test(body.signature) ||
+      body.signature.length < 80 || body.signature.length > 160) {
+    return response({ error: { code: "INVALID_DEVICE_REVOCATION_PAYLOAD", request_id: requestId } }, 400, requestId);
+  }
+  let valid = false;
+  try {
+    const signature = Uint8Array.from(atob(body.signature), (character) => character.charCodeAt(0));
+    const payload = new TextEncoder().encode([
+      "NEWEIX-SUPREME-DEVICE-REVOKE-V1", body.challenge_id, body.nonce, targetDeviceId,
+    ].join("\n"));
+    const key = await crypto.subtle.importKey("spki", toArrayBuffer(approver.spki), { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+    valid = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key,
+      toArrayBuffer(derEcdsaToP1363(signature)), toArrayBuffer(payload));
+  } catch { valid = false; }
+  if (!valid) {
+    await db!.unsafe(
+      "insert into supreme.audit_events (actor_user_id, action, outcome, policy_version, details) values ($1::uuid, 'device.revoke_remote', 'denied', 'v1', jsonb_build_object('target_device_id', $2::uuid, 'approving_device_id', $3::uuid, 'reason', 'invalid_device_signature', 'request_id', $4))",
+      [auth.userId, targetDeviceId, approver.deviceId, requestId],
+    );
+    return response({ error: { code: "DEVICE_SIGNATURE_INVALID", request_id: requestId } }, 403, requestId);
+  }
+  const nonceHash = await sha256Hex(decodeBase64Url(body.nonce));
+  const result = await postServiceRpc("revoke_supreme_device", {
+    p_user_id: auth.userId, p_target_device_id: targetDeviceId, p_challenge_id: body.challenge_id,
+    p_approving_device_id: approver.deviceId, p_approving_auth_session_id: auth.authSessionId,
+    p_nonce_sha256: "\\x" + nonceHash,
+  });
+  if (!result || typeof result !== "object" || (result as Record<string, unknown>).revoked !== true) {
+    return response({ error: { code: "DEVICE_REVOCATION_FAILED", request_id: requestId } }, 409, requestId);
+  }
+  return response({ revoked: true, device_id: targetDeviceId, revoked_sessions: (result as Record<string, unknown>).revoked_sessions ?? 0, request_id: requestId }, 200, requestId);
+}
+
 async function readOrRevokeSession(
   auth: AuthContext,
   request: Request,
@@ -688,9 +761,12 @@ async function handle(request: Request): Promise<Response> {
   const isEnrollmentList = request.method === "GET" && suffix === "enrollments";
   const isEnrollmentChallenge = request.method === "POST" && parts.length >= 4 && parts[parts.length - 1] === "challenge" && parts[parts.length - 3] === "enrollments";
   const isEnrollmentApproval = request.method === "POST" && parts.length >= 4 && parts[parts.length - 3] === "enrollments" && parts[parts.length - 1] === "approve";
+  const isDeviceInventory = request.method === "GET" && suffix === "devices";
+  const isDeviceRevocationChallenge = request.method === "POST" && parts.length >= 5 && parts[parts.length - 4] === "devices" && parts[parts.length - 2] === "revoke" && suffix === "challenge";
+  const isDeviceRevocation = request.method === "POST" && parts.length >= 4 && parts[parts.length - 3] === "devices" && suffix === "revoke";
   const operation = request.method === "POST" ? suffix : "";
   if (request.method !== "GET" && request.method !== "DELETE" &&
-      !(request.method === "POST" && (operation === "challenge" || operation === "issue" || isEnrollmentChallenge || isEnrollmentApproval))) {
+      !(request.method === "POST" && (operation === "challenge" || operation === "issue" || isEnrollmentChallenge || isEnrollmentApproval || isDeviceRevocationChallenge || isDeviceRevocation))) {
     return response({ error: { code: "METHOD_NOT_ALLOWED", request_id: requestId } }, 405, requestId);
   }
   if (!db || !SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) {
@@ -711,6 +787,9 @@ async function handle(request: Request): Promise<Response> {
     if (isEnrollmentList) return await enrollmentRequests(auth, requestId);
     if (isEnrollmentChallenge) return await enrollmentApprovalChallenge(auth, requestId, parts[parts.length - 2]);
     if (isEnrollmentApproval) return await approveEnrollment(auth, request, requestId, parts[parts.length - 2]);
+    if (isDeviceInventory) return await deviceInventory(auth, requestId);
+    if (isDeviceRevocationChallenge) return await deviceRevocationChallenge(auth, requestId, parts[parts.length - 3]);
+    if (isDeviceRevocation) return await revokeRemoteDevice(auth, request, requestId, parts[parts.length - 2]);
     return await readOrRevokeSession(auth, request, requestId);
   } catch (error) {
     console.error("Supreme session API failed", { requestId, error: String(error) });
