@@ -100,3 +100,8 @@ Existing Supreme implementation work from `neweix24/neweix` has been copied into
 - Extraction notes: [docs/migration-from-neweix.md](docs/migration-from-neweix.md)
 
 **Important:** imported commerce API/UI modules still depend on the original Neweix application and are preserved as a source snapshot. SQL files under `migrations-reference` are not safe to apply directly to a fresh database. The original `neweix` repository remains unchanged.
+
+
+## Governance and authority model
+
+The authority boundaries between Supreme, Neweix, and the daily Admin are specified in [Governance and authority model](docs/governance-authority-model.md). The machine-readable [authority policy catalog](config/authority-policy.v1.json) is design-only and does not grant runtime permissions. Admin delegation and service-side enforcement must be implemented and tested before these proposed capabilities are enabled.
