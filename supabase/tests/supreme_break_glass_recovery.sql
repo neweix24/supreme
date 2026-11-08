@@ -6,6 +6,8 @@ DECLARE
   v_user uuid := gen_random_uuid();
   v_auth_session uuid := gen_random_uuid();
   v_old_device uuid := gen_random_uuid();
+  v_pending_device uuid := gen_random_uuid();
+  v_pending_enrollment uuid := gen_random_uuid();
   v_request uuid;
   v_auth_id uuid;
   v_token text := repeat('a7', 32);
@@ -28,11 +30,14 @@ BEGIN
   INSERT INTO supreme.devices(
     id, user_id, device_key_sha256, app_package, signing_certificate_sha256,
     security_level, attested_at, status, device_key_biometric_auth_required
-  ) VALUES (
-    v_old_device, v_user, repeat('b', 64), 'com.neweix.supreme',
-    repeat('c', 64), 'strongbox', now() - interval '2 days',
-    'revoked', true
-  );
+  ) VALUES
+    (v_old_device, v_user, repeat('b', 64), 'com.neweix.supreme',
+     repeat('c', 64), 'strongbox', now() - interval '2 days', 'revoked', true),
+    (v_pending_device, v_user, repeat('c', 64), 'com.neweix.supreme',
+     repeat('d', 64), 'strongbox', now(), 'pending_approval', true);
+
+  INSERT INTO supreme.device_enrollment_requests(id, user_id, device_id)
+  VALUES (v_pending_enrollment, v_user, v_pending_device);
 
   v_hash := encode(digest(v_token, 'sha256'), 'hex');
   INSERT INTO supreme.recovery_authorizations(user_id, token_sha256, expires_at)
@@ -126,6 +131,15 @@ BEGIN
     WHERE id = v_old_device AND status = 'revoked'
   ) THEN
     RAISE EXCEPTION 'Previously revoked device was reactivated';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM supreme.devices
+    WHERE id = v_pending_device AND status = 'revoked'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM supreme.device_enrollment_requests
+    WHERE id = v_pending_enrollment AND status = 'rejected'
+  ) THEN
+    RAISE EXCEPTION 'Recovery did not invalidate pending device enrollment';
   END IF;
 
   -- A completed request and consumed offline material cannot be replayed.
