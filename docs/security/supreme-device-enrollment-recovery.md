@@ -90,7 +90,9 @@ If offline recovery material is lost, recovery requires a separately documented,
 - [x] NEWEIX integration endpoint propagates the pending state instead of returning an empty session identifier.
 - [ ] First-device bootstrap authorization and secure provisioning.
 - [x] Trusted-device approval challenge/signature verification and atomic activation API.
-- [x] Android biometric approval flow and pending-enrollment list.
+- [x] Android biometric-per-operation approval flow and pending-enrollment list.
+- [x] Recheck the approver's active app session atomically when consuming an approval challenge.
+- [x] Audit rejected enrollment signatures.
 - [ ] Device inventory and remote revocation APIs/UI.
 - [ ] Break-glass recovery implementation.
 - [ ] Database regression tests and CI verification for enrollment approval.
