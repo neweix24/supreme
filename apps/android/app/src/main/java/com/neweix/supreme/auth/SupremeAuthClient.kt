@@ -54,17 +54,9 @@ internal object SupremeAuthClient {
     }
 
     fun verifiedTotpFactors(accessToken: String): List<TotpFactor> {
-        val response = request("GET", "/auth/v1/factors", accessToken)
-        val candidates = JSONArray()
-        val totp = response.optJSONArray("totp")
-        if (totp != null) {
-            for (i in 0 until totp.length()) candidates.put(totp.getJSONObject(i))
-        } else {
-            val all = response.optJSONArray("all")
-            if (all != null) {
-                for (i in 0 until all.length()) candidates.put(all.getJSONObject(i))
-            }
-        }
+        val response = request("GET", "/functions/v1/supreme-session-api/factors", accessToken)
+        // The Supreme session API returns only this account’s verified factors.
+        val candidates = response.optJSONArray("factors") ?: JSONArray()
 
         val factors = ArrayList<TotpFactor>()
         for (i in 0 until candidates.length()) {
