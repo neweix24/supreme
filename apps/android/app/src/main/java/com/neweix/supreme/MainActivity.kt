@@ -863,8 +863,9 @@ class MainActivity : FragmentActivity() {
                                     }
                                     val services = SupremeAuthClient.listServices(activeAccessToken)
                                     val requests = SupremeAuthClient.listPendingRequests(activeAccessToken)
+                                    val enrollments = SupremeAuthClient.listPendingEnrollments(activeAccessToken)
                                     runOnUiThread {
-                                        renderDashboard(services, requests)
+                                        renderDashboard(services, requests, enrollments)
                                         setBusy(false, if (decision == "approve") {
                                             "Biometric approval recorded. Provider execution has not been triggered."
                                         } else {
@@ -904,10 +905,11 @@ class MainActivity : FragmentActivity() {
                 sessionStore.saveRefreshToken(session.refreshToken)
                 val services = SupremeAuthClient.listServices(session.accessToken)
                 val requests = SupremeAuthClient.listPendingRequests(session.accessToken)
+                val enrollments = SupremeAuthClient.listPendingEnrollments(session.accessToken)
                 runOnUiThread {
                     currentAccessToken = session.accessToken
                     resumeSessionCheck = false
-                    renderDashboard(services, requests)
+                    renderDashboard(services, requests, enrollments)
                     setBusy(false, "Supreme session restored.")
                 }
             } catch (error: Exception) {
