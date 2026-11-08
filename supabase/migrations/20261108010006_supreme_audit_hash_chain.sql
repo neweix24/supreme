@@ -2,6 +2,7 @@
 -- The advisory lock serializes inserts so concurrent writers cannot fork the chain.
 create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
+alter extension pgcrypto set schema extensions;
 
 alter table supreme.audit_events
   add column if not exists chain_position bigint,
@@ -27,7 +28,7 @@ begin
   loop
     v_position := v_position + 1;
     v_payload := to_jsonb(v_event) - 'chain_position' - 'previous_hash' - 'event_hash';
-    v_event_hash := digest(
+    v_event_hash := extensions.digest(
       convert_to(coalesce(encode(v_previous_hash, 'hex'), '') || E'\\n' || v_payload::text, 'UTF8'),
       'sha256'
     );
@@ -78,7 +79,7 @@ begin
 
   new.previous_hash := v_previous_hash;
   v_payload := to_jsonb(new) - 'chain_position' - 'previous_hash' - 'event_hash';
-  new.event_hash := digest(
+  new.event_hash := extensions.digest(
     convert_to(coalesce(encode(v_previous_hash, 'hex'), '') || E'\\n' || v_payload::text, 'UTF8'),
     'sha256'
   );
@@ -114,7 +115,7 @@ begin
     end if;
 
     v_payload := to_jsonb(v_event) - 'chain_position' - 'previous_hash' - 'event_hash';
-    v_expected_hash := digest(
+    v_expected_hash := extensions.digest(
       convert_to(coalesce(encode(v_previous_hash, 'hex'), '') || E'\\n' || v_payload::text, 'UTF8'),
       'sha256'
     );
