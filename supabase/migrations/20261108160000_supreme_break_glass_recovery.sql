@@ -75,6 +75,8 @@ as $$
 declare
   v_authorization supreme.recovery_authorizations%rowtype;
   v_request supreme.recovery_requests%rowtype;
+  v_revoked_auth_sessions integer := 0;
+  v_revoked_app_sessions integer := 0;
 begin
   if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role' then
     raise exception 'service role required' using errcode = '42501';
@@ -130,6 +132,15 @@ begin
     if v_request.authorization_id <> v_authorization.id then
       raise exception 'another recovery request is already pending' using errcode = 'P0001';
     end if;
+    -- Retain only the fresh session performing recovery; old lost-device sessions
+    -- must not remain refreshable during the cooling-off window.
+    delete from auth.sessions
+    where user_id = p_user_id and id <> p_auth_session_id;
+    get diagnostics v_revoked_auth_sessions = row_count;
+    update supreme.app_sessions
+    set status = 'revoked', revoked_at = now(), updated_at = now()
+    where user_id = p_user_id and status = 'active';
+    get diagnostics v_revoked_app_sessions = row_count;
     return jsonb_build_object(
       'request_id', v_request.id, 'available_at', v_request.available_at,
       'expires_at', v_request.expires_at, 'already_pending', true
@@ -149,9 +160,25 @@ begin
     'available_at', v_request.available_at
   ));
 
+  -- Immediately lock out all previously issued device sessions and refreshable
+  -- Auth sessions. The newly authenticated recovery session is retained so the
+  -- owner can retry notification delivery, then sign in again after the delay.
+  delete from auth.sessions
+  where user_id = p_user_id and id <> p_auth_session_id;
+  get diagnostics v_revoked_auth_sessions = row_count;
+  update supreme.app_sessions
+  set status = 'revoked', revoked_at = now(), updated_at = now()
+  where user_id = p_user_id and status = 'active';
+  get diagnostics v_revoked_app_sessions = row_count;
+
   insert into supreme.audit_events(actor_user_id, action, outcome, policy_version, details)
   values (p_user_id, 'recovery.request', 'pending', 'v1',
-    jsonb_build_object('request_id', v_request.id, 'available_at', v_request.available_at));
+    jsonb_build_object(
+      'request_id', v_request.id,
+      'available_at', v_request.available_at,
+      'revoked_auth_sessions', v_revoked_auth_sessions,
+      'revoked_app_sessions', v_revoked_app_sessions
+    ));
 
   return jsonb_build_object(
     'request_id', v_request.id, 'available_at', v_request.available_at,
@@ -183,6 +210,7 @@ declare
   v_session_id uuid;
   v_revoked_devices integer := 0;
   v_revoked_sessions integer := 0;
+  v_revoked_auth_sessions integer := 0;
 begin
   if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role' then
     raise exception 'service role required' using errcode = '42501';
@@ -250,6 +278,13 @@ begin
     raise exception 'recovery requires a fresh device key' using errcode = '42501';
   end if;
 
+  -- Keep only the fresh Auth session completing recovery. This revokes all
+  -- other Supabase refresh-token sessions, including the session used to start
+  -- the cooling-off request.
+  delete from auth.sessions
+  where user_id = p_user_id and id <> p_auth_session_id;
+  get diagnostics v_revoked_auth_sessions = row_count;
+
   update supreme.app_sessions
   set status = 'revoked', revoked_at = now(), updated_at = now()
   where user_id = p_user_id and status = 'active';
@@ -308,7 +343,8 @@ begin
   insert into supreme.audit_events(actor_user_id, action, outcome, policy_version, details)
   values (p_user_id, 'recovery.complete', 'success', 'v1', jsonb_build_object(
     'request_id', p_request_id, 'device_id', v_device_id,
-    'revoked_devices', v_revoked_devices, 'revoked_sessions', v_revoked_sessions
+    'revoked_devices', v_revoked_devices, 'revoked_sessions', v_revoked_sessions,
+    'revoked_auth_sessions', v_revoked_auth_sessions
   ));
 
   return jsonb_build_object(
