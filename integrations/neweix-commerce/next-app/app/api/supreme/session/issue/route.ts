@@ -196,8 +196,18 @@ export async function POST(request: Request) {
       return fail("Supreme device session could not be created.", 503);
     }
 
+    if (registered.pending_approval === true) {
+      return NextResponse.json({
+        registered: true,
+        pending_approval: true,
+        device_id: registered.device_id,
+        security_level: verified.security_level,
+      }, { status: 202, headers: NO_STORE });
+    }
+
     return NextResponse.json({
       registered: true,
+      pending_approval: false,
       session_id: registered.session_id,
       device_id: registered.device_id,
       expires_at: registered.expires_at,
