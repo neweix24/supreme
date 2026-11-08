@@ -32,7 +32,6 @@ android {
         // Service-role keys and provider credentials must never be embedded here.
         buildConfigField("String", "SUPABASE_URL", "\"https://grhybvlhdnzlopwbaqun.supabase.co\"")
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"sb_publishable_878YOLa9axxFwNy_ly1MNA_XKJFUDbv\"")
-        buildConfigField("String", "SUPREME_TURNSTILE_SITE_KEY", "\"0x4AAAAAAFuD44weVKxUV7gX\"")
     }
 
     signingConfigs {
@@ -92,5 +91,4 @@ tasks.configureEach {
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.biometric:biometric:1.1.0")
-    implementation("androidx.webkit:webkit:1.12.1")
 }
