@@ -256,7 +256,7 @@ function validateHardwareKey(description: AndroidKeyDescription): "TRUSTED_ENVIR
       )) {
     throw new TypeError("Supreme biometric authorization must be hardware-enforced and must not allow no-auth keys.");
   }
-  requireSetMember(hardware, 504, 2n, "biometric authenticator type");
+  requireIntegerTag(hardware, 504, 2n, "biometric authenticator type");
   requireIntegerTag(hardware, 505, 0n, "per-operation biometric authentication timeout");
 
   validateHardwareRootOfTrust(description.softwareEnforced, hardware);
