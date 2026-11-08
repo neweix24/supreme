@@ -11,7 +11,7 @@ import javax.crypto.Mac
 import javax.crypto.SecretKey
 
 /**
- * Per-use, device-local biometric/credential gate for revealing the cached
+ * Per-use, device-local strong-biometric gate for revealing the cached
  * Supreme screen. The Android prompt authorizes a non-exportable Keystore HMAC
  * key; the callback must complete the MAC operation before the UI unlocks.
  *
