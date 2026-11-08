@@ -500,7 +500,7 @@ async function enrollmentApprovalChallenge(
   const nonce = crypto.getRandomValues(new Uint8Array(32));
   const digest = await sha256Hex(nonce);
   const challenges = await db!.unsafe(
-    "with lock_row as materialized (select pg_advisory_xact_lock(hashtextextended($1 || ':' || $2, 0))), recent as materialized (select count(*)::integer as n from supreme.device_enrollment_approval_challenges c cross join lock_row where c.user_id = $1::uuid and c.approving_device_id = $2::uuid and c.created_at > now() - interval '10 minutes') insert into supreme.device_enrollment_approval_challenges (enrollment_request_id, user_id, approving_device_id, nonce_sha256, expires_at) select $3::uuid, $1::uuid, $2::uuid, decode($4, 'hex'), now() + interval '90 seconds' from recent where recent.n < 10 returning id::text, expires_at",
+    "with lock_row as materialized (select pg_advisory_xact_lock(hashtextextended($1 || ':' || $2, 0))), recent as materialized (select count(*)::integer as n from supreme.device_enrollment_approval_challenges c cross join lock_row where c.user_id = $1::uuid and c.approving_device_id = $2::uuid and c.created_at > now() - interval '10 minutes') insert into supreme.device_enrollment_approval_challenges (enrollment_request_id, user_id, approving_device_id, approving_auth_session_id, nonce_sha256, expires_at) select $3::uuid, $1::uuid, $2::uuid, $5::uuid, decode($4, 'hex'), now() + interval '90 seconds' from recent where recent.n < 10 returning id::text, expires_at",
     [auth.userId, approver.deviceId, enrollmentRequestId, digest, auth.authSessionId],
   );
   if (challenges.length !== 1) return response({ error: { code: "APPROVAL_RATE_LIMITED", request_id: requestId } }, 429, requestId);
