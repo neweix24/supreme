@@ -73,10 +73,21 @@ jobs:
           for worker in 1 2; do
             (
               for sequence in $(seq 1 20); do
-                printf "insert into supreme.audit_events (request_id, actor_user_id, action, outcome, policy_version, details) values (gen_random_uuid(), null, 'test.concurrent.%s.%s', 'success', 'test', jsonb_build_object('worker', %s, 'sequence', %s));\\n" "$worker" "$sequence" "$worker" "$sequence"
+                printf "insert into supreme.audit_events (request_id, actor_user_id, action, outcome, policy_version, details) values (gen_random_uuid(), null, 'test.concurrent.%s.%s', 'success', 'test', jsonb_build_object('worker', %s, 'sequence', %s));\n" "$worker" "$sequence" "$worker" "$sequence"
               done | psql --set ON_ERROR_STOP=1
             ) &
             pids+=("$!")
           done
           for pid in "${pids[@]}"; do wait "$pid"; done
-          psql --set ON_ERROR_STOP=1 --command "do \\\$\\$ begin if (select count(*) from supreme.audit_events where action like 'test.concurrent.%') <> 40 then raise exception 'Expected 40 concurrent audit events'; end if; if supreme.verify_audit_event_hash_chain() is distinct from true then raise exception 'Audit hash chain invalid after concurrent inserts'; end if; end; \\\$\\$;"
+          psql --set ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF (SELECT count(*) FROM supreme.audit_events WHERE action LIKE 'test.concurrent.%') <> 40 THEN
+              RAISE EXCEPTION 'Expected 40 concurrent audit events';
+            END IF;
+            IF supreme.verify_audit_event_hash_chain() IS DISTINCT FROM true THEN
+              RAISE EXCEPTION 'Audit hash chain invalid after concurrent inserts';
+            END IF;
+          END;
+          $$;
+          SQL
