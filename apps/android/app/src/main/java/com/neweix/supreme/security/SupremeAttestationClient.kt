@@ -29,6 +29,7 @@ internal object SupremeAttestationClient {
         val securityLevel: String,
         val provisioningMethod: String,
         val proofOfPossessionVerified: Boolean,
+        val pendingApproval: Boolean,
     )
 
     data class PreparedVerification internal constructor(
@@ -117,6 +118,7 @@ internal object SupremeAttestationClient {
             },
             provisioningMethod = result.optString("provisioning_method", "unknown"),
             proofOfPossessionVerified = true,
+            pendingApproval = result.optBoolean("pending_approval", false),
         )
     }
 
