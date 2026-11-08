@@ -346,6 +346,7 @@ async function issueDeviceSession(
   }
   const value = registered as Record<string, unknown>;
   const deviceId = value.device_id;
+  const pendingApproval = value.pending_approval === true;
   const publicKeyBase64 = verified.device_public_key_spki_base64 as string;
   let publicKeyDer: Uint8Array;
   try {
@@ -365,15 +366,27 @@ async function issueDeviceSession(
   // Persist only the SPKI extracted from the certificate whose chain, Google
   // revocation state, Android KeyDescription and proof-of-possession passed.
   const storedKey = await db.unsafe(
-    "update supreme.devices set device_public_key_spki = decode($1, 'base64'), device_key_biometric_auth_required = true, updated_at = now() where id = $2::uuid and user_id = $3::uuid and device_key_sha256 = $4 and status = 'active' returning id::text",
+    "update supreme.devices set device_public_key_spki = decode($1, 'base64'), device_key_biometric_auth_required = true, updated_at = now() where id = $2::uuid and user_id = $3::uuid and device_key_sha256 = $4 and status in ('active', 'pending_approval') returning id::text",
     [publicKeyBase64, deviceId, auth.userId, verified.device_key_sha256],
   );
   if (storedKey.length !== 1) {
     return response({ error: { code: "DEVICE_PUBLIC_KEY_REGISTRATION_FAILED", request_id: requestId } }, 503, requestId);
   }
 
+  if (pendingApproval) {
+    return response({
+      registered: true,
+      pending_approval: true,
+      device_id: value.device_id,
+      security_level: verified.security_level,
+      provisioning_method: verified.provisioning_method ?? "unknown",
+      request_id: requestId,
+    }, 202, requestId);
+  }
+
   return response({
     registered: true,
+    pending_approval: false,
     session_id: value.session_id,
     device_id: value.device_id,
     expires_at: value.expires_at,
