@@ -204,3 +204,146 @@ grant execute on function public.register_supreme_attested_device_session(
 comment on function public.register_supreme_attested_device_session(
   uuid, uuid, text, text, text, timestamptz, timestamptz
 ) is 'Registers an already-active attested device session or creates a pending enrollment; revoked and blocked device keys are never reactivated.';
+
+
+-- One-time biometric approval challenges. Only the service role can access
+-- these rows; the registered approver public key is loaded server-side.
+create table if not exists supreme.device_enrollment_approval_challenges (
+  id uuid primary key default gen_random_uuid(),
+  enrollment_request_id uuid not null references supreme.device_enrollment_requests(id) on delete restrict,
+  user_id uuid not null references auth.users(id) on delete restrict,
+  approving_device_id uuid not null references supreme.devices(id) on delete restrict,
+  nonce_sha256 bytea not null check (octet_length(nonce_sha256) = 32),
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  consumed_at timestamptz,
+  check (expires_at > created_at),
+  check (consumed_at is null or consumed_at >= created_at)
+);
+
+create index if not exists supreme_enrollment_approval_rate_idx
+  on supreme.device_enrollment_approval_challenges(user_id, approving_device_id, created_at desc);
+
+alter table supreme.device_enrollment_approval_challenges enable row level security;
+revoke all on table supreme.device_enrollment_approval_challenges from public, anon, authenticated;
+grant select, insert, update, delete on table supreme.device_enrollment_approval_challenges to service_role;
+
+create or replace function public.approve_supreme_device_enrollment(
+  p_enrollment_request_id uuid,
+  p_challenge_id uuid,
+  p_user_id uuid,
+  p_approving_device_id uuid,
+  p_nonce_sha256 bytea
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_challenge supreme.device_enrollment_approval_challenges%rowtype;
+  v_request supreme.device_enrollment_requests%rowtype;
+begin
+  if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role' then
+    raise exception 'service role required' using errcode = '42501';
+  end if;
+  if p_enrollment_request_id is null or p_challenge_id is null or p_user_id is null
+     or p_approving_device_id is null or p_nonce_sha256 is null
+     or octet_length(p_nonce_sha256) <> 32 then
+    raise exception 'invalid approval parameters' using errcode = '22023';
+  end if;
+
+  select * into v_challenge
+  from supreme.device_enrollment_approval_challenges
+  where id = p_challenge_id
+    and enrollment_request_id = p_enrollment_request_id
+    and user_id = p_user_id
+    and approving_device_id = p_approving_device_id
+    and nonce_sha256 = p_nonce_sha256
+    and expires_at > now()
+    and consumed_at is null
+  for update;
+
+  if not found then
+    raise exception 'approval challenge invalid, expired, or consumed' using errcode = 'P0001';
+  end if;
+
+  select * into v_request
+  from supreme.device_enrollment_requests
+  where id = p_enrollment_request_id
+    and user_id = p_user_id
+    and status = 'pending'
+    and expires_at > now()
+  for update;
+
+  if not found then
+    raise exception 'enrollment request is no longer pending' using errcode = 'P0001';
+  end if;
+
+  if not exists (
+    select 1 from supreme.devices d
+    where d.id = p_approving_device_id
+      and d.user_id = p_user_id
+      and d.status = 'active'
+      and d.device_key_biometric_auth_required = true
+      and d.device_public_key_spki is not null
+  ) then
+    raise exception 'approving device is not trusted' using errcode = '42501';
+  end if;
+
+  if not exists (
+    select 1 from supreme.devices d
+    where d.id = v_request.device_id
+      and d.user_id = p_user_id
+      and d.status = 'pending_approval'
+      and d.id <> p_approving_device_id
+  ) then
+    raise exception 'target device is not pending approval' using errcode = 'P0001';
+  end if;
+
+  update supreme.device_enrollment_approval_challenges
+  set consumed_at = now()
+  where id = p_challenge_id and consumed_at is null and expires_at > now();
+  if not found then
+    raise exception 'approval challenge replayed' using errcode = 'P0001';
+  end if;
+
+  update supreme.device_enrollment_requests
+  set status = 'approved', decided_at = now(),
+      decided_by_device_id = p_approving_device_id, updated_at = now()
+  where id = p_enrollment_request_id and status = 'pending';
+  if not found then
+    raise exception 'enrollment request changed during approval' using errcode = 'P0001';
+  end if;
+
+  update supreme.devices
+  set status = 'active', updated_at = now()
+  where id = v_request.device_id and status = 'pending_approval';
+  if not found then
+    raise exception 'target device state changed during approval' using errcode = 'P0001';
+  end if;
+
+  insert into supreme.audit_events (
+    actor_user_id, action, outcome, policy_version, details
+  ) values (
+    p_user_id, 'device_enrollment.approve', 'success', 'v1',
+    jsonb_build_object(
+      'enrollment_request_id', p_enrollment_request_id,
+      'device_id', v_request.device_id,
+      'approving_device_id', p_approving_device_id,
+      'challenge_id', p_challenge_id
+    )
+  );
+
+  return jsonb_build_object(
+    'approved', true,
+    'enrollment_request_id', p_enrollment_request_id,
+    'device_id', v_request.device_id
+  );
+end;
+$$;
+
+revoke all on function public.approve_supreme_device_enrollment(uuid, uuid, uuid, uuid, bytea)
+  from public, anon, authenticated;
+grant execute on function public.approve_supreme_device_enrollment(uuid, uuid, uuid, uuid, bytea)
+  to service_role;
