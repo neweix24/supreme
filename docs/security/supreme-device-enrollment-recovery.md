@@ -132,8 +132,8 @@ Example operator provisioning (run locally; never paste the raw code into chat, 
 ```sh
 RECOVERY_CODE="$(openssl rand -hex 32)"
 RECOVERY_SHA256="$(printf '%s' "$RECOVERY_CODE" | sha256sum | cut -d' ' -f1)"
-printf 'Store this code offline now: %s\\n' "$RECOVERY_CODE"
-printf 'Insert only this digest in the intended Supreme Supabase project: %s\\n' "$RECOVERY_SHA256"
+printf 'Store this code offline now: %s\n' "$RECOVERY_CODE"
+printf 'Insert only this digest in the intended Supreme Supabase project: %s\n' "$RECOVERY_SHA256"
 unset RECOVERY_CODE
 ```
 
