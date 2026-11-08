@@ -431,6 +431,10 @@ class MainActivity : FragmentActivity() {
             return
         }
         if (isBusy) return
+        // Keep recovery/bootstrap material only in this in-memory operation.
+        bootstrapInput.text.clear()
+        recoveryMaterialInput.text.clear()
+        recoveryRequestIdInput.text.clear()
 
         setBusy(true, "Verifying multi-factor authentication…")
         background.execute {
@@ -1356,6 +1360,12 @@ class MainActivity : FragmentActivity() {
             ::codeInput.isInitialized && codeInput.visibility == View.VISIBLE
         ) {
             codeInput.visibility = View.GONE
+            bootstrapLabel.visibility = View.GONE
+            bootstrapInput.visibility = View.GONE
+            recoveryMaterialLabel.visibility = View.GONE
+            recoveryMaterialInput.visibility = View.GONE
+            recoveryRequestLabel.visibility = View.GONE
+            recoveryRequestIdInput.visibility = View.GONE
             passwordInput.visibility = View.VISIBLE
             emailInput.isEnabled = true
             if (::primaryButton.isInitialized) primaryButton.text = "SIGN IN"
