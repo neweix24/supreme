@@ -729,21 +729,21 @@ async function handle(request: Request): Promise<Response> {
       const nonce = crypto.getRandomValues(new Uint8Array(32));
       const nonceHash = await sha256Bytes(nonce);
       const reasonHash = await sha256Bytes(new TextEncoder().encode(reason ?? ""));
-      const challengeExpiresAt = new Date(Date.now() + 90_000).toISOString();
       const [challenge] = await db`
         insert into supreme.control_decision_challenges
           (control_request_id, user_id, device_id, decision, reason_sha256, nonce_sha256, expires_at)
         values
           (${id}::uuid, ${userId}::uuid, ${deviceId}::uuid, ${decision},
-           decode(${hex(reasonHash)}, 'hex'), decode(${hex(nonceHash)}, 'hex'), ${challengeExpiresAt})
-        returning id::text
+           decode(${hex(reasonHash)}, 'hex'), decode(${hex(nonceHash)}, 'hex'),
+           now() + interval '90 seconds')
+        returning id::text, expires_at
       `;
       await audit({ actor: userId, action: "control_requests.decision_challenge", outcome: "pending",
         requestId, details: { control_request_id: id, decision, challenge_id: challenge.id } });
       return json({
         challenge_id: challenge.id,
         nonce: base64Url(nonce),
-        expires_at: challengeExpiresAt,
+        expires_at: challenge.expires_at,
         request_id: requestId,
       }, 200, requestId, cors);
     }
