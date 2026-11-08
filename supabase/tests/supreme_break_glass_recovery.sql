@@ -61,13 +61,29 @@ BEGIN
     RAISE EXCEPTION 'Recovery completed before the cooling-off/notification gates';
   END IF;
 
-  -- A successful independent delivery is acknowledged by the service role.
-  PERFORM public.mark_supreme_recovery_notification_delivered(v_request, 'requested');
   UPDATE supreme.recovery_requests
   SET requested_at = now() - interval '25 hours',
       available_at = now() - interval '1 hour',
       expires_at = now() + interval '6 days'
   WHERE id = v_request;
+
+  -- Even after cooling-off, completion must be blocked until notification delivery.
+  v_early_rejected := false;
+  BEGIN
+    PERFORM public.complete_supreme_break_glass_recovery(
+      v_user, v_auth_session, v_request, v_hash,
+      repeat('d', 64), repeat('e', 64), 'strongbox',
+      now(), now() + interval '4 hours'
+    );
+  EXCEPTION WHEN SQLSTATE 'P0001' THEN
+    v_early_rejected := true;
+  END;
+  IF NOT v_early_rejected THEN
+    RAISE EXCEPTION 'Recovery completed without independent notification delivery';
+  END IF;
+
+  -- A successful independent delivery is acknowledged by the service role.
+  PERFORM public.mark_supreme_recovery_notification_delivered(v_request, 'requested');
 
   v_result := public.complete_supreme_break_glass_recovery(
     v_user, v_auth_session, v_request, v_hash,
