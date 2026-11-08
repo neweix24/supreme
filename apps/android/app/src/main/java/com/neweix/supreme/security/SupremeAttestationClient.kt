@@ -81,6 +81,8 @@ internal object SupremeAttestationClient {
         prepared: PreparedVerification,
         proofSignatureBase64: String,
         bootstrapAuthorization: String? = null,
+        recoveryRequestId: String? = null,
+        recoveryMaterial: String? = null,
     ): Verification {
         check(Looper.myLooper() != Looper.getMainLooper()) {
             "Supreme attestation must run off the Android UI thread."
@@ -102,6 +104,22 @@ internal object SupremeAttestationClient {
             .put("proof_signature", proofSignatureBase64)
         bootstrapAuthorization?.let {
             verifyPayload.put("bootstrap_authorization", it)
+        }
+        require((recoveryRequestId == null) == (recoveryMaterial == null)) {
+            "Supreme recovery request ID and offline recovery material must be provided together."
+        }
+        require(recoveryRequestId == null || UUID_V4.matches(recoveryRequestId)) {
+            "Supreme recovery request ID is invalid."
+        }
+        require(recoveryMaterial == null || Regex("^[a-f0-9]{64}$").matches(recoveryMaterial)) {
+            "Supreme offline recovery material must be 64 lowercase hexadecimal characters."
+        }
+        require(bootstrapAuthorization == null || recoveryRequestId == null) {
+            "First-device bootstrap and break-glass recovery cannot be combined."
+        }
+        recoveryRequestId?.let {
+            verifyPayload.put("recovery_request_id", it)
+            verifyPayload.put("recovery_material", recoveryMaterial)
         }
         val response = postJson(
             "/functions/v1/supreme-session-api/issue",
