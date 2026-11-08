@@ -89,12 +89,14 @@ If offline recovery material is lost, recovery requires a separately documented,
 - [x] Session API and Android registration flow report pending approval without persisting an app session.
 - [x] NEWEIX integration endpoint propagates the pending state instead of returning an empty session identifier.
 - [ ] First-device bootstrap authorization and secure provisioning.
-- [ ] Trusted-device approval challenge/signature verification and atomic activation.
+- [x] Trusted-device approval challenge/signature verification and atomic activation API.
+- [x] Android biometric approval flow and pending-enrollment list.
 - [ ] Device inventory and remote revocation APIs/UI.
 - [ ] Break-glass recovery implementation.
-- [ ] Database regression tests, CI verification, and physical-device validation.
+- [ ] Database regression tests and CI verification for enrollment approval.
+- [ ] Physical-device validation of biometric approval and target-device re-attestation.
 
-This is an intentionally incomplete hardening stage. Until the approval and bootstrap ceremonies are implemented, newly enrolled devices remain pending and cannot access privileged Supreme APIs. Do not deploy this migration as a complete enrollment solution.
+This is an intentionally incomplete hardening stage. Trusted-device approval is now implemented as an API ceremony, but first-device bootstrap, remote revocation, recovery, automated regression coverage, and physical-device verification remain outstanding. Do not deploy this migration as a complete enrollment solution.
 
 ## Database/API implementation sequence
 
