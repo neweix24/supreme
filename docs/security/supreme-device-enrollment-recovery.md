@@ -131,19 +131,23 @@ If offline recovery material is lost, recovery requires a separately documented,
 - [x] Android biometric-per-operation approval flow and pending-enrollment list.
 - [x] Recheck the approver's active app session atomically when consuming an approval challenge.
 - [x] Audit rejected enrollment signatures.
-- [ ] Device inventory and remote revocation APIs/UI.
+- [x] Trusted-device inventory API and Android dashboard listing with status, security level, last-seen time, and active-session count.
+- [x] Remote revocation requires fresh AAL2, a 90-second one-time challenge, and a hardware-backed biometric signature from a different active trusted device.
+- [x] Remote revocation atomically marks the target device revoked and invalidates every active app session on it; current device cannot be remotely revoked through this flow.
+- [x] Audit successful and invalid-signature remote revocation attempts.
+- [ ] Operator provisioning and migration application in the intended Supabase project.
 - [ ] Break-glass recovery implementation.
-- [ ] Database regression tests and CI verification for enrollment approval.
+- [x] PostgreSQL regression tests and CI for bootstrap, pending-device isolation, revoked/blocked key non-reactivation, and remote device revocation/replay/self-revocation.
 - [ ] Physical-device validation of biometric approval and target-device re-attestation.
 
-This is an intentionally incomplete hardening stage. Trusted-device approval and the first-device bootstrap ceremony are implemented in code, but operator provisioning, migration application, remote revocation, break-glass recovery, automated regression coverage, and physical-device verification remain outstanding. Do not deploy this migration as a complete enrollment/recovery solution.
+This is an intentionally incomplete hardening stage. Trusted-device approval, first-device bootstrap, device inventory, and biometric remote revocation are implemented in code. Operator provisioning, migration/Edge Function deployment, break-glass recovery, full approval/recovery regression coverage, and physical-device verification remain outstanding. Do not deploy these migrations as a complete enrollment/recovery solution.
 
 ## Database/API implementation sequence
 
 1. Add a migration for `pending_approval`, enrollment requests, approval challenges, recovery requests, and consumed recovery credentials. Keep all tables in the private `supreme` schema with RLS enabled and service-role-only access.
 2. Replace the current registration RPC so attestation creates pending enrollment unless the one-time first-device bootstrap rule is satisfied. Never change `revoked` or `blocked` back to `active` on conflict.
 3. Add server-issued approval challenge and approval endpoints. Verify ECDSA signatures with the registered public key of the currently active approving device; do not accept a public key supplied by the client.
-4. Add device inventory, approve, revoke, and recovery APIs with fresh AAL2 checks, CSRF/origin protections where applicable, strict request schemas, rate limits, and audit events.
+4. Add device inventory, approve, revoke, and recovery APIs with fresh AAL2 checks, strict request schemas, rate limits, biometric signatures for destructive actions, and audit events. The device inventory and remote-revocation API are implemented in the follow-up migration and session function.
 5. Update the Supabase custom access-token hook and every privileged API session check to reject pending, revoked, blocked, expired, or biometric-unverified devices.
 6. Add PostgreSQL regression tests for concurrent enrollment, replay, expired challenge, wrong approver, key substitution, revoked-key re-enrollment, recovery replay, cooling-off, and session invalidation.
 7. Add Android UI for pending status, trusted-device approval, device inventory, revocation, and recovery. Never show approval controls on an untrusted pending device.
