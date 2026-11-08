@@ -133,12 +133,14 @@ export async function POST(request: Request) {
     const claims = jwtClaims(token);
     const userId = String((authUser as Record<string, unknown>).id);
     const authSessionId = claims.session_id;
-    const authTime = claims.auth_time;
+    // Supabase may retain the original password-auth auth_time in an MFA-upgraded
+    // AAL2 token. iat is the issuance time of this signed, server-validated token.
+    const issuedAt = claims.iat;
     const nowSeconds = Math.floor(Date.now() / 1000);
     if (claims.sub !== userId || !UUID.test(String(authSessionId)) ||
-        claims.aal !== "aal2" || typeof authTime !== "number" ||
-        !Number.isSafeInteger(authTime) || nowSeconds - authTime > 300 ||
-        authTime > nowSeconds + 30) {
+        claims.aal !== "aal2" || typeof issuedAt !== "number" ||
+        !Number.isSafeInteger(issuedAt) || nowSeconds - issuedAt > 300 ||
+        issuedAt > nowSeconds + 30) {
       return fail("Fresh verified Supreme MFA (AAL2) is required.", 403);
     }
 
