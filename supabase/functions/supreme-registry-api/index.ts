@@ -198,18 +198,20 @@ async function verifyControlDecisionSignature(input: {
 
 function isFreshAal2(claims: JsonObject): boolean {
   if (claims.aal !== "aal2") return false;
-  const authTime = typeof claims.auth_time === "number" ? claims.auth_time : 0;
-  if (!authTime || Date.now() / 1000 - authTime > 300 || authTime > Date.now() / 1000 + 30) {
-    return false;
-  }
-  // Supreme currently permits password + authenticator TOTP only.
-  // Do not treat phone/email OTP as an equivalent second factor.
+  // Enforce freshness using the actual TOTP verification timestamp. JWT
+  // auth_time can remain tied to the original password event, while iat can
+  // change on token refresh and must not extend the MFA freshness window.
+  const now = Date.now() / 1000;
   const amr = Array.isArray(claims.amr) ? claims.amr : [];
-  return amr.some((entry) =>
-    entry !== null &&
-    typeof entry === "object" &&
-    (entry as JsonObject).method === "totp"
-  );
+  return amr.some((entry) => {
+    if (entry === null || typeof entry !== "object") return false;
+    const method = entry as JsonObject;
+    const verifiedAt = typeof method.timestamp === "number" ? method.timestamp : 0;
+    return method.method === "totp" &&
+      verifiedAt > 0 &&
+      now - verifiedAt <= 300 &&
+      verifiedAt <= now + 30;
+  });
 }
 
 async function readJson(request: Request, maxBytes = 64 * 1024): Promise<JsonObject> {
