@@ -95,7 +95,7 @@ begin
   if not exists (
     select 1 from auth.sessions s
     where s.id = p_auth_session_id and s.user_id = p_user_id
-      and s.not_after > now()
+      and (s.not_after is null or s.not_after > now())
   ) then
     raise exception 'Auth session is not active' using errcode = '42501';
   end if;
@@ -229,7 +229,7 @@ begin
   if not exists (
     select 1 from auth.sessions s
     where s.id = p_auth_session_id and s.user_id = p_user_id
-      and s.not_after > now()
+      and (s.not_after is null or s.not_after > now())
   ) then
     raise exception 'current Auth session is not active' using errcode = '42501';
   end if;
