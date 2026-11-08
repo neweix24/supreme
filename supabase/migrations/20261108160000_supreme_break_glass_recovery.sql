@@ -191,10 +191,12 @@ begin
      or p_token_sha256 is null or p_token_sha256 !~ '^[a-f0-9]{64}$'
      or p_device_key_sha256 is null or p_device_key_sha256 !~ '^[a-f0-9]{64}$'
      or p_signing_certificate_sha256 is null or p_signing_certificate_sha256 !~ '^[a-f0-9]{64}$'
+     or p_security_level is null
      or p_security_level not in ('trusted_environment', 'strongbox')
      or p_attested_at is null or p_attested_at > now()
      or p_attested_at < now() - interval '2 minutes'
-     or p_expires_at <= now() or p_expires_at > now() + interval '4 hours' then
+     or p_expires_at is null or p_expires_at <= now()
+     or p_expires_at > now() + interval '4 hours' then
     raise exception 'invalid recovery completion parameters' using errcode = '22023';
   end if;
 
