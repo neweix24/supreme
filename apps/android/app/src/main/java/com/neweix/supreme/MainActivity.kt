@@ -69,6 +69,7 @@ class MainActivity : FragmentActivity() {
     private var biometricPrompt: BiometricPrompt? = null
     private var signingBiometricPrompt: BiometricPrompt? = null
     private var authInProgress = false
+    private var pendingUnlockChallenge: ByteArray? = null
     private var isUnlocked = false
     private var isBusy = false
     private var resumeSessionCheck = false
@@ -1217,13 +1218,21 @@ class MainActivity : FragmentActivity() {
             ContextCompat.getMainExecutor(this),
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    val authorizedMac = result.cryptoObject?.mac
+                    val authorizedCipher = result.cryptoObject?.cipher
+                    val challenge = pendingUnlockChallenge
+                    pendingUnlockChallenge = null
                     val proof = try {
-                        authorizedMac?.doFinal()
+                        if (authorizedCipher != null && challenge != null) {
+                            authorizedCipher.doFinal(challenge)
+                        } else {
+                            null
+                        }
                     } catch (_: Exception) {
                         null
+                    } finally {
+                        challenge?.fill(0)
                     }
-                    if (proof == null || proof.size != 32) {
+                    if (proof == null || proof.size != 48) {
                         proof?.fill(0)
                         authInProgress = false
                         isUnlocked = false
@@ -1242,6 +1251,8 @@ class MainActivity : FragmentActivity() {
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     authInProgress = false
+                    pendingUnlockChallenge?.fill(0)
+                    pendingUnlockChallenge = null
                     isUnlocked = false
                     lockOverlay.visibility = View.VISIBLE
                     lockStatusText.text = "Android biometric error $errorCode: $errString. Supreme remains locked."
@@ -1335,14 +1346,16 @@ class MainActivity : FragmentActivity() {
         authInProgress = true
         lockOverlay.visibility = View.VISIBLE
         lockStatusText.text = "Preparing hardware-backed biometric unlock…"
-        val mac = try {
-            SupremeLocalUnlock.prepareMac()
+        val operation = try {
+            SupremeLocalUnlock.prepareCipher()
         } catch (error: Exception) {
             authInProgress = false
             lockOverlay.visibility = View.VISIBLE
             lockStatusText.text = "Secure Keystore setup failed: ${error.javaClass.simpleName}."
             return
         }
+        pendingUnlockChallenge?.fill(0)
+        pendingUnlockChallenge = operation.challenge
         val subtitle = "Use a strong biometric to unlock this device"
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle("Unlock Supreme")
@@ -1351,9 +1364,11 @@ class MainActivity : FragmentActivity() {
             .setAllowedAuthenticators(SupremeLocalUnlock.allowedAuthenticators())
             .build()
         try {
-            prompt.authenticate(info, BiometricPrompt.CryptoObject(mac))
+            prompt.authenticate(info, BiometricPrompt.CryptoObject(operation.cipher))
         } catch (error: Exception) {
             authInProgress = false
+            pendingUnlockChallenge?.fill(0)
+            pendingUnlockChallenge = null
             lockOverlay.visibility = View.VISIBLE
             lockStatusText.text = "Android prompt could not start: ${error.javaClass.simpleName}."
         }
