@@ -46,6 +46,7 @@ function metadata(): { roots: GoogleAttestationRoots; status: GoogleAttestationS
 function verificationResult(): SupremeAttestationVerificationResult {
   return {
     deviceKeySha256: "a".repeat(64),
+    devicePublicKeySpkiBase64: btoa("test-attested-public-key"),
     chain: {
       trustAnchorMatched: true,
       provisioningMethod: "FACTORY_PROVISIONED",
@@ -145,6 +146,7 @@ Deno.test("valid request verifies cryptography before atomically consuming the c
   assertEquals(body.verified, true, "verification result");
   assertEquals(body.security_level, "trusted_environment", "hardware security level");
   assertEquals(body.provisioning_method, "FACTORY_PROVISIONED", "provisioning method");
+  assertEquals(body.device_public_key_spki_base64, btoa("test-attested-public-key"), "verified SPKI output");
   assertEquals(calls.join(","), "challenge-available,metadata,verify,consume", "security gate order");
 });
 
