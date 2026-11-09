@@ -699,7 +699,7 @@ class MainActivity : FragmentActivity() {
                     )
                 }
 
-                val signer = SupremeKeyAttestation.prepareControlDecisionSignature(
+                val preparedSigner = SupremeKeyAttestation.prepareControlDecisionSignature(
                     challengeId = decisionChallenge.id,
                     nonceBase64Url = decisionChallenge.nonce,
                     requestId = request.id,
@@ -708,11 +708,12 @@ class MainActivity : FragmentActivity() {
                 )
                 runOnUiThread {
                     authenticateForSigning(
-                        signer,
+                        preparedSigner.signature,
                         onSigned = { authorizedSigner ->
-                            val signature = Base64.getEncoder().encodeToString(authorizedSigner.sign())
                             background.execute {
                                 try {
+                                    authorizedSigner.update(preparedSigner.payload)
+                                    val signature = Base64.getEncoder().encodeToString(authorizedSigner.sign())
                                     try {
                                         SupremeAuthClient.decideControlRequest(
                                             accessToken = activeAccessToken,
