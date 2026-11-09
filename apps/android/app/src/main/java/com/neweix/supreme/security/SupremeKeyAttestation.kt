@@ -25,6 +25,12 @@ internal object SupremeKeyAttestation {
     data class Material(
         val certificateChainBase64: List<String>,
         val proofSigner: Signature,
+        val proofPayload: ByteArray,
+    )
+
+    data class PreparedControlSignature(
+        val signature: Signature,
+        val payload: ByteArray,
     )
 
     /**
@@ -94,14 +100,14 @@ internal object SupremeKeyAttestation {
             val privateKey = keyStore.getKey(KEY_ALIAS, null) as? java.security.PrivateKey
                 ?: error("Android Keystore did not return the attestation private key.")
             val signer = Signature.getInstance("SHA256withECDSA")
-            signer.initSign(privateKey)
-            signer.update(proofPayload)
-
+            // Initialize the auth-per-use operation before prompting, but do not
+            // feed data into the Signature until BiometricPrompt authorizes it.
             return Material(
                 certificateChainBase64 = chain.map { certificate ->
                     Base64.getEncoder().encodeToString(certificate.encoded)
                 },
-                proofSigner = signer,
+                proofSigner = signer.apply { initSign(privateKey) },
+                proofPayload = proofPayload,
             )
         } catch (error: Exception) {
             keyStore.deleteEntry(KEY_ALIAS)
@@ -126,7 +132,7 @@ internal object SupremeKeyAttestation {
         requestId: String,
         decision: String,
         reason: String?,
-    ): Signature {
+    ): PreparedControlSignature {
         require(Regex("^[0-9a-fA-F-]{36}$").matches(challengeId))
         require(Regex("^[A-Za-z0-9_-]{43}$").matches(nonceBase64Url))
         require(Regex("^[0-9a-fA-F-]{36}$").matches(requestId))
@@ -146,10 +152,10 @@ internal object SupremeKeyAttestation {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         val privateKey = keyStore.getKey(KEY_ALIAS, null) as? java.security.PrivateKey
             ?: throw IllegalStateException("The registered Supreme device signing key is unavailable. Re-register this device.")
-        return Signature.getInstance("SHA256withECDSA").apply {
+        val signature = Signature.getInstance("SHA256withECDSA").apply {
             initSign(privateKey)
-            update(payload)
         }
+        return PreparedControlSignature(signature, payload)
     }
 
     /** Removes the local attestation key when a device registration is reset. */
