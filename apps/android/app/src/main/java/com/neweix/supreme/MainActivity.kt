@@ -379,17 +379,21 @@ class MainActivity : FragmentActivity() {
                 // Fresh TOTP verification is enforced by supreme-session-api using
                 // the verified TOTP AMR timestamp. auth_time is the original
                 // authentication time and can be older than a successful MFA step.
-                
-                // The attestation key is generated with per-operation biometric
-                // authorization. Its proof is completed only inside CryptoObject.
+
+                // Prepare an auth-per-use key operation. The Signature is passed
+                // to BiometricPrompt before any payload is supplied or signed.
                 val prepared = SupremeAttestationClient.prepareVerification(session.accessToken)
                 runOnUiThread {
                     authenticateForSigning(
                         prepared.material.proofSigner,
                         onSigned = { signature ->
-                            val proof = Base64.getEncoder().encodeToString(signature.sign())
+                            // Complete the cryptographic operation off the UI thread.
+                            // Any Keystore/provider exception is handled as a sign-in
+                            // failure rather than escaping the BiometricPrompt callback.
                             background.execute {
                                 try {
+                                    signature.update(prepared.material.proofPayload)
+                                    val proof = Base64.getEncoder().encodeToString(signature.sign())
                                     val device = SupremeAttestationClient.completeVerification(
                                         session.accessToken,
                                         prepared,
@@ -430,9 +434,9 @@ class MainActivity : FragmentActivity() {
                                 }
                             }
                         },
-                        onFailure = { message -> handleMfaDeviceRegistrationFailure(
-                            IllegalStateException(message),
-                        ) },
+                        onFailure = { message ->
+                            handleMfaDeviceRegistrationFailure(IllegalStateException(message))
+                        },
                     )
                 }
             } catch (error: Exception) {
