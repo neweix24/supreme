@@ -25,6 +25,7 @@ internal object SupremeAuthClient {
         val userId: String,
         val assuranceLevel: String,
         val authTime: Long,
+        val issuedAt: Long,
         val sessionId: String,
     )
 
@@ -122,6 +123,38 @@ internal object SupremeAuthClient {
         return parseSession(response, stage = "Session refresh")
     }
 
+    data class BreakGlassRecoveryRequest(
+        val requestId: String,
+        val availableAt: String,
+        val expiresAt: String,
+        val notificationDelivered: Boolean,
+    )
+
+    fun beginBreakGlassRecovery(accessToken: String, recoveryMaterial: String): BreakGlassRecoveryRequest {
+        require(accessToken.isNotBlank()) { "A fresh Supreme AAL2 session is required." }
+        require(Regex("^[a-f0-9]{64}$").matches(recoveryMaterial)) {
+            "Offline recovery material must be 64 lowercase hexadecimal characters."
+        }
+        val response = request(
+            "POST",
+            "/functions/v1/supreme-session-api/recovery/request",
+            accessToken,
+            JSONObject().put("recovery_material", recoveryMaterial),
+        )
+        val requestId = response.optString("request_id")
+        val availableAt = response.optString("available_at")
+        val expiresAt = response.optString("expires_at")
+        require(UUID_PATTERN.matches(requestId) && availableAt.isNotBlank() && expiresAt.isNotBlank()) {
+            "Supreme recovery request response was incomplete."
+        }
+        return BreakGlassRecoveryRequest(
+            requestId = requestId,
+            availableAt = availableAt,
+            expiresAt = expiresAt,
+            notificationDelivered = response.optBoolean("notification_delivered", false),
+        )
+    }
+
     fun signOut(accessToken: String) {
         request("POST", "/auth/v1/logout?scope=global", accessToken, JSONObject())
     }
@@ -215,6 +248,166 @@ internal object SupremeAuthClient {
             )
         }
         return result
+    }
+
+    data class TrustedDevice(
+        val id: String,
+        val status: String,
+        val securityLevel: String,
+        val attestedAt: String,
+        val lastSeenAt: String?,
+        val createdAt: String,
+        val activeSessions: Int,
+        val isCurrentDevice: Boolean,
+    )
+
+    data class DeviceRevocationChallenge(
+        val id: String,
+        val nonce: String,
+        val deviceId: String,
+    )
+
+    fun listTrustedDevices(accessToken: String): List<TrustedDevice> {
+        val response = request("GET", "/functions/v1/supreme-session-api/devices", accessToken = accessToken)
+        val rows = response.optJSONArray("devices") ?: JSONArray()
+        val result = ArrayList<TrustedDevice>()
+        for (i in 0 until rows.length()) {
+            val row = rows.optJSONObject(i) ?: continue
+            val id = row.optString("device_id")
+            if (!UUID_PATTERN.matches(id)) continue
+            result.add(TrustedDevice(
+                id = id,
+                status = row.optString("status", "unknown"),
+                securityLevel = row.optString("security_level", "unknown"),
+                attestedAt = row.optString("attested_at", ""),
+                lastSeenAt = row.optString("last_seen_at").takeIf { it.isNotBlank() && it != "null" },
+                createdAt = row.optString("created_at", ""),
+                activeSessions = row.optInt("active_sessions", 0).coerceAtLeast(0),
+                isCurrentDevice = row.optBoolean("is_current_device", false),
+            ))
+        }
+        return result
+    }
+
+    fun issueDeviceRevocationChallenge(accessToken: String, deviceId: String): DeviceRevocationChallenge {
+        require(UUID_PATTERN.matches(deviceId)) { "Invalid Supreme device ID." }
+        val response = request(
+            "POST",
+            "/functions/v1/supreme-session-api/devices/" + deviceId + "/revoke/challenge",
+            accessToken,
+            JSONObject(),
+        )
+        val id = response.optString("challenge_id")
+        val nonce = response.optString("nonce")
+        val returnedDeviceId = response.optString("device_id")
+        require(UUID_PATTERN.matches(id) && UUID_PATTERN.matches(returnedDeviceId) &&
+            returnedDeviceId == deviceId && Regex("^[A-Za-z0-9_-]{43}$").matches(nonce)
+        ) { "Supreme device revocation challenge was invalid." }
+        return DeviceRevocationChallenge(id, nonce, returnedDeviceId)
+    }
+
+    fun revokeTrustedDevice(
+        accessToken: String,
+        challenge: DeviceRevocationChallenge,
+        signature: String,
+    ) {
+        require(UUID_PATTERN.matches(challenge.id) && UUID_PATTERN.matches(challenge.deviceId))
+        require(signature.length in 80..160 && Regex("^[A-Za-z0-9+/]+={0,2}$").matches(signature))
+        request(
+            "POST",
+            "/functions/v1/supreme-session-api/devices/" + challenge.deviceId + "/revoke",
+            accessToken,
+            JSONObject()
+                .put("challenge_id", challenge.id)
+                .put("nonce", challenge.nonce)
+                .put("signature", signature),
+        )
+    }
+
+    data class EnrollmentRequest(
+        val id: String,
+        val deviceId: String,
+        val securityLevel: String,
+        val requestedAt: String,
+        val expiresAt: String,
+    )
+
+    data class EnrollmentApprovalChallenge(
+        val id: String,
+        val nonce: String,
+        val enrollmentRequestId: String,
+        val deviceId: String,
+    )
+
+    fun listPendingEnrollments(accessToken: String): List<EnrollmentRequest> {
+        val response = request(
+            "GET",
+            "/functions/v1/supreme-session-api/enrollments",
+            accessToken = accessToken,
+        )
+        val rows = response.optJSONArray("enrollment_requests") ?: JSONArray()
+        val result = ArrayList<EnrollmentRequest>()
+        for (i in 0 until rows.length()) {
+            val row = rows.optJSONObject(i) ?: continue
+            val id = row.optString("request_id")
+            val deviceId = row.optString("device_id")
+            if (!UUID_PATTERN.matches(id) || !UUID_PATTERN.matches(deviceId)) continue
+            result.add(
+                EnrollmentRequest(
+                    id = id,
+                    deviceId = deviceId,
+                    securityLevel = row.optString("security_level", "unknown"),
+                    requestedAt = row.optString("requested_at", ""),
+                    expiresAt = row.optString("expires_at", ""),
+                ),
+            )
+        }
+        return result
+    }
+
+    fun issueEnrollmentApprovalChallenge(
+        accessToken: String,
+        enrollmentRequestId: String,
+    ): EnrollmentApprovalChallenge {
+        require(UUID_PATTERN.matches(enrollmentRequestId)) { "Invalid enrollment request." }
+        val response = request(
+            "POST",
+            "/functions/v1/supreme-session-api/enrollments/$enrollmentRequestId/challenge",
+            accessToken,
+            JSONObject(),
+        )
+        val id = response.optString("challenge_id")
+        val nonce = response.optString("nonce")
+        val requestId = response.optString("enrollment_request_id")
+        val deviceId = response.optString("device_id")
+        require(UUID_PATTERN.matches(id) && UUID_PATTERN.matches(requestId) &&
+            UUID_PATTERN.matches(deviceId) && Regex("^[A-Za-z0-9_-]{43}$").matches(nonce)
+        ) { "Supreme enrollment approval challenge was invalid." }
+        return EnrollmentApprovalChallenge(id, nonce, requestId, deviceId)
+    }
+
+    fun approveEnrollment(
+        accessToken: String,
+        challenge: EnrollmentApprovalChallenge,
+        signature: String,
+    ) {
+        require(UUID_PATTERN.matches(challenge.id) &&
+            UUID_PATTERN.matches(challenge.enrollmentRequestId) &&
+            UUID_PATTERN.matches(challenge.deviceId)
+        ) { "Invalid enrollment approval challenge." }
+        require(signature.length in 80..160 &&
+            Regex("^[A-Za-z0-9+/]+={0,2}$").matches(signature)
+        ) { "Supreme enrollment approval signature is invalid." }
+        request(
+            "POST",
+            "/functions/v1/supreme-session-api/enrollments/${challenge.enrollmentRequestId}/approve",
+            accessToken,
+            JSONObject()
+                .put("challenge_id", challenge.id)
+                .put("nonce", challenge.nonce)
+                .put("device_id", challenge.deviceId)
+                .put("signature", signature),
+        )
     }
 
     data class DecisionChallenge(
@@ -329,13 +522,15 @@ internal object SupremeAuthClient {
         val claims = decodeClaims(access!!)
         val assurance = claims.optString("aal", "aal1")
         val authTime = claims.optLong("auth_time", 0L)
+        val issuedAt = claims.optLong("iat", 0L)
         val sessionId = claims.optString("session_id")
         require(assurance == "aal1" || assurance == "aal2") {
             "Supreme authentication assurance could not be verified."
         }
+        require(issuedAt > 0L) { "Supreme token issue time is missing." }
         require(UUID_PATTERN.matches(sessionId)) { "Supreme session identifier is invalid." }
 
-        return AuthSession(access, refresh!!, userId, assurance, authTime, sessionId)
+        return AuthSession(access, refresh!!, userId, assurance, authTime, issuedAt, sessionId)
     }
 
     private fun decodeClaims(accessToken: String): JSONObject {

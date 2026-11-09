@@ -56,8 +56,15 @@ class MainActivity : FragmentActivity() {
     private lateinit var passwordVisibilityButton: Button
     private var isPasswordVisible = false
     private lateinit var codeInput: EditText
+    private lateinit var bootstrapLabel: TextView
+    private lateinit var bootstrapInput: EditText
+    private lateinit var recoveryMaterialInput: EditText
+    private lateinit var recoveryMaterialLabel: TextView
+    private lateinit var recoveryRequestIdInput: EditText
+    private lateinit var recoveryRequestLabel: TextView
     private lateinit var primaryButton: Button
     private lateinit var lockOverlay: LinearLayout
+    private lateinit var lockStatusText: TextView
     private var biometricPrompt: BiometricPrompt? = null
     private var signingBiometricPrompt: BiometricPrompt? = null
     private var authInProgress = false
@@ -76,7 +83,6 @@ class MainActivity : FragmentActivity() {
         sessionStore = SupremeSessionStore(this)
         buildInterface()
         configureAppLock()
-        authenticateToUnlock()
     }
 
     private fun configureEdgeToEdge(targetWindow: Window) {
@@ -222,6 +228,47 @@ class MainActivity : FragmentActivity() {
         }
         codeInput.visibility = View.GONE
         card.addView(codeInput, fieldParams())
+        bootstrapLabel = label("First-device bootstrap authorization (first device only)").apply {
+            visibility = View.GONE
+        }
+        card.addView(bootstrapLabel, fieldParams())
+        bootstrapInput = input(
+            "64-character offline bootstrap code",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS,
+        ).apply {
+            visibility = View.GONE
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            setAutofillHints()
+            filters = arrayOf(android.text.InputFilter.LengthFilter(64))
+            isSingleLine = true
+        }
+        card.addView(bootstrapInput, fieldParams())
+        recoveryMaterialLabel = label("Break-glass offline recovery material").apply { visibility = View.GONE }
+        card.addView(recoveryMaterialLabel, fieldParams())
+        recoveryMaterialInput = input(
+            "64-character offline recovery code",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS,
+        ).apply {
+            visibility = View.GONE
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+            setAutofillHints()
+            filters = arrayOf(android.text.InputFilter.LengthFilter(64))
+        }
+        card.addView(recoveryMaterialInput, fieldParams())
+        recoveryRequestLabel = label("Existing recovery request ID (complete after 24 hours)").apply {
+            visibility = View.GONE
+        }
+        card.addView(recoveryRequestLabel, fieldParams())
+        recoveryRequestIdInput = input(
+            "Recovery request UUID (leave blank to start recovery)",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS,
+        ).apply {
+            visibility = View.GONE
+            filters = arrayOf(android.text.InputFilter.LengthFilter(36))
+        }
+        card.addView(recoveryRequestIdInput, fieldParams())
         codeInput.imeOptions = EditorInfo.IME_ACTION_DONE
         codeInput.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) {
@@ -294,11 +341,33 @@ class MainActivity : FragmentActivity() {
                 textSize = 14f
                 gravity = Gravity.CENTER
                 setTextColor(Color.LTGRAY)
-                setPadding(0, dp(12), 0, dp(20))
+                setPadding(0, dp(12), 0, dp(12))
             }, matchWrap())
+            lockStatusText = TextView(this@MainActivity).apply {
+                text = "Checking secure biometric availability…"
+                textSize = 12f
+                gravity = Gravity.CENTER
+                setTextColor(Color.rgb(229, 197, 120))
+                setPadding(0, dp(8), 0, dp(16))
+                contentDescription = "Supreme biometric unlock status"
+            }
+            addView(lockStatusText, matchWrap())
             addView(Button(this@MainActivity).apply {
                 text = "UNLOCK SUPREME"
-                setOnClickListener { authenticateToUnlock() }
+                isAllCaps = true
+                setOnClickListener {
+                    // A previous prompt can be left pending if Android backgrounds or
+                    // dismisses its system UI without delivering a callback. A visible
+                    // retry tap means no prompt is currently covering this Activity.
+                    biometricPrompt?.cancelAuthentication()
+                    authInProgress = false
+                    lockStatusText.text = "Retrying Android biometric verification…"
+                    window.decorView.post {
+                        if (!isFinishing && !isDestroyed && !isUnlocked) {
+                            authenticateToUnlock()
+                        }
+                    }
+                }
             }, matchWrap())
         }
         root.addView(lockOverlay, FrameLayout.LayoutParams(
@@ -341,6 +410,12 @@ class MainActivity : FragmentActivity() {
                     emailInput.isEnabled = false
                     passwordInput.visibility = View.GONE
                     codeInput.visibility = View.VISIBLE
+                    bootstrapLabel.visibility = View.VISIBLE
+                    bootstrapInput.visibility = View.VISIBLE
+                    recoveryMaterialLabel.visibility = View.VISIBLE
+                    recoveryMaterialInput.visibility = View.VISIBLE
+                    recoveryRequestLabel.visibility = View.VISIBLE
+                    recoveryRequestIdInput.visibility = View.VISIBLE
                     primaryButton.text = "VERIFY MFA"
                     statusText.text = "Enter the current code from your authenticator app."
                     setBusy(false, null)
@@ -360,7 +435,34 @@ class MainActivity : FragmentActivity() {
         val factorId = pendingFactorId ?: return
         val challengeId = pendingChallengeId ?: return
         val code = codeInput.text.toString().trim()
+        val bootstrapAuthorization = bootstrapInput.text.toString().trim().takeIf { it.isNotEmpty() }
+        val recoveryMaterial = recoveryMaterialInput.text.toString().trim().takeIf { it.isNotEmpty() }
+        val recoveryRequestId = recoveryRequestIdInput.text.toString().trim().takeIf { it.isNotEmpty() }
+        if (recoveryMaterial != null && !Regex("^[a-f0-9]{64}$").matches(recoveryMaterial)) {
+            setBusy(false, "Offline recovery material must be exactly 64 lowercase hexadecimal characters.")
+            return
+        }
+        if (recoveryRequestId != null && !Regex("^[0-9a-fA-F-]{36}$").matches(recoveryRequestId)) {
+            setBusy(false, "Recovery request ID is invalid.")
+            return
+        }
+        if (recoveryRequestId != null && recoveryMaterial == null) {
+            setBusy(false, "Enter the same offline recovery material to complete recovery.")
+            return
+        }
+        if (recoveryMaterial != null && bootstrapAuthorization != null) {
+            setBusy(false, "Use either first-device bootstrap or break-glass recovery, not both.")
+            return
+        }
+        if (bootstrapAuthorization != null && !Regex("^[a-f0-9]{64}$").matches(bootstrapAuthorization)) {
+            setBusy(false, "Bootstrap authorization must be exactly 64 lowercase hexadecimal characters.")
+            return
+        }
         if (isBusy) return
+        // Keep recovery/bootstrap material only in this in-memory operation.
+        bootstrapInput.text.clear()
+        recoveryMaterialInput.text.clear()
+        recoveryRequestIdInput.text.clear()
 
         setBusy(true, "Verifying multi-factor authentication…")
         background.execute {
@@ -376,9 +478,37 @@ class MainActivity : FragmentActivity() {
                 if (session.userId != initial.userId || session.assuranceLevel != "aal2") {
                     throw IllegalStateException("Supreme AAL2 verification was not confirmed.")
                 }
+                // Supabase may preserve auth_time from the password-authenticated
+                // session when issuing the AAL2 token. The token's iat reflects
+                // the newly minted MFA-upgraded token and is the correct freshness
+                // signal for this immediate post-MFA device-registration step.
                 val now = System.currentTimeMillis() / 1000L
-                if (now - session.authTime > 300L || session.authTime > now + 30L) {
-                    throw IllegalStateException("Supreme MFA verification is no longer fresh. Sign in again.")
+                if (now - session.issuedAt > 300L || session.issuedAt > now + 30L) {
+                    throw IllegalStateException("Supreme MFA token is no longer fresh. Sign in again.")
+                }
+
+                if (recoveryMaterial != null && recoveryRequestId == null) {
+                    val recovery = SupremeAuthClient.beginBreakGlassRecovery(
+                        session.accessToken, recoveryMaterial,
+                    )
+                    runOnUiThread {
+                        pendingPasswordSession = null
+                        pendingFactorId = null
+                        pendingChallengeId = null
+                        codeInput.text.clear()
+                        bootstrapInput.text.clear()
+                        recoveryMaterialInput.text.clear()
+                        recoveryRequestIdInput.text.clear()
+                        setBusy(
+                            false,
+                            if (recovery.notificationDelivered) {
+                                "Recovery request ${recovery.requestId} created. Independent notification sent. Wait until ${recovery.availableAt}; then sign in again and enter this request ID with the same offline code."
+                            } else {
+                                "Recovery request ${recovery.requestId} is recorded, but independent notification is not configured or delivery failed. Do not continue. Re-enter the same code to retry notification."
+                            },
+                        )
+                    }
+                    return@execute
                 }
 
                 // The attestation key is generated with per-operation biometric
@@ -395,6 +525,9 @@ class MainActivity : FragmentActivity() {
                                         session.accessToken,
                                         prepared,
                                         proof,
+                                        bootstrapAuthorization,
+                                        recoveryRequestId,
+                                        recoveryMaterial,
                                     )
                                     if (!device.proofOfPossessionVerified ||
                                         (device.securityLevel != "TRUSTED_ENVIRONMENT" &&
@@ -403,6 +536,28 @@ class MainActivity : FragmentActivity() {
                                         throw IllegalStateException(
                                             "This device did not pass Supreme hardware security verification.",
                                         )
+                                    }
+                                    if (device.pendingApproval) {
+                                        runOnUiThread {
+                                            pendingPasswordSession = null
+                                            pendingFactorId = null
+                                            pendingChallengeId = null
+                                            codeInput.text.clear()
+                                            bootstrapInput.text.clear()
+                                            recoveryMaterialInput.text.clear()
+                                            recoveryRequestIdInput.text.clear()
+                                            bootstrapLabel.visibility = View.GONE
+                                            bootstrapInput.visibility = View.GONE
+                                            recoveryMaterialLabel.visibility = View.GONE
+                                            recoveryMaterialInput.visibility = View.GONE
+                                            recoveryRequestLabel.visibility = View.GONE
+                                            recoveryRequestIdInput.visibility = View.GONE
+                                            setBusy(
+                                                false,
+                                                "This device is awaiting approval from an existing trusted Supreme device. No app session was created.",
+                                            )
+                                        }
+                                        return@execute
                                     }
                                     val refreshed = SupremeAuthClient.refresh(session.refreshToken)
                                     if (refreshed.userId != session.userId ||
@@ -417,13 +572,24 @@ class MainActivity : FragmentActivity() {
                                     sessionStore.saveRefreshToken(refreshed.refreshToken)
                                     val services = SupremeAuthClient.listServices(refreshed.accessToken)
                                     val requests = SupremeAuthClient.listPendingRequests(refreshed.accessToken)
+                                    val enrollments = SupremeAuthClient.listPendingEnrollments(refreshed.accessToken)
+                                    val devices = SupremeAuthClient.listTrustedDevices(refreshed.accessToken)
                                     runOnUiThread {
                                         currentAccessToken = refreshed.accessToken
                                         pendingPasswordSession = null
                                         pendingFactorId = null
                                         pendingChallengeId = null
                                         codeInput.text.clear()
-                                        renderDashboard(services, requests)
+                                        bootstrapInput.text.clear()
+                                        recoveryMaterialInput.text.clear()
+                                        recoveryRequestIdInput.text.clear()
+                                        bootstrapLabel.visibility = View.GONE
+                                        bootstrapInput.visibility = View.GONE
+                                        recoveryMaterialLabel.visibility = View.GONE
+                                        recoveryMaterialInput.visibility = View.GONE
+                                        recoveryRequestLabel.visibility = View.GONE
+                                        recoveryRequestIdInput.visibility = View.GONE
+                                        renderDashboard(services, requests, enrollments, devices)
                                         setBusy(false, "Biometric device attestation and Supreme session checks passed.")
                                     }
                                 } catch (error: Exception) {
@@ -452,6 +618,8 @@ class MainActivity : FragmentActivity() {
             passwordInput.visibility = View.VISIBLE
             emailInput.isEnabled = true
             codeInput.visibility = View.GONE
+            bootstrapLabel.visibility = View.GONE
+            bootstrapInput.visibility = View.GONE
             primaryButton.text = "SIGN IN"
             val message = if (
                 error is SupremeAuthException &&
@@ -468,6 +636,8 @@ class MainActivity : FragmentActivity() {
     private fun renderDashboard(
         services: List<SupremeAuthClient.Service>,
         requests: List<SupremeAuthClient.ControlRequest>,
+        enrollments: List<SupremeAuthClient.EnrollmentRequest> = emptyList(),
+        devices: List<SupremeAuthClient.TrustedDevice> = emptyList(),
     ) {
         screen.removeAllViews()
         screen.addView(ImageView(this).apply {
@@ -568,6 +738,91 @@ class MainActivity : FragmentActivity() {
         }
 
         screen.addView(TextView(this).apply {
+            text = "NEW DEVICE ENROLLMENTS · ${enrollments.size}"
+            textSize = 12f
+            setTextColor(Color.rgb(229, 197, 120))
+            setPadding(0, dp(18), 0, dp(8))
+        }, matchWrap())
+        if (enrollments.isEmpty()) {
+            screen.addView(TextView(this).apply {
+                text = "No new devices are waiting for approval."
+                textSize = 12f
+                setTextColor(Color.LTGRAY)
+                setPadding(0, 0, 0, dp(10))
+            }, matchWrap())
+        }
+        for (enrollment in enrollments) {
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                setBackgroundColor(Color.rgb(24, 24, 24))
+            }
+            item.addView(TextView(this@MainActivity).apply {
+                text = "DEVICE ${enrollment.deviceId.take(8).uppercase()}"
+                textSize = 14f
+                setTextColor(Color.WHITE)
+            }, matchWrap())
+            item.addView(TextView(this@MainActivity).apply {
+                text = "Security: ${enrollment.securityLevel.uppercase()}\nRequested: ${enrollment.requestedAt}\nExpires: ${enrollment.expiresAt}"
+                textSize = 10f
+                setTextColor(Color.rgb(160, 160, 160))
+                setPadding(0, dp(6), 0, dp(8))
+            }, matchWrap())
+            val approveDevice = Button(this@MainActivity).apply {
+                text = "APPROVE NEW DEVICE"
+                filterTouchesWhenObscured = true
+                setOnClickListener { confirmEnrollmentApproval(enrollment) }
+            }
+            item.addView(approveDevice, matchWrap())
+            val params = matchWrap()
+            params.topMargin = dp(10)
+            screen.addView(item, params)
+        }
+
+        screen.addView(TextView(this).apply {
+            text = "TRUSTED DEVICE INVENTORY · ${devices.size}"
+            textSize = 12f
+            setTextColor(Color.rgb(229, 197, 120))
+            setPadding(0, dp(18), 0, dp(8))
+        }, matchWrap())
+        if (devices.isEmpty()) {
+            screen.addView(TextView(this).apply {
+                text = "No registered devices were returned."
+                textSize = 12f
+                setTextColor(Color.LTGRAY)
+                setPadding(0, 0, 0, dp(10))
+            }, matchWrap())
+        }
+        for (device in devices) {
+            val item = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(14), dp(16), dp(14))
+                setBackgroundColor(Color.rgb(24, 24, 24))
+            }
+            item.addView(TextView(this@MainActivity).apply {
+                text = if (device.isCurrentDevice) "THIS DEVICE · ${device.id.take(8).uppercase()}" else "DEVICE · ${device.id.take(8).uppercase()}"
+                textSize = 14f
+                setTextColor(if (device.isCurrentDevice) Color.rgb(229, 197, 120) else Color.WHITE)
+            }, matchWrap())
+            item.addView(TextView(this@MainActivity).apply {
+                text = "Status: ${device.status.uppercase()} · Security: ${device.securityLevel.uppercase()}\nActive sessions: ${device.activeSessions}\nLast seen: ${device.lastSeenAt ?: "Not recorded"}\nAttested: ${device.attestedAt}"
+                textSize = 10f
+                setTextColor(Color.rgb(160, 160, 160))
+                setPadding(0, dp(6), 0, dp(8))
+            }, matchWrap())
+            if (!device.isCurrentDevice && device.status == "active") {
+                item.addView(Button(this@MainActivity).apply {
+                    text = "REVOKE DEVICE ACCESS"
+                    filterTouchesWhenObscured = true
+                    setOnClickListener { confirmDeviceRevocation(device) }
+                }, matchWrap())
+            }
+            val params = matchWrap()
+            params.topMargin = dp(10)
+            screen.addView(item, params)
+        }
+
+        screen.addView(TextView(this).apply {
             text = "REGISTERED SERVICES"
             textSize = 12f
             setTextColor(Color.LTGRAY)
@@ -611,6 +866,118 @@ class MainActivity : FragmentActivity() {
         val params = matchWrap()
         params.topMargin = dp(24)
         screen.addView(signOut, params)
+    }
+
+    private fun confirmEnrollmentApproval(enrollment: SupremeAuthClient.EnrollmentRequest) {
+        AlertDialog.Builder(this)
+            .setTitle("Trust this new device?")
+            .setMessage(
+                "Approve device ${enrollment.deviceId}? It will be allowed to establish its own Supreme session after approval. Only approve a device you physically control.",
+            )
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Continue") { _, _ -> submitEnrollmentApproval(enrollment) }
+            .show()
+    }
+
+    private fun submitEnrollmentApproval(enrollment: SupremeAuthClient.EnrollmentRequest) {
+        val accessToken = currentAccessToken
+        if (accessToken.isNullOrBlank()) {
+            statusText.text = "Supreme session is unavailable. Sign in again."
+            return
+        }
+        if (isBusy) return
+        setBusy(true, "Preparing trusted-device approval…")
+        background.execute {
+            try {
+                val challenge = SupremeAuthClient.issueEnrollmentApprovalChallenge(
+                    accessToken, enrollment.id,
+                )
+                val signer = SupremeKeyAttestation.prepareEnrollmentApprovalSignature(
+                    challenge.id,
+                    challenge.nonce,
+                    challenge.enrollmentRequestId,
+                    challenge.deviceId,
+                )
+                runOnUiThread {
+                    authenticateForSigning(
+                        signer,
+                        onSigned = { signature ->
+                            background.execute {
+                                try {
+                                    val encoded = Base64.getEncoder().encodeToString(signature.sign())
+                                    SupremeAuthClient.approveEnrollment(
+                                        accessToken, challenge, encoded,
+                                    )
+                                    val services = SupremeAuthClient.listServices(accessToken)
+                                    val requests = SupremeAuthClient.listPendingRequests(accessToken)
+                                    val enrollments = SupremeAuthClient.listPendingEnrollments(accessToken)
+                                    val devices = SupremeAuthClient.listTrustedDevices(accessToken)
+                                    runOnUiThread {
+                                        renderDashboard(services, requests, enrollments, devices)
+                                        setBusy(false, "New device approved. The target device must refresh its session before access is granted.")
+                                    }
+                                } catch (error: Exception) {
+                                    runOnUiThread { setBusy(false, safeMessage(error)) }
+                                }
+                            }
+                        },
+                        onFailure = { message -> setBusy(false, message) },
+                    )
+                }
+            } catch (error: Exception) {
+                runOnUiThread { setBusy(false, safeMessage(error)) }
+            }
+        }
+    }
+
+    private fun confirmDeviceRevocation(device: SupremeAuthClient.TrustedDevice) {
+        if (device.isCurrentDevice || device.status != "active") return
+        AlertDialog.Builder(this)
+            .setTitle("Revoke device access?")
+            .setMessage("This permanently revokes device ${device.id} and every active Supreme app session on it. The device cannot be reactivated; it must be enrolled again through the approved process.")
+            .setNegativeButton("CANCEL", null)
+            .setPositiveButton("REVOKE") { _, _ -> beginDeviceRevocation(device) }
+            .show()
+    }
+
+    private fun beginDeviceRevocation(device: SupremeAuthClient.TrustedDevice) {
+        val accessToken = currentAccessToken
+        if (accessToken.isNullOrBlank() || isBusy || device.isCurrentDevice) return
+        setBusy(true, "Preparing secure device revocation…")
+        background.execute {
+            try {
+                val challenge = SupremeAuthClient.issueDeviceRevocationChallenge(accessToken, device.id)
+                val signer = SupremeKeyAttestation.prepareDeviceRevocationSignature(
+                    challenge.id, challenge.nonce, challenge.deviceId,
+                )
+                runOnUiThread {
+                    authenticateForSigning(
+                        signer,
+                        onSigned = { signature ->
+                            background.execute {
+                                try {
+                                    val encoded = Base64.getEncoder().encodeToString(signature.sign())
+                                    SupremeAuthClient.revokeTrustedDevice(accessToken, challenge, encoded)
+                                    val services = SupremeAuthClient.listServices(accessToken)
+                                    val requests = SupremeAuthClient.listPendingRequests(accessToken)
+                                    val enrollments = SupremeAuthClient.listPendingEnrollments(accessToken)
+                                    val devices = SupremeAuthClient.listTrustedDevices(accessToken)
+                                    runOnUiThread {
+                                        renderDashboard(services, requests, enrollments, devices)
+                                        setBusy(false, "Device access revoked. All sessions on that device are invalidated.")
+                                    }
+                                } catch (error: Exception) {
+                                    runOnUiThread { setBusy(false, safeMessage(error)) }
+                                }
+                            }
+                        },
+                        onFailure = { message -> setBusy(false, message) },
+                    )
+                }
+            } catch (error: Exception) {
+                runOnUiThread { setBusy(false, safeMessage(error)) }
+            }
+        }
     }
 
     private fun confirmRequestDecision(
@@ -746,8 +1113,10 @@ class MainActivity : FragmentActivity() {
                                     }
                                     val services = SupremeAuthClient.listServices(activeAccessToken)
                                     val requests = SupremeAuthClient.listPendingRequests(activeAccessToken)
+                                    val enrollments = SupremeAuthClient.listPendingEnrollments(activeAccessToken)
+                                    val devices = SupremeAuthClient.listTrustedDevices(activeAccessToken)
                                     runOnUiThread {
-                                        renderDashboard(services, requests)
+                                        renderDashboard(services, requests, enrollments, devices)
                                         setBusy(false, if (decision == "approve") {
                                             "Biometric approval recorded. Provider execution has not been triggered."
                                         } else {
@@ -787,10 +1156,12 @@ class MainActivity : FragmentActivity() {
                 sessionStore.saveRefreshToken(session.refreshToken)
                 val services = SupremeAuthClient.listServices(session.accessToken)
                 val requests = SupremeAuthClient.listPendingRequests(session.accessToken)
+                val enrollments = SupremeAuthClient.listPendingEnrollments(session.accessToken)
+                val devices = SupremeAuthClient.listTrustedDevices(session.accessToken)
                 runOnUiThread {
                     currentAccessToken = session.accessToken
                     resumeSessionCheck = false
-                    renderDashboard(services, requests)
+                    renderDashboard(services, requests, enrollments, devices)
                     setBusy(false, "Supreme session restored.")
                 }
             } catch (error: Exception) {
@@ -849,8 +1220,13 @@ class MainActivity : FragmentActivity() {
             ContextCompat.getMainExecutor(this),
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    // For the local privacy lock, Android's successful strong-biometric
+                    // callback is the authorization result. Do not add a second
+                    // Keystore CryptoObject operation here: it can fail on OEM
+                    // Keystore implementations even after the system verified the user.
                     authInProgress = false
                     isUnlocked = true
+                    lockStatusText.text = "Device unlocked."
                     lockOverlay.visibility = View.GONE
                     resetIdleLockTimer()
                     resumeStoredSession()
@@ -860,7 +1236,7 @@ class MainActivity : FragmentActivity() {
                     authInProgress = false
                     isUnlocked = false
                     lockOverlay.visibility = View.VISIBLE
-                    statusText.text = "Device unlock failed. Supreme content remains hidden."
+                    lockStatusText.text = "Android biometric error $errorCode: $errString. Supreme remains locked."
                 }
 
                 override fun onAuthenticationFailed() {
@@ -909,6 +1285,7 @@ class MainActivity : FragmentActivity() {
             .setTitle("Confirm Supreme security operation")
             .setSubtitle("Fingerprint verification is required to authorize this signature")
             .setDescription("The private key remains protected inside Android Keystore.")
+            .setNegativeButtonText("CANCEL")
             .setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG)
             .build()
         try {
@@ -920,22 +1297,56 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun authenticateToUnlock() {
-        if (isUnlocked || authInProgress) return
-        val prompt = biometricPrompt ?: return
+        if (isUnlocked || authInProgress || isFinishing || isDestroyed) return
+        val prompt = biometricPrompt
+        if (prompt == null) {
+            lockStatusText.text = "Biometric service is not initialized. Close and reopen Supreme."
+            return
+        }
+        val capability = try {
+            androidx.biometric.BiometricManager.from(this).canAuthenticate(
+                androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG,
+            )
+        } catch (error: Exception) {
+            lockStatusText.text = "Biometric capability check failed: ${error.javaClass.simpleName}."
+            return
+        }
+        if (capability != androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS) {
+            lockStatusText.text = when (capability) {
+                androidx.biometric.BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE ->
+                    "This device has no supported strong biometric sensor."
+                androidx.biometric.BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE ->
+                    "The fingerprint sensor is temporarily unavailable. Try again."
+                androidx.biometric.BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED ->
+                    "No strong fingerprint is enrolled. Enroll a fingerprint in Android Settings."
+                androidx.biometric.BiometricManager.BIOMETRIC_ERROR_SECURITY_UPDATE_REQUIRED ->
+                    "Android requires a security update before strong biometric unlock."
+                else -> "Strong biometric is unavailable (code $capability)."
+            }
+            return
+        }
+
         authInProgress = true
         lockOverlay.visibility = View.VISIBLE
+        lockStatusText.text = "Waiting for Android strong-biometric verification…"
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle("Unlock Supreme")
-            .setSubtitle("Use fingerprint or the device screen-lock PIN")
-            .setDescription("This only unlocks the app on this device. Server authentication is still required.")
-            .setDeviceCredentialAllowed(true)
+            .setSubtitle("Use your enrolled fingerprint to continue")
+            .setDescription("Android verifies your biometric. Server authentication and device authorization remain required.")
+            .setNegativeButtonText("CANCEL")
+            .setAllowedAuthenticators(
+                androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG,
+            )
             .build()
         try {
+            // This is a local privacy gate, not a cryptographic signing operation.
+            // Keep the prompt callback-only. CryptoObjects remain mandatory for
+            // attestation and sensitive device-bound signatures elsewhere.
             prompt.authenticate(info)
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             authInProgress = false
             lockOverlay.visibility = View.VISIBLE
-            statusText.text = "Set up a secure screen lock on this device before opening Supreme."
+            lockStatusText.text = "Android prompt could not start: ${error.javaClass.simpleName}."
         }
     }
 
@@ -1009,6 +1420,9 @@ class MainActivity : FragmentActivity() {
             }
         }
         if (::codeInput.isInitialized) codeInput.text?.clear()
+        if (::bootstrapInput.isInitialized) bootstrapInput.text?.clear()
+        if (::recoveryMaterialInput.isInitialized) recoveryMaterialInput.text?.clear()
+        if (::recoveryRequestIdInput.isInitialized) recoveryRequestIdInput.text?.clear()
 
         // A half-completed password/MFA flow must be restarted after leaving the app.
         pendingPasswordSession = null
@@ -1018,6 +1432,12 @@ class MainActivity : FragmentActivity() {
             ::codeInput.isInitialized && codeInput.visibility == View.VISIBLE
         ) {
             codeInput.visibility = View.GONE
+            bootstrapLabel.visibility = View.GONE
+            bootstrapInput.visibility = View.GONE
+            recoveryMaterialLabel.visibility = View.GONE
+            recoveryMaterialInput.visibility = View.GONE
+            recoveryRequestLabel.visibility = View.GONE
+            recoveryRequestIdInput.visibility = View.GONE
             passwordInput.visibility = View.VISIBLE
             emailInput.isEnabled = true
             if (::primaryButton.isInitialized) primaryButton.text = "SIGN IN"
@@ -1049,6 +1469,10 @@ class MainActivity : FragmentActivity() {
         }
         super.onStop()
         if (!isChangingConfigurations && !mfaInProgress) {
+            // Clear a stale in-flight guard when the Activity is backgrounded.
+            // onResume() will start a fresh prompt after the window is attached.
+            biometricPrompt?.cancelAuthentication()
+            authInProgress = false
             isUnlocked = false
             if (::lockOverlay.isInitialized) lockOverlay.visibility = View.VISIBLE
         }
@@ -1058,7 +1482,12 @@ class MainActivity : FragmentActivity() {
         super.onResume()
         resetIdleLockTimer()
         val mfaInProgress = pendingPasswordSession != null && pendingFactorId != null
-        if (!isUnlocked && !mfaInProgress && biometricPrompt != null) authenticateToUnlock()
+        if (!isUnlocked && !mfaInProgress && biometricPrompt != null) {
+            // Wait until the Activity is resumed and its window is attached before
+            // launching BiometricPrompt. Calling it from onCreate can leave the
+            // in-progress guard set without ever displaying the system prompt.
+            window.decorView.post { authenticateToUnlock() }
+        }
     }
 
     override fun onDestroy() {

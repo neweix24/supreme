@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feat/supreme-native-android-login
+      - fix/supreme-biometric-callback-unlock
     paths:
       - "apps/android/**"
       - ".github/workflows/supreme-android-build.yml"

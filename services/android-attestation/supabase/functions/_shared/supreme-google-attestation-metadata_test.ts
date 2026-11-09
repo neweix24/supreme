@@ -155,9 +155,10 @@ Deno.test("Google status parser rejects invalid expiry dates", () => {
 Deno.test("Google metadata fetcher requests both official feeds and parses them", async () => {
   const requested: string[] = [];
   const fetcher: typeof fetch = (input) => {
-    const url = String(input);
-    requested.push(url);
-    const body = url.endsWith("/root")
+    const url = new URL(String(input));
+    requested.push(url.href);
+    const body = url.origin === "https://android.googleapis.com" &&
+        url.pathname === "/attestation/root"
       ? [testPem]
       : { entries: { "a123": { status: "REVOKED", reason: "KEY_COMPROMISE" } } };
     return Promise.resolve(new Response(JSON.stringify(body), {
@@ -171,11 +172,22 @@ Deno.test("Google metadata fetcher requests both official feeds and parses them"
 
   const metadata = await (await import("./supreme-google-attestation-metadata.ts"))
     .fetchGoogleAttestationMetadata(fetcher);
+  const exactEndpoints = new Set(requested.map((value) => {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" || url.hostname !== "android.googleapis.com" ||
+      url.port !== "" || url.username !== "" || url.password !== "" ||
+      url.search !== "" || url.hash !== ""
+    ) {
+      return "invalid:" + url.href;
+    }
+    return url.origin + url.pathname;
+  }));
 
   if (
     requested.length !== 2 ||
-    !requested.includes("https://android.googleapis.com/attestation/root") ||
-    !requested.includes("https://android.googleapis.com/attestation/status") ||
+    !exactEndpoints.has("https://android.googleapis.com/attestation/root") ||
+    !exactEndpoints.has("https://android.googleapis.com/attestation/status") ||
     metadata.roots.certificatesPem.length !== 1 ||
     !metadata.status.entries.has("a123")
   ) {
