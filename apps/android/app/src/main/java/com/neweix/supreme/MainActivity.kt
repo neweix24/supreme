@@ -909,13 +909,14 @@ class MainActivity : FragmentActivity() {
             },
         )
         signingBiometricPrompt = prompt
-        val info = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Confirm Supreme security operation")
-            .setSubtitle("Fingerprint verification is required to authorize this signature")
-            .setDescription("The private key remains protected inside Android Keystore.")
-            .setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG)
-            .build()
         try {
+            val info = BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Confirm Supreme security operation")
+                .setSubtitle("Fingerprint verification is required to authorize this signature")
+                .setDescription("The private key remains protected inside Android Keystore.")
+                .setAllowedAuthenticators(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                .setNegativeButtonText("Cancel")
+                .build()
             prompt.authenticate(info, BiometricPrompt.CryptoObject(signature))
         } catch (error: Exception) {
             signingBiometricPrompt = null
@@ -928,18 +929,31 @@ class MainActivity : FragmentActivity() {
         val prompt = biometricPrompt ?: return
         authInProgress = true
         lockOverlay.visibility = View.VISIBLE
-        val info = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Unlock Supreme")
-            .setSubtitle("Use fingerprint or the device screen-lock PIN")
-            .setDescription("This only unlocks the app on this device. Server authentication is still required.")
-            .setDeviceCredentialAllowed(true)
-            .build()
         try {
-            prompt.authenticate(info)
+            val builder = BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Unlock Supreme")
+                .setSubtitle("Use a strong biometric or the device screen-lock PIN")
+                .setDescription("This only unlocks the app on this device. Server authentication is still required.")
+
+            // Android 11+ supports an explicit strong-biometric + device-credential
+            // combination. Older supported Android versions use the legacy
+            // device-credential switch. Never mix the two builder APIs.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                builder.setAllowedAuthenticators(
+                    androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                        androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL,
+                )
+            } else {
+                builder.setDeviceCredentialAllowed(true)
+            }
+
+            // Build inside the guarded block: PromptInfo validation can throw before
+            // authenticate() is called, which previously allowed a crash to escape.
+            prompt.authenticate(builder.build())
         } catch (_: Exception) {
             authInProgress = false
             lockOverlay.visibility = View.VISIBLE
-            statusText.text = "Set up a secure screen lock on this device before opening Supreme."
+            statusText.text = "Device unlock is unavailable. Set up a secure screen lock and try again."
         }
     }
 
