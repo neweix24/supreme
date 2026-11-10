@@ -213,12 +213,21 @@ function validateAppIdentity(
   if (!applicationId) {
     throw new TypeError("Android attestation is missing software-enforced AttestationApplicationId.");
   }
-  if (!matchesAttestationApplicationId(applicationId, {
-    packageName: SUPREME_ANDROID_PACKAGE_NAME,
-    minimumVersion: policy.minimumPackageVersion,
-    signingCertificateSha256: policy.signingCertificateSha256,
-  })) {
-    throw new TypeError("Android package name, minimum version or production signing certificate does not match Supreme.");
+  const packageInfo = applicationId.packages.find((item) =>
+    item.packageName === SUPREME_ANDROID_PACKAGE_NAME
+  );
+  if (!packageInfo) {
+    throw new TypeError("Android package name does not match Supreme.");
+  }
+  if (packageInfo.version < policy.minimumPackageVersion) {
+    throw new TypeError("Android package version is below the configured Supreme minimum.");
+  }
+  const signerMatches = applicationId.signatureDigests.some((digest) =>
+    digest.length === 32 &&
+    equalBytes(digest, policy.signingCertificateSha256)
+  );
+  if (!signerMatches) {
+    throw new TypeError("Android production signing certificate does not match the configured Supreme signer.");
   }
 }
 
