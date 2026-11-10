@@ -888,6 +888,7 @@ class MainActivity : FragmentActivity() {
     private fun signOut() {
         val refresh = sessionStore.readRefreshToken()
         sessionStore.clear()
+        pendingMfaStore.clear()
         currentAccessToken = null
         if (refresh == null) {
             showSignIn()
