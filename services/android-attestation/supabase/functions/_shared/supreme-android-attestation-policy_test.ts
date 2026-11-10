@@ -96,6 +96,7 @@ type FixtureOptions = {
   minimumVersion?: bigint;
   biometricAuthType?: bigint;
   authTimeout?: bigint;
+  omitAuthTimeout?: boolean;
   noAuthRequired?: boolean;
   biometricAuthInSoftware?: boolean;
 };
@@ -115,7 +116,7 @@ function makeDescription(options: FixtureOptions = {}) {
     contextTag(5, setOf(...(options.digests ?? [4n]).map(integer))),
     contextTag(10, integer(options.curve ?? 1n)),
     contextTag(504, integer(options.biometricAuthType ?? 2n)),
-    contextTag(505, integer(options.authTimeout ?? 0n)),
+    ...(options.omitAuthTimeout ? [] : [contextTag(505, integer(options.authTimeout ?? 0n))]),
     contextTag(702, integer(options.origin ?? 0n)),
     contextTag(704, seq(
       octets(bootKey),
@@ -197,8 +198,9 @@ function assertRejectedWithMessage(
 
 Deno.test("Supreme Android policy accepts hardware-backed TEE and StrongBox app attestations", () => {
   for (const [level, expected] of [[1, "TRUSTED_ENVIRONMENT"], [2, "STRONG_BOX"]] as const) {
-    const result = validateSupremeAndroidKeyDescription(
-      makeDescription({ attestationSecurityLevel: level, keyMintSecurityLevel: level }),
+    for (const omitAuthTimeout of [false, true]) {
+      const result = validateSupremeAndroidKeyDescription(
+      makeDescription({ attestationSecurityLevel: level, keyMintSecurityLevel: level, omitAuthTimeout }),
       policy(),
     );
     if (
@@ -210,6 +212,7 @@ Deno.test("Supreme Android policy accepts hardware-backed TEE and StrongBox app 
       result.curve !== "P-256"
     ) {
       throw new Error("Supreme policy returned an unexpected hardware attestation result.");
+      }
     }
   }
 });
