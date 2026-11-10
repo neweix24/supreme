@@ -408,6 +408,10 @@ class MainActivity : FragmentActivity() {
                                         )
                                     }
                                     val refreshed = SupremeAuthClient.refresh(session.refreshToken)
+                                    // Persist the rotated credential before making another
+                                    // network request. Registration has succeeded, so this
+                                    // preserves the AAL2 session across process death.
+                                    sessionStore.saveRefreshToken(refreshed.refreshToken)
                                     if (refreshed.userId != session.userId ||
                                         refreshed.sessionId != session.sessionId ||
                                         refreshed.assuranceLevel != "aal2"
@@ -417,7 +421,6 @@ class MainActivity : FragmentActivity() {
                                         )
                                     }
                                     SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
-                                    sessionStore.saveRefreshToken(refreshed.refreshToken)
                                     var dashboardWarning: String? = null
                                     val services = try {
                                         SupremeAuthClient.listServices(refreshed.accessToken)
@@ -805,10 +808,11 @@ class MainActivity : FragmentActivity() {
                 if (session.assuranceLevel != "aal2") {
                     throw IllegalStateException("Supreme session has fallen below AAL2. Sign in again.")
                 }
-                SupremeAuthClient.verifyDeviceSession(session.accessToken)
-                // Refresh-token rotation is committed by Supabase before the next
-                // API request. Save the replacement before any downstream operation.
+                // Supabase rotates refresh tokens during refresh. Persist the replacement
+                // immediately, before device verification or dashboard requests, so a
+                // process death or a temporary verifier failure cannot strand the session.
                 sessionStore.saveRefreshToken(session.refreshToken)
+                SupremeAuthClient.verifyDeviceSession(session.accessToken)
                 var dashboardWarning: String? = null
                 val services = try {
                     SupremeAuthClient.listServices(session.accessToken)
@@ -833,17 +837,23 @@ class MainActivity : FragmentActivity() {
                 }
             } catch (error: Exception) {
                 val status = (error as? SupremeAuthException)?.statusCode
-                if (status == 401 || status == 403) sessionStore.clear()
+                // A 401 means the Auth refresh credential is invalid/revoked. A 403
+                // can instead mean the device verifier or project Auth Hook is denying
+                // an otherwise valid session. Never unlock on 403, but do not destroy
+                // the only refresh credential and force the user through MFA again.
+                if (status == 401) sessionStore.clear()
                 runOnUiThread {
                     resumeSessionCheck = false
-                    if (status == 401 || status == 403) {
+                    isUnlocked = false
+                    lockOverlay.visibility = View.VISIBLE
+                    if (status == 401) {
                         showSignIn()
-                        setBusy(false, "The previous Supreme app session is no longer authorized. Sign in again.")
+                        setBusy(false, "The Supreme sign-in session expired or was revoked. Sign in again.")
+                    } else if (status == 403) {
+                        setBusy(false, "Supreme device verification is denied (403). Your encrypted session is retained, but access remains locked. Check device registration and the Supabase Auth Hook.")
                     } else {
                         // Keep the session and privileged content locked on transient
                         // network/server errors. The user can retry without signing in again.
-                        isUnlocked = false
-                        lockOverlay.visibility = View.VISIBLE
                         setBusy(false, "Supreme session could not be checked. Check your connection and tap UNLOCK SUPREME to retry.")
                     }
                 }
