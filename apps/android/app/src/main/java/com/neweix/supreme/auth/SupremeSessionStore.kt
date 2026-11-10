@@ -6,6 +6,7 @@ import android.security.keystore.KeyProperties
 import android.util.AtomicFile
 import java.io.File
 import java.io.FileNotFoundException
+import java.time.Instant
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -20,9 +21,27 @@ import javax.crypto.spec.GCMParameterSpec
 internal class SupremeSessionStore(context: Context) {
     private val file = File(context.noBackupFilesDir, "supreme-session.bin")
     private val atomicFile = AtomicFile(file)
+    private val diagnosticsFile = File(context.noBackupFilesDir, "supreme-diagnostics.log")
+
+    @Synchronized
+    fun record(event: String) {
+        try {
+            val safeEvent = event.replace(Regex("[^A-Za-z0-9_ =:./-]"), "_").take(180)
+            val previous = if (diagnosticsFile.exists()) diagnosticsFile.readLines().takeLast(180) else emptyList()
+            val lines = (previous + "${Instant.now()} $safeEvent").takeLast(200)
+            diagnosticsFile.writeText(lines.joinToString("\\n", postfix = "\\n"))
+        } catch (_: Exception) { /* Diagnostics must never interrupt authentication. */ }
+    }
+
+    @Synchronized
+    fun exportDiagnostics(): String = try {
+        if (diagnosticsFile.exists()) diagnosticsFile.readText().takeLast(24000)
+        else "No Supreme diagnostics have been recorded."
+    } catch (_: Exception) { "Unable to read Supreme diagnostics." }
 
     @Synchronized
     fun saveRefreshToken(token: String) {
+        record("SESSION_SAVE_BEGIN fileExists=${file.exists()}")
         require(token.isNotBlank() && token.length <= 8192 && token != "null") {
             "Invalid Supreme refresh token."
         }
@@ -40,8 +59,10 @@ internal class SupremeSessionStore(context: Context) {
         try {
             stream.write(output)
             atomicFile.finishWrite(stream)
+            record("SESSION_SAVE_COMMIT fileExists=${file.exists()} fileBytes=${file.length()}")
         } catch (error: Throwable) {
             atomicFile.failWrite(stream)
+            record("SESSION_SAVE_FAIL type=${error.javaClass.simpleName}")
             throw error
         }
     }
@@ -51,16 +72,19 @@ internal class SupremeSessionStore(context: Context) {
         val input = try {
             atomicFile.openRead().use { it.readBytes() }
         } catch (_: FileNotFoundException) {
+            record("SESSION_READ_NOT_FOUND fileExists=${file.exists()}")
             return null
         } catch (error: Exception) {
             // A transient filesystem or Keystore read failure must never erase the
             // only encrypted refresh credential. Preserve the file and fail closed.
+            record("SESSION_READ_FILE_FAIL type=${error.javaClass.simpleName} fileExists=${file.exists()} fileBytes=${file.length()}")
             throw IllegalStateException(
                 "The encrypted Supreme session file could not be read. The saved credential was preserved.",
                 error,
             )
         }
 
+        record("SESSION_READ_FILE_FOUND fileBytes=${input.size}")
         if (input.size < 1 + 12 + 16) {
             throw IllegalStateException("The encrypted Supreme session file is incomplete. The saved file was preserved.")
         }
@@ -78,8 +102,10 @@ internal class SupremeSessionStore(context: Context) {
             require(token.isNotBlank() && token.length <= 8192 && token != "null") {
                 "The decrypted Supreme session credential is invalid."
             }
+            record("SESSION_READ_DECRYPT_OK")
             token
         } catch (error: Exception) {
+            record("SESSION_READ_DECRYPT_FAIL type=${error.javaClass.simpleName}")
             // Do not convert Keystore invalidation, temporary unavailability, or
             // authentication/decryption errors into "no session". That used to
             // delete the credential and send the user to SIGN IN without a cause.
@@ -91,8 +117,10 @@ internal class SupremeSessionStore(context: Context) {
     }
 
     @Synchronized
-    fun clear() {
+    fun clear(reason: String) {
+        record("SESSION_CLEAR_BEGIN reason=$reason fileExists=${file.exists()} fileBytes=${file.length()}")
         atomicFile.delete()
+        record("SESSION_CLEAR_DONE reason=$reason fileExists=${file.exists()}")
     }
 
     private fun getExistingKey(): SecretKey {
