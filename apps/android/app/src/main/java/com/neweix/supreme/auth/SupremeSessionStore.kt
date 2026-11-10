@@ -74,12 +74,11 @@ internal class SupremeSessionStore(context: Context) {
             val ciphertext = input.copyOfRange(1 + ivLength, input.size)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, getExistingKey(), GCMParameterSpec(128, iv))
-            String(cipher.doFinal(ciphertext), Charsets.UTF_8)
-                .takeIf { it.isNotBlank() && it.length <= 8192 && it != "null" }
-                ?: run {
-                    atomicFile.delete()
-                    null
-                }
+            val token = String(cipher.doFinal(ciphertext), Charsets.UTF_8)
+            require(token.isNotBlank() && token.length <= 8192 && token != "null") {
+                "The decrypted Supreme session credential is invalid."
+            }
+            token
         } catch (error: Exception) {
             // Do not convert Keystore invalidation, temporary unavailability, or
             // authentication/decryption errors into "no session". That used to
@@ -103,7 +102,8 @@ internal class SupremeSessionStore(context: Context) {
     }
 
     private fun getOrCreateKey(): SecretKey {
-        val existing = runCatching { getExistingKey() }.getOrNull()
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        val existing = store.getKey(KEY_ALIAS, null) as? SecretKey
         if (existing != null) return existing
 
         val generator = KeyGenerator.getInstance(
