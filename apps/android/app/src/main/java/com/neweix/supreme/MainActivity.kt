@@ -78,7 +78,9 @@ class MainActivity : FragmentActivity() {
         sessionStore = SupremeSessionStore(this)
         buildInterface()
         configureAppLock()
-        authenticateToUnlock()
+        // Start the first BiometricPrompt from onResume(), not before the
+        // Activity has entered the foreground. onResume() also handles later
+        // returns from the background through the same guarded path.
     }
 
     private fun configureEdgeToEdge(targetWindow: Window) {
@@ -1116,13 +1118,19 @@ class MainActivity : FragmentActivity() {
         pendingPasswordSession = null
         pendingFactorId = null
         pendingChallengeId = null
-        if (::passwordInput.isInitialized && pendingFactorId == null &&
-            ::codeInput.isInitialized && codeInput.visibility == View.VISIBLE
+        // Only reset the sign-in form when it is still showing the MFA step.
+        // After renderDashboard(), primaryButton points to the dashboard SIGN OUT
+        // button while the detached codeInput can still retain VISIBLE state.
+        if (::passwordInput.isInitialized &&
+            ::codeInput.isInitialized &&
+            codeInput.visibility == View.VISIBLE &&
+            ::primaryButton.isInitialized &&
+            primaryButton.text.toString() == "VERIFY MFA"
         ) {
             codeInput.visibility = View.GONE
             passwordInput.visibility = View.VISIBLE
             emailInput.isEnabled = true
-            if (::primaryButton.isInitialized) primaryButton.text = "SIGN IN"
+            primaryButton.text = "SIGN IN"
         }
     }
 
