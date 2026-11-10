@@ -1,7 +1,4 @@
-import {
-  matchesAttestationApplicationId,
-  type AttestationApplicationId,
-} from "./supreme-attestation-application-id.ts";
+import type { AttestationApplicationId } from "./supreme-attestation-application-id.ts";
 import type {
   AndroidAuthorizationEntry,
   AndroidAuthorizationList,
