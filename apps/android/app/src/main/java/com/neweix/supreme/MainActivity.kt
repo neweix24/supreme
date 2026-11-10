@@ -710,8 +710,9 @@ class MainActivity : FragmentActivity() {
                     if (refreshed.assuranceLevel != "aal2") {
                         throw IllegalStateException("Supreme MFA session expired. Sign in again.")
                     }
-                    SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
+                    // Commit the rotated refresh token before the verifier or API call.
                     sessionStore.saveRefreshToken(refreshed.refreshToken)
+                    SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
                     activeAccessToken = refreshed.accessToken
                     currentAccessToken = refreshed.accessToken
                     SupremeAuthClient.issueControlDecisionChallenge(
@@ -757,8 +758,9 @@ class MainActivity : FragmentActivity() {
                                         if (refreshed.assuranceLevel != "aal2") {
                                             throw IllegalStateException("Supreme MFA session expired. Sign in again.")
                                         }
-                                        SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
+                                        // Commit the rotated refresh token before the verifier or API call.
                                         sessionStore.saveRefreshToken(refreshed.refreshToken)
+                                        SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
                                         activeAccessToken = refreshed.accessToken
                                         currentAccessToken = refreshed.accessToken
                                         SupremeAuthClient.decideControlRequest(
