@@ -465,7 +465,15 @@ class MainActivity : FragmentActivity() {
 
     private fun handleMfaDeviceRegistrationFailure(error: Exception) {
         runOnUiThread {
-            sessionStore.clear()
+            // If attestation registration already returned a rotated token, a 403
+            // from the session verifier must not erase it. Keep the app locked and
+            // allow retry after the project Auth Hook/device policy is corrected.
+            // Invalid/expired credentials (401) and all pre-registration failures
+            // still discard any stale local session.
+            val status = (error as? SupremeAuthException)?.statusCode
+            if (status != 403) sessionStore.clear()
+            isUnlocked = false
+            lockOverlay.visibility = View.VISIBLE
             pendingPasswordSession = null
             pendingFactorId = null
             pendingChallengeId = null
@@ -474,13 +482,10 @@ class MainActivity : FragmentActivity() {
             emailInput.isEnabled = true
             codeInput.visibility = View.GONE
             primaryButton.text = "SIGN IN"
-            val message = if (
-                error is SupremeAuthException &&
-                (error.statusCode == 400 || error.statusCode == 422)
-            ) {
-                "Authenticator code was rejected. Wait for a fresh six-digit code and try again."
-            } else {
-                safeMessage(error)
+            val message = when (status) {
+                400, 422 -> "Authenticator code was rejected. Wait for a fresh six-digit code and try again."
+                403 -> "Supreme device verification is denied (403). Your encrypted session is retained, but access remains locked. Check device registration and the Supabase Auth Hook."
+                else -> safeMessage(error)
             }
             setBusy(false, message)
         }
