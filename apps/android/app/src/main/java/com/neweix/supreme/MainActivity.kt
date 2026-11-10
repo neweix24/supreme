@@ -418,16 +418,31 @@ class MainActivity : FragmentActivity() {
                                     }
                                     SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
                                     sessionStore.saveRefreshToken(refreshed.refreshToken)
-                                    val services = SupremeAuthClient.listServices(refreshed.accessToken)
-                                    val requests = SupremeAuthClient.listPendingRequests(refreshed.accessToken)
+                                    var dashboardWarning: String? = null
+                                    val services = try {
+                                        SupremeAuthClient.listServices(refreshed.accessToken)
+                                    } catch (error: Exception) {
+                                        dashboardWarning = safeMessage(error)
+                                        emptyList()
+                                    }
+                                    val requests = try {
+                                        SupremeAuthClient.listPendingRequests(refreshed.accessToken)
+                                    } catch (error: Exception) {
+                                        if (dashboardWarning == null) dashboardWarning = safeMessage(error)
+                                        emptyList()
+                                    }
                                     runOnUiThread {
                                         currentAccessToken = refreshed.accessToken
                                         pendingPasswordSession = null
                                         pendingFactorId = null
                                         pendingChallengeId = null
                                         codeInput.text.clear()
+                                        isUnlocked = true
+                                        lockOverlay.visibility = View.GONE
                                         renderDashboard(services, requests)
-                                        setBusy(false, "Biometric device attestation and Supreme session checks passed.")
+                                        resetIdleLockTimer()
+                                        setBusy(false, dashboardWarning
+                                            ?: "Biometric device attestation and Supreme session checks passed.")
                                     }
                                 } catch (error: Exception) {
                                     handleMfaDeviceRegistrationFailure(error)
@@ -776,7 +791,12 @@ class MainActivity : FragmentActivity() {
 
     private fun resumeStoredSession() {
         if (resumeSessionCheck || pendingFactorId != null) return
-        val refreshToken = sessionStore.readRefreshToken() ?: return
+        val refreshToken = sessionStore.readRefreshToken()
+        if (refreshToken == null) {
+            showSignIn()
+            setBusy(false, "No saved Supreme session is available. Sign in again.")
+            return
+        }
         resumeSessionCheck = true
         setBusy(true, "Restoring the encrypted Supreme session…")
         background.execute {
@@ -789,25 +809,43 @@ class MainActivity : FragmentActivity() {
                 // Refresh-token rotation is committed by Supabase before the next
                 // API request. Save the replacement before any downstream operation.
                 sessionStore.saveRefreshToken(session.refreshToken)
-                val services = SupremeAuthClient.listServices(session.accessToken)
-                val requests = SupremeAuthClient.listPendingRequests(session.accessToken)
+                var dashboardWarning: String? = null
+                val services = try {
+                    SupremeAuthClient.listServices(session.accessToken)
+                } catch (error: Exception) {
+                    dashboardWarning = safeMessage(error)
+                    emptyList()
+                }
+                val requests = try {
+                    SupremeAuthClient.listPendingRequests(session.accessToken)
+                } catch (error: Exception) {
+                    if (dashboardWarning == null) dashboardWarning = safeMessage(error)
+                    emptyList()
+                }
                 runOnUiThread {
                     currentAccessToken = session.accessToken
                     resumeSessionCheck = false
+                    isUnlocked = true
+                    lockOverlay.visibility = View.GONE
                     renderDashboard(services, requests)
-                    setBusy(false, "Supreme session restored.")
+                    resetIdleLockTimer()
+                    setBusy(false, dashboardWarning ?: "Supreme session restored.")
                 }
             } catch (error: Exception) {
                 val status = (error as? SupremeAuthException)?.statusCode
                 if (status == 401 || status == 403) sessionStore.clear()
                 runOnUiThread {
                     resumeSessionCheck = false
-                    showSignIn()
-                    setBusy(false, if (status == 401 || status == 403) {
-                        "The previous Supreme app session is no longer authorized. Sign in again."
+                    if (status == 401 || status == 403) {
+                        showSignIn()
+                        setBusy(false, "The previous Supreme app session is no longer authorized. Sign in again.")
                     } else {
-                        safeMessage(error)
-                    })
+                        // Keep the session and privileged content locked on transient
+                        // network/server errors. The user can retry without signing in again.
+                        isUnlocked = false
+                        lockOverlay.visibility = View.VISIBLE
+                        setBusy(false, "Supreme session could not be checked. Check your connection and tap UNLOCK SUPREME to retry.")
+                    }
                 }
             }
         }
@@ -854,9 +892,11 @@ class MainActivity : FragmentActivity() {
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     authInProgress = false
-                    isUnlocked = true
-                    lockOverlay.visibility = View.GONE
-                    resetIdleLockTimer()
+                    // Local biometric success alone must not reveal privileged content.
+                    // Keep the overlay visible until the server session is revalidated.
+                    isUnlocked = false
+                    idleHandler.removeCallbacks(idleLockRunnable)
+                    lockOverlay.visibility = View.VISIBLE
                     resumeStoredSession()
                 }
 
