@@ -1,6 +1,8 @@
 package com.neweix.supreme
 
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
@@ -78,6 +80,7 @@ class MainActivity : FragmentActivity() {
         sessionStore = SupremeSessionStore(this)
         buildInterface()
         configureAppLock()
+        sessionStore.record("ACTIVITY_ON_CREATE savedState=${savedInstanceState != null}")
         // Start the first BiometricPrompt from onResume(), not before the
         // Activity has entered the foreground. onResume() also handles later
         // returns from the background through the same guarded path.
@@ -304,6 +307,14 @@ class MainActivity : FragmentActivity() {
                 text = "UNLOCK SUPREME"
                 setOnClickListener { authenticateToUnlock() }
             }, matchWrap())
+            addView(Button(this@MainActivity).apply {
+                text = "COPY DIAGNOSTICS"
+                setOnClickListener {
+                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Supreme diagnostics", sessionStore.exportDiagnostics()))
+                    statusText.text = "Supreme diagnostics copied. Send the copied text to support."
+                }
+            }, matchWrap())
         }
         root.addView(lockOverlay, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -478,7 +489,9 @@ class MainActivity : FragmentActivity() {
             // Invalid/expired credentials (401) and all pre-registration failures
             // still discard any stale local session.
             val status = (error as? SupremeAuthException)?.statusCode
-            if (status != 403) sessionStore.clear()
+            // MFA/device-registration failures must not erase a previously valid refresh token.
+            // Only the dedicated session-refresh path may clear a credential after HTTP 401.
+            sessionStore.record("MFA_DEVICE_REGISTRATION_FAILURE httpStatus=${status ?: "none"}")
             isUnlocked = false
             lockOverlay.visibility = View.VISIBLE
             pendingPasswordSession = null
@@ -807,10 +820,15 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun resumeStoredSession() {
-        if (resumeSessionCheck || restoreInProgress || pendingFactorId != null) return
+        sessionStore.record("RESTORE_ENTRY resumeCheck=$resumeSessionCheck restoreInProgress=$restoreInProgress pendingMfa=${pendingFactorId != null}")
+        if (resumeSessionCheck || restoreInProgress || pendingFactorId != null) {
+            sessionStore.record("RESTORE_ABORT reason=guard")
+            return
+        }
         val refreshToken = try {
             sessionStore.readRefreshToken()
         } catch (error: Exception) {
+            sessionStore.record("RESTORE_ABORT reason=read_exception type=${error.javaClass.simpleName}")
             Log.e("SupremeSession", "Encrypted session read failed; credential was preserved.", error)
             restoreInProgress = false
             resumeSessionCheck = false
@@ -822,18 +840,21 @@ class MainActivity : FragmentActivity() {
             return
         }
         if (refreshToken == null) {
+            sessionStore.record("RESTORE_ABORT reason=no_saved_token")
             Log.w("SupremeSession", "No encrypted refresh credential exists in app storage.")
             restoreInProgress = false
             showSignIn()
             setBusy(false, "No saved Supreme session is available. Sign in again.")
             return
         }
+        sessionStore.record("RESTORE_REFRESH_BEGIN")
         restoreInProgress = true
         resumeSessionCheck = true
         setBusy(true, "Restoring the encrypted Supreme session…")
         background.execute {
             try {
                 val session = SupremeAuthClient.refresh(refreshToken)
+                sessionStore.record("RESTORE_REFRESH_SUCCESS aal2=${session.assuranceLevel == "aal2"}")
                 if (session.assuranceLevel != "aal2") {
                     throw IllegalStateException("Supreme session has fallen below AAL2. Sign in again.")
                 }
@@ -870,12 +891,13 @@ class MainActivity : FragmentActivity() {
                 }
             } catch (error: Exception) {
                 val status = (error as? SupremeAuthException)?.statusCode
+                sessionStore.record("RESTORE_FAILURE httpStatus=${status ?: "none"} type=${error.javaClass.simpleName}")
                 Log.w("SupremeSession", "Session restore failed; HTTP status=${status ?: "none"}, error=${error.javaClass.simpleName}.")
                 // A 401 means the Auth refresh credential is invalid/revoked. A 403
                 // can instead mean the device verifier or project Auth Hook is denying
                 // an otherwise valid session. Never unlock on 403, but do not destroy
                 // the only refresh credential and force the user through MFA again.
-                if (status == 401) sessionStore.clear()
+                if (status == 401) sessionStore.clear("refresh_http_401")
                 runOnUiThread {
                     resumeSessionCheck = false
                     restoreInProgress = false
@@ -898,7 +920,7 @@ class MainActivity : FragmentActivity() {
 
     private fun signOut() {
         val refresh = sessionStore.readRefreshToken()
-        sessionStore.clear()
+        sessionStore.clear("user_sign_out")
         currentAccessToken = null
         if (refresh == null) {
             showSignIn()
@@ -936,6 +958,7 @@ class MainActivity : FragmentActivity() {
             ContextCompat.getMainExecutor(this),
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    sessionStore.record("BIOMETRIC_UNLOCK_SUCCESS")
                     authInProgress = false
                     // Local biometric success alone must not reveal privileged content.
                     // Keep the overlay visible until the server session is revalidated.
@@ -946,6 +969,7 @@ class MainActivity : FragmentActivity() {
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    sessionStore.record("BIOMETRIC_UNLOCK_ERROR code=$errorCode")
                     authInProgress = false
                     restoreInProgress = false
                     isUnlocked = false
@@ -1013,6 +1037,7 @@ class MainActivity : FragmentActivity() {
     private fun authenticateToUnlock() {
         if (isUnlocked || authInProgress || restoreInProgress || resumeSessionCheck) return
         val prompt = biometricPrompt ?: return
+        sessionStore.record("BIOMETRIC_UNLOCK_PROMPT_START")
         authInProgress = true
         lockOverlay.visibility = View.VISIBLE
         try {
@@ -1036,7 +1061,8 @@ class MainActivity : FragmentActivity() {
             // Build inside the guarded block: PromptInfo validation can throw before
             // authenticate() is called, which previously allowed a crash to escape.
             prompt.authenticate(builder.build())
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            sessionStore.record("BIOMETRIC_UNLOCK_PROMPT_FAIL type=${error.javaClass.simpleName}")
             authInProgress = false
             lockOverlay.visibility = View.VISIBLE
             statusText.text = "Device unlock is unavailable. Set up a secure screen lock and try again."
@@ -1147,6 +1173,7 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onStop() {
+        sessionStore.record("ACTIVITY_ON_STOP changingConfig=$isChangingConfigurations unlocked=$isUnlocked restoreInProgress=$restoreInProgress authInProgress=$authInProgress")
         idleHandler.removeCallbacks(idleLockRunnable)
         // Opening an authenticator app temporarily backgrounds Supreme. Keep the
         // in-memory, short-lived MFA transaction so the user can return and enter
@@ -1168,6 +1195,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
+        sessionStore.record("ACTIVITY_ON_RESUME unlocked=$isUnlocked restoreInProgress=$restoreInProgress resumeCheck=$resumeSessionCheck authInProgress=$authInProgress")
         resetIdleLockTimer()
         val mfaInProgress = pendingPasswordSession != null && pendingFactorId != null
         if (!isUnlocked && !mfaInProgress && !restoreInProgress && !resumeSessionCheck &&
@@ -1176,6 +1204,7 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onDestroy() {
+        sessionStore.record("ACTIVITY_ON_DESTROY changingConfig=$isChangingConfigurations unlocked=$isUnlocked restoreInProgress=$restoreInProgress")
         idleHandler.removeCallbacks(idleLockRunnable)
         clearTransientCredentials()
         restoreInProgress = false
