@@ -22,7 +22,7 @@ internal data class PendingSupremeMfaSession(
 )
 
 /**
- * Holds only the short-lived refresh token issued after successful TOTP MFA,
+ * Holds the short-lived access and refresh tokens issued after successful TOTP MFA,
  * while hardware device registration is pending. The token is encrypted with
  * a non-exportable Android Keystore key and expires after ten minutes.
  */
