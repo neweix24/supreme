@@ -52,19 +52,21 @@ internal class SupremeSessionStore(context: Context) {
             atomicFile.openRead().use { it.readBytes() }
         } catch (_: FileNotFoundException) {
             return null
-        } catch (_: Exception) {
-            atomicFile.delete()
-            return null
+        } catch (error: Exception) {
+            // A transient filesystem or Keystore read failure must never erase the
+            // only encrypted refresh credential. Preserve the file and fail closed.
+            throw IllegalStateException(
+                "The encrypted Supreme session file could not be read. The saved credential was preserved.",
+                error,
+            )
         }
 
         if (input.size < 1 + 12 + 16) {
-            atomicFile.delete()
-            return null
+            throw IllegalStateException("The encrypted Supreme session file is incomplete. The saved file was preserved.")
         }
         val ivLength = input[0].toInt() and 0xff
         if (ivLength != 12 || input.size <= 1 + ivLength + 16) {
-            atomicFile.delete()
-            return null
+            throw IllegalStateException("The encrypted Supreme session file has an invalid format. The saved file was preserved.")
         }
 
         return try {
@@ -78,9 +80,14 @@ internal class SupremeSessionStore(context: Context) {
                     atomicFile.delete()
                     null
                 }
-        } catch (_: Exception) {
-            atomicFile.delete()
-            null
+        } catch (error: Exception) {
+            // Do not convert Keystore invalidation, temporary unavailability, or
+            // authentication/decryption errors into "no session". That used to
+            // delete the credential and send the user to SIGN IN without a cause.
+            throw IllegalStateException(
+                "The saved Supreme session could not be decrypted. The encrypted credential was preserved.",
+                error,
+            )
         }
     }
 
