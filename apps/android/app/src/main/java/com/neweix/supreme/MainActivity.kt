@@ -433,6 +433,14 @@ class MainActivity : FragmentActivity() {
                                             "Supreme AAL2 session continuity could not be confirmed.",
                                         )
                                     }
+                                    // Persist the rotated recovery credential before any
+                                    // further network call, so an interruption can resume.
+                                    pendingMfaStore.save(
+                                        refreshed.accessToken,
+                                        refreshed.refreshToken,
+                                        refreshed.userId,
+                                        refreshed.sessionId,
+                                    )
                                     SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
                                     sessionStore.saveRefreshToken(refreshed.refreshToken)
                                     // Commit the durable session before deleting the recovery
