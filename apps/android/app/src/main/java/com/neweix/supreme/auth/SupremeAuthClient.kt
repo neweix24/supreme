@@ -132,20 +132,23 @@ internal object SupremeAuthClient {
             "/functions/v1/supreme-session-api",
             accessToken = accessToken,
         )
-        require(response.optBoolean("authenticated", false) &&
-            response.optBoolean("device_session_active", false)
-        ) {
-            "The server has not authorized this Supreme device session."
+        if (!response.optBoolean("authenticated", false)) {
+            throw SupremeAuthException("The Supreme Auth session is no longer authenticated.", 401)
+        }
+        if (!response.optBoolean("device_session_active", false)) {
+            // Keep the encrypted refresh token, but fail closed. This may be a
+            // revoked device, expired registration, or a project Auth Hook issue.
+            throw SupremeAuthException("The server has not authorized this Supreme device session.", 403)
         }
         val session = response.optJSONObject("session")
-            ?: throw IllegalStateException("Supreme device session details are missing.")
+            ?: throw SupremeAuthException("Supreme device session details are missing.", 403)
         val claims = decodeClaims(accessToken).optJSONObject("supreme_app_session")
-            ?: throw IllegalStateException("The signed Supreme device-session claim is missing.")
-        require(claims.optString("status") == "active" &&
-            claims.optString("session_id") == session.optString("session_id") &&
-            claims.optString("device_id") == session.optString("device_id")
+            ?: throw SupremeAuthException("The signed Supreme device-session claim is missing. Enable the Supabase Custom Access Token Hook.", 403)
+        if (claims.optString("status") != "active" ||
+            claims.optString("session_id") != session.optString("session_id") ||
+            claims.optString("device_id") != session.optString("device_id")
         ) {
-            "The signed Supreme device-session claim does not match the active server session."
+            throw SupremeAuthException("The signed Supreme device-session claim does not match the active server session.", 403)
         }
     }
 

@@ -1,24 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
-  <title id="title">Supreme gold S emblem</title>
+  <title id="title">Supreme geometric gold S emblem</title>
   <defs>
-    <radialGradient id="ring" cx="38%" cy="28%" r="74%">
-      <stop offset="0" stop-color="#FFF0AA"/>
-      <stop offset="0.34" stop-color="#E9B73E"/>
-      <stop offset="0.72" stop-color="#A85C08"/>
-      <stop offset="1" stop-color="#F5D16D"/>
-    </radialGradient>
-    <linearGradient id="gold" x1="0.05" y1="0.1" x2="0.92" y2="0.88">
-      <stop offset="0" stop-color="#FFF0A0"/>
-      <stop offset="0.22" stop-color="#F5CD56"/>
-      <stop offset="0.52" stop-color="#D88A0A"/>
-      <stop offset="0.78" stop-color="#FFE28A"/>
-      <stop offset="1" stop-color="#B46A08"/>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFF2B8"/>
+      <stop offset=".28" stop-color="#EFC65D"/>
+      <stop offset=".58" stop-color="#B97716"/>
+      <stop offset=".82" stop-color="#F7D77C"/>
+      <stop offset="1" stop-color="#9B5B0B"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFF0A4"/>
+      <stop offset="1" stop-color="#9D5D0B"/>
     </linearGradient>
   </defs>
-  <circle cx="256" cy="256" r="244" fill="#050505"/>
-  <circle cx="256" cy="256" r="232" fill="none" stroke="url(#ring)" stroke-width="20"/>
-  <circle cx="256" cy="256" r="218" fill="none" stroke="#F6D36C" stroke-opacity=".62" stroke-width="3"/>
-  <path d="M390 151C355 111 299 91 238 96 152 103 113 151 122 208c8 53 58 74 129 90 62 15 100 36 100 74 0 34-33 54-79 55-45 1-84-15-115-41l28-33c25 21 53 33 81 31 22-2 36-14 36-27 0-16-21-25-66-38-83-24-135-54-145-110-15-79 47-145 140-152 69-6 135 17 184 57z" fill="url(#gold)"/>
-  <path d="M143 177c12-37 48-62 99-70" fill="none" stroke="#FFF1B4" stroke-opacity=".5" stroke-width="5" stroke-linecap="round"/>
-  <path d="M173 385c24 17 54 27 84 26" fill="none" stroke="#FFF1B4" stroke-opacity=".42" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="256" cy="256" r="246" fill="#050505"/>
+  <path d="M256 25 456 140v232L256 487 56 372V140Z" fill="none" stroke="url(#edge)" stroke-width="13" stroke-linejoin="round"/>
+  <path d="M256 48 436 152v208L256 464 76 360V152Z" fill="none" stroke="#F5D77F" stroke-opacity=".42" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M354 143H194l-48 48v30l40 40h142l26 26v16l-26 26H158v44h186l50-50v-43l-42-43H210l-20-20v-12l22-22h142Z" fill="url(#gold)" stroke="#FFE8A0" stroke-opacity=".45" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M194 143h160v40H212l-22 22v12l20 20h108l42 43v43l-50 50H158v-44h170l26-26v-16l-26-26H186l-40-40v-30Z" fill="none" stroke="#FFF0B2" stroke-opacity=".28" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M112 146 256 63l144 83M112 366l144 83 144-83" fill="none" stroke="#D69A34" stroke-opacity=".28" stroke-width="2"/>
 </svg>
