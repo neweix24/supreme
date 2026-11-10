@@ -31,6 +31,7 @@ import androidx.fragment.app.FragmentActivity
 import com.neweix.supreme.auth.SupremeAuthClient
 import com.neweix.supreme.auth.SupremeAuthException
 import com.neweix.supreme.auth.SupremeSessionStore
+import com.neweix.supreme.auth.SupremePendingMfaStore
 import com.neweix.supreme.security.SupremeAttestationClient
 import com.neweix.supreme.security.SupremeKeyAttestation
 import java.security.Signature
@@ -49,6 +50,7 @@ class MainActivity : FragmentActivity() {
         }
     }
     private lateinit var sessionStore: SupremeSessionStore
+    private lateinit var pendingMfaStore: SupremePendingMfaStore
     private lateinit var screen: LinearLayout
     private lateinit var statusText: TextView
     private lateinit var emailInput: EditText
@@ -74,6 +76,7 @@ class MainActivity : FragmentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         configureEdgeToEdge(window)
         sessionStore = SupremeSessionStore(this)
+        pendingMfaStore = SupremePendingMfaStore(this)
         buildInterface()
         configureAppLock()
         authenticateToUnlock()
@@ -239,7 +242,11 @@ class MainActivity : FragmentActivity() {
             setTextColor(Color.rgb(18, 16, 10))
             setBackgroundColor(Color.rgb(212, 175, 55))
             setOnClickListener {
-                if (pendingFactorId == null) beginPasswordSignIn() else verifyMfaCode()
+                if (pendingFactorId != null) {
+                    verifyMfaCode()
+                } else if (!resumePendingMfaRegistration()) {
+                    beginPasswordSignIn()
+                }
             }
         }
         val buttonParams = matchWrap()
@@ -380,16 +387,34 @@ class MainActivity : FragmentActivity() {
                 // the verified TOTP AMR timestamp. auth_time is the original
                 // authentication time and can be older than a successful MFA step.
 
-                // Prepare an auth-per-use key operation. The Signature is passed
-                // to BiometricPrompt before any payload is supplied or signed.
+                // Persist the server-issued AAL2 session before starting device attestation.
+                // The encrypted record expires automatically after ten minutes.
+                pendingMfaStore.save(session.accessToken, session.refreshToken, session.userId, session.sessionId)
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        pendingPasswordSession = null
+                        pendingFactorId = null
+                        pendingChallengeId = null
+                        codeInput.text.clear()
+                        continueDeviceRegistration(session)
+                    }
+                }
+            } catch (error: Exception) {
+                handleMfaDeviceRegistrationFailure(error)
+            }
+        }
+    }
+
+
+    private fun continueDeviceRegistration(session: SupremeAuthClient.AuthSession) {
+        background.execute {
+            try {
+                // Prepare a fresh server challenge and auth-per-use key operation.
                 val prepared = SupremeAttestationClient.prepareVerification(session.accessToken)
                 runOnUiThread {
                     authenticateForSigning(
                         prepared.material.proofSigner,
                         onSigned = { signature ->
-                            // Complete the cryptographic operation off the UI thread.
-                            // Any Keystore/provider exception is handled as a sign-in
-                            // failure rather than escaping the BiometricPrompt callback.
                             background.execute {
                                 try {
                                     signature.update(prepared.material.proofPayload)
@@ -416,8 +441,19 @@ class MainActivity : FragmentActivity() {
                                             "Supreme AAL2 session continuity could not be confirmed.",
                                         )
                                     }
+                                    // Persist the rotated recovery credential before any
+                                    // further network call, so an interruption can resume.
+                                    pendingMfaStore.save(
+                                        refreshed.accessToken,
+                                        refreshed.refreshToken,
+                                        refreshed.userId,
+                                        refreshed.sessionId,
+                                    )
                                     SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
                                     sessionStore.saveRefreshToken(refreshed.refreshToken)
+                                    // Commit the durable session before deleting the recovery
+                                    // record, so a crash cannot lose both credentials.
+                                    pendingMfaStore.clear()
                                     val services = SupremeAuthClient.listServices(refreshed.accessToken)
                                     val requests = SupremeAuthClient.listPendingRequests(refreshed.accessToken)
                                     runOnUiThread {
@@ -445,9 +481,61 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    private fun resumePendingMfaRegistration(): Boolean {
+        val pending = pendingMfaStore.read() ?: return false
+        if (isBusy) return true
+        setBusy(true, "Resuming Supreme device verification…")
+        background.execute {
+            try {
+                val parts = pending.accessToken.split(".")
+                require(parts.size == 3) { "Pending Supreme session is malformed." }
+                val claims = org.json.JSONObject(
+                    String(Base64.getUrlDecoder().decode(parts[1]), Charsets.UTF_8),
+                )
+                require(claims.optString("aal") == "aal2" &&
+                    claims.optString("sub") == pending.userId &&
+                    claims.optString("session_id") == pending.sessionId
+                ) { "Pending Supreme MFA session could not be verified." }
+                val expiry = claims.optLong("exp", 0L)
+                val session = if (expiry > System.currentTimeMillis() / 1000L + 30L) {
+                    SupremeAuthClient.AuthSession(
+                        pending.accessToken,
+                        pending.refreshToken,
+                        pending.userId,
+                        "aal2",
+                        claims.optLong("auth_time", 0L),
+                        pending.sessionId,
+                    )
+                } else {
+                    val refreshed = SupremeAuthClient.refresh(pending.refreshToken)
+                    if (refreshed.userId != pending.userId ||
+                        refreshed.sessionId != pending.sessionId ||
+                        refreshed.assuranceLevel != "aal2"
+                    ) {
+                        throw IllegalStateException("Supreme AAL2 session continuity could not be confirmed.")
+                    }
+                    pendingMfaStore.save(
+                        refreshed.accessToken,
+                        refreshed.refreshToken,
+                        refreshed.userId,
+                        refreshed.sessionId,
+                    )
+                    refreshed
+                }
+                runOnUiThread { continueDeviceRegistration(session) }
+            } catch (error: Exception) {
+                val status = (error as? SupremeAuthException)?.statusCode
+                if (status == 400 || status == 401 || status == 403) pendingMfaStore.clear()
+                runOnUiThread { setBusy(false, safeMessage(error)) }
+            }
+        }
+        return true
+    }
+
     private fun handleMfaDeviceRegistrationFailure(error: Exception) {
         runOnUiThread {
-            sessionStore.clear()
+            val status = (error as? SupremeAuthException)?.statusCode
+            if (status == 400 || status == 401 || status == 403 || status == 422) pendingMfaStore.clear()
             pendingPasswordSession = null
             pendingFactorId = null
             pendingChallengeId = null
@@ -816,6 +904,7 @@ class MainActivity : FragmentActivity() {
     private fun signOut() {
         val refresh = sessionStore.readRefreshToken()
         sessionStore.clear()
+        pendingMfaStore.clear()
         currentAccessToken = null
         if (refresh == null) {
             showSignIn()
@@ -857,7 +946,7 @@ class MainActivity : FragmentActivity() {
                     isUnlocked = true
                     lockOverlay.visibility = View.GONE
                     resetIdleLockTimer()
-                    resumeStoredSession()
+                    if (!resumePendingMfaRegistration()) resumeStoredSession()
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {

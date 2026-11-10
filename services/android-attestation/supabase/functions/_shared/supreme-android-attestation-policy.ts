@@ -1,7 +1,4 @@
-import {
-  matchesAttestationApplicationId,
-  type AttestationApplicationId,
-} from "./supreme-attestation-application-id.ts";
+import type { AttestationApplicationId } from "./supreme-attestation-application-id.ts";
 import type {
   AndroidAuthorizationEntry,
   AndroidAuthorizationList,
@@ -213,12 +210,21 @@ function validateAppIdentity(
   if (!applicationId) {
     throw new TypeError("Android attestation is missing software-enforced AttestationApplicationId.");
   }
-  if (!matchesAttestationApplicationId(applicationId, {
-    packageName: SUPREME_ANDROID_PACKAGE_NAME,
-    minimumVersion: policy.minimumPackageVersion,
-    signingCertificateSha256: policy.signingCertificateSha256,
-  })) {
-    throw new TypeError("Android package name, minimum version or production signing certificate does not match Supreme.");
+  const packageInfo = applicationId.packages.find((item) =>
+    item.packageName === SUPREME_ANDROID_PACKAGE_NAME
+  );
+  if (!packageInfo) {
+    throw new TypeError("Android package name does not match Supreme.");
+  }
+  if (packageInfo.version < policy.minimumPackageVersion) {
+    throw new TypeError("Android package version is below the configured Supreme minimum.");
+  }
+  const signerMatches = applicationId.signatureDigests.some((digest) =>
+    digest.length === 32 &&
+    equalBytes(digest, policy.signingCertificateSha256)
+  );
+  if (!signerMatches) {
+    throw new TypeError("Android production signing certificate does not match the configured Supreme signer.");
   }
 }
 
@@ -247,9 +253,11 @@ function validateHardwareKey(description: AndroidKeyDescription): "TRUSTED_ENVIR
   requireIntegerTag(hardware, 10, KEYMINT_EC_CURVE_P256, "EC curve");
   requireIntegerTag(hardware, 702, KEYMINT_ORIGIN_GENERATED, "key origin");
 
-  // Supreme transaction keys must require per-operation biometric
-  // authentication. Android KeyMint tag 504 is the SET OF authenticator
-  // types (fingerprint = 2); timeout 0 means authentication for every use.
+  // Tag 504 must be hardware-enforced and restricted to BIOMETRIC_STRONG.
+  // Tag 505 (AUTH_TIMEOUT) is optional in Android KeyDescription. When absent,
+  // KeyMint defines authentication-per-operation; when present it must be 0.
+  // Do not require an explicit 0 value because Android omits this optional tag
+  // for per-operation keys.
   if (hardware.entries.some((entry) => entry.tagNumber === 503) ||
       description.softwareEnforced.entries.some((entry) =>
         entry.tagNumber === 503 || entry.tagNumber === 504 || entry.tagNumber === 505
@@ -257,7 +265,10 @@ function validateHardwareKey(description: AndroidKeyDescription): "TRUSTED_ENVIR
     throw new TypeError("Supreme biometric authorization must be hardware-enforced and must not allow no-auth keys.");
   }
   requireIntegerTag(hardware, 504, 2n, "biometric authenticator type");
-  requireIntegerTag(hardware, 505, 0n, "per-operation biometric authentication timeout");
+  const authTimeout = hardware.entries.find((entry) => entry.tagNumber === 505);
+  if (authTimeout && readPositiveInteger(authTimeout, "per-operation biometric authentication timeout") !== 0n) {
+    throw new TypeError("Supreme requires per-operation biometric authentication; timed authentication is not allowed.");
+  }
 
   validateHardwareRootOfTrust(description.softwareEnforced, hardware);
   return securityLevel === SECURITY_LEVEL_STRONG_BOX

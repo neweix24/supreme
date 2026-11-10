@@ -96,6 +96,7 @@ type FixtureOptions = {
   minimumVersion?: bigint;
   biometricAuthType?: bigint;
   authTimeout?: bigint;
+  omitAuthTimeout?: boolean;
   noAuthRequired?: boolean;
   biometricAuthInSoftware?: boolean;
 };
@@ -115,7 +116,7 @@ function makeDescription(options: FixtureOptions = {}) {
     contextTag(5, setOf(...(options.digests ?? [4n]).map(integer))),
     contextTag(10, integer(options.curve ?? 1n)),
     contextTag(504, integer(options.biometricAuthType ?? 2n)),
-    contextTag(505, integer(options.authTimeout ?? 0n)),
+    ...(options.omitAuthTimeout ? [] : [contextTag(505, integer(options.authTimeout ?? 0n))]),
     contextTag(702, integer(options.origin ?? 0n)),
     contextTag(704, seq(
       octets(bootKey),
@@ -180,32 +181,73 @@ function assertRejected(
   if (!rejected) throw new Error(`Expected Supreme Android policy to reject: ${label}`);
 }
 
+function assertRejectedWithMessage(
+  description: ReturnType<typeof makeDescription>,
+  expectedPolicy: SupremeAndroidKeyPolicy,
+  expectedMessage: string,
+  label: string,
+): void {
+  try {
+    validateSupremeAndroidKeyDescription(description, expectedPolicy);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes(expectedMessage)) return;
+    throw new Error(`Supreme Android policy returned the wrong diagnostic for: ${label}`);
+  }
+  throw new Error(`Expected Supreme Android policy to reject: ${label}`);
+}
+
 Deno.test("Supreme Android policy accepts hardware-backed TEE and StrongBox app attestations", () => {
   for (const [level, expected] of [[1, "TRUSTED_ENVIRONMENT"], [2, "STRONG_BOX"]] as const) {
-    const result = validateSupremeAndroidKeyDescription(
-      makeDescription({ attestationSecurityLevel: level, keyMintSecurityLevel: level }),
-      policy(),
-    );
-    if (
-      result.packageName !== SUPREME_ANDROID_PACKAGE_NAME ||
-      result.securityLevel !== expected ||
-      result.deviceLocked !== true ||
-      result.verifiedBootState !== "VERIFIED" ||
-      result.origin !== "GENERATED" ||
-      result.curve !== "P-256"
-    ) {
-      throw new Error("Supreme policy returned an unexpected hardware attestation result.");
+    for (const omitAuthTimeout of [false, true]) {
+      const result = validateSupremeAndroidKeyDescription(
+        makeDescription({
+          attestationSecurityLevel: level,
+          keyMintSecurityLevel: level,
+          omitAuthTimeout,
+        }),
+        policy(),
+      );
+      if (
+        result.packageName !== SUPREME_ANDROID_PACKAGE_NAME ||
+        result.securityLevel !== expected ||
+        result.deviceLocked !== true ||
+        result.verifiedBootState !== "VERIFIED" ||
+        result.origin !== "GENERATED" ||
+        result.curve !== "P-256"
+      ) {
+        throw new Error("Supreme policy returned an unexpected hardware attestation result.");
+      }
     }
   }
 });
 
-Deno.test("Supreme Android policy rejects wrong package, old version and wrong production signer", () => {
-  assertRejected(makeDescription({ packageName: "com.neweix.customer" }), policy(), "wrong package");
-  assertRejected(makeDescription({ packageVersion: 1n }), policy(), "old app version");
+Deno.test("Supreme Android policy reports which app identity field failed without exposing signer values", () => {
+  assertRejectedWithMessage(
+    makeDescription({ packageName: "com.neweix.customer" }),
+    policy(),
+    "package name",
+    "wrong package",
+  );
+  assertRejectedWithMessage(
+    makeDescription({ packageVersion: 1n }),
+    policy(),
+    "version is below",
+    "old app version",
+  );
   const wrongSigner = signingDigest.slice();
   wrongSigner[0] ^= 0xff;
-  assertRejected(makeDescription(), { ...policy(), signingCertificateSha256: wrongSigner }, "wrong configured signer");
-  assertRejected(makeDescription({ signerDigest: wrongSigner }), policy(), "wrong attested signer");
+  assertRejectedWithMessage(
+    makeDescription(),
+    { ...policy(), signingCertificateSha256: wrongSigner },
+    "signing certificate",
+    "wrong configured signer",
+  );
+  assertRejectedWithMessage(
+    makeDescription({ signerDigest: wrongSigner }),
+    policy(),
+    "signing certificate",
+    "wrong attested signer",
+  );
 });
 
 Deno.test("Supreme Android policy rejects missing app identity and app identity from the wrong enforcement list", () => {
