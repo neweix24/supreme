@@ -812,9 +812,11 @@ class MainActivity : FragmentActivity() {
             Log.e("SupremeSession", "Encrypted session read failed; credential was preserved.", error)
             restoreInProgress = false
             resumeSessionCheck = false
-            isUnlocked = false
-            lockOverlay.visibility = View.VISIBLE
-            setBusy(false, "Saved Supreme session storage is unavailable. Your encrypted credential was preserved; access remains locked.")
+            // A lost or invalidated Keystore key cannot decrypt the old credential.
+            // Keep the encrypted file for diagnosis, but expose the normal MFA sign-in
+            // recovery path so the user is not trapped behind an unusable lock screen.
+            showSignIn()
+            setBusy(false, "Saved Supreme session could not be opened. Sign in again to create a new secure session; the old encrypted file was preserved.")
             return
         }
         if (refreshToken == null) {
