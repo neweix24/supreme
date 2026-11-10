@@ -14,6 +14,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 internal data class PendingSupremeMfaSession(
+    val accessToken: String,
     val refreshToken: String,
     val userId: String,
     val sessionId: String,
@@ -29,11 +30,12 @@ internal class SupremePendingMfaStore(context: Context) {
     private val atomicFile = AtomicFile(File(context.noBackupFilesDir, "supreme-pending-mfa.bin"))
 
     @Synchronized
-    fun save(refreshToken: String, userId: String, sessionId: String) {
-        require(refreshToken.isNotBlank() && refreshToken.length <= 8192 && refreshToken != "null")
+    fun save(accessToken: String, refreshToken: String, userId: String, sessionId: String) {
+        require(accessToken.length in 40..16384 && refreshToken.isNotBlank() && refreshToken.length <= 8192 && refreshToken != "null")
         require(UUID_PATTERN.matches(userId) && UUID_PATTERN.matches(sessionId))
         val expiresAt = System.currentTimeMillis() / 1000L + PENDING_TTL_SECONDS
         val plain = JSONObject()
+            .put("access_token", accessToken)
             .put("refresh_token", refreshToken)
             .put("user_id", userId)
             .put("session_id", sessionId)
@@ -90,19 +92,20 @@ internal class SupremePendingMfaStore(context: Context) {
             val json = JSONObject(
                 String(cipher.doFinal(bytes.copyOfRange(1 + ivLength, bytes.size)), Charsets.UTF_8),
             )
+            val access = json.optString("access_token")
             val refresh = json.optString("refresh_token")
             val userId = json.optString("user_id")
             val sessionId = json.optString("session_id")
             val expiresAt = json.optLong("expires_at", 0L)
             val now = System.currentTimeMillis() / 1000L
-            if (refresh.isBlank() || refresh.length > 8192 || refresh == "null" ||
+            if (access.length !in 40..16384 || refresh.isBlank() || refresh.length > 8192 || refresh == "null" ||
                 !UUID_PATTERN.matches(userId) || !UUID_PATTERN.matches(sessionId) ||
                 expiresAt <= now || expiresAt > now + PENDING_TTL_SECONDS
             ) {
                 atomicFile.delete()
                 null
             } else {
-                PendingSupremeMfaSession(refresh, userId, sessionId, expiresAt)
+                PendingSupremeMfaSession(access, refresh, userId, sessionId, expiresAt)
             }
         } catch (_: Exception) {
             atomicFile.delete()
