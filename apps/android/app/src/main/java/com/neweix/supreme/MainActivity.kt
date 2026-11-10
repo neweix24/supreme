@@ -61,6 +61,7 @@ class MainActivity : FragmentActivity() {
     private var biometricPrompt: BiometricPrompt? = null
     private var signingBiometricPrompt: BiometricPrompt? = null
     private var authInProgress = false
+    private var restoreInProgress = false
     private var isUnlocked = false
     private var isBusy = false
     private var resumeSessionCheck = false
@@ -800,13 +801,15 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun resumeStoredSession() {
-        if (resumeSessionCheck || pendingFactorId != null) return
+        if (resumeSessionCheck || restoreInProgress || pendingFactorId != null) return
         val refreshToken = sessionStore.readRefreshToken()
         if (refreshToken == null) {
+            restoreInProgress = false
             showSignIn()
             setBusy(false, "No saved Supreme session is available. Sign in again.")
             return
         }
+        restoreInProgress = true
         resumeSessionCheck = true
         setBusy(true, "Restoring the encrypted Supreme session…")
         background.execute {
@@ -836,6 +839,7 @@ class MainActivity : FragmentActivity() {
                 runOnUiThread {
                     currentAccessToken = session.accessToken
                     resumeSessionCheck = false
+                    restoreInProgress = false
                     isUnlocked = true
                     lockOverlay.visibility = View.GONE
                     renderDashboard(services, requests)
@@ -851,6 +855,7 @@ class MainActivity : FragmentActivity() {
                 if (status == 401) sessionStore.clear()
                 runOnUiThread {
                     resumeSessionCheck = false
+                    restoreInProgress = false
                     isUnlocked = false
                     lockOverlay.visibility = View.VISIBLE
                     if (status == 401) {
@@ -919,6 +924,7 @@ class MainActivity : FragmentActivity() {
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     authInProgress = false
+                    restoreInProgress = false
                     isUnlocked = false
                     lockOverlay.visibility = View.VISIBLE
                     statusText.text = "Device unlock failed. Supreme content remains hidden."
@@ -982,7 +988,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun authenticateToUnlock() {
-        if (isUnlocked || authInProgress) return
+        if (isUnlocked || authInProgress || restoreInProgress || resumeSessionCheck) return
         val prompt = biometricPrompt ?: return
         authInProgress = true
         lockOverlay.visibility = View.VISIBLE
@@ -1124,7 +1130,9 @@ class MainActivity : FragmentActivity() {
         }
         super.onStop()
         if (!isChangingConfigurations && !mfaInProgress) {
-            isUnlocked = false
+            // A restore may complete while Android briefly backgrounds the app.
+            // Do not turn that successful restore into a second prompt on resume.
+            if (!restoreInProgress) isUnlocked = false
             if (::lockOverlay.isInitialized) lockOverlay.visibility = View.VISIBLE
         }
     }
@@ -1133,12 +1141,15 @@ class MainActivity : FragmentActivity() {
         super.onResume()
         resetIdleLockTimer()
         val mfaInProgress = pendingPasswordSession != null && pendingFactorId != null
-        if (!isUnlocked && !mfaInProgress && biometricPrompt != null) authenticateToUnlock()
+        if (!isUnlocked && !mfaInProgress && !restoreInProgress && !resumeSessionCheck &&
+            !authInProgress && biometricPrompt != null
+        ) authenticateToUnlock()
     }
 
     override fun onDestroy() {
         idleHandler.removeCallbacks(idleLockRunnable)
         clearTransientCredentials()
+        restoreInProgress = false
         background.shutdownNow()
         biometricPrompt = null
         super.onDestroy()
