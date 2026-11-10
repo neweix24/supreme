@@ -397,55 +397,55 @@ class MainActivity : FragmentActivity() {
     private fun continueDeviceRegistration(session: SupremeAuthClient.AuthSession) {
         background.execute {
             try {
-                    // Prepare a fresh server challenge and auth-per-use key operation.
-                    val prepared = SupremeAttestationClient.prepareVerification(session.accessToken)
-                    runOnUiThread {
-                        authenticateForSigning(
-                            prepared.material.proofSigner,
-                            onSigned = { signature ->
-                                // Complete the cryptographic operation off the UI thread.
-                                // Any Keystore/provider exception is handled as a sign-in
-                                // failure rather than escaping the BiometricPrompt callback.
-                                background.execute {
+                // Prepare a fresh server challenge and auth-per-use key operation.
+                val prepared = SupremeAttestationClient.prepareVerification(session.accessToken)
+                runOnUiThread {
+                    authenticateForSigning(
+                        prepared.material.proofSigner,
+                        onSigned = { signature ->
+                            // Complete the cryptographic operation off the UI thread.
+                            // Any Keystore/provider exception is handled as a sign-in
+                            // failure rather than escaping the BiometricPrompt callback.
+                            background.execute {
                                     try {
-                                        signature.update(prepared.material.proofPayload)
-                                        val proof = Base64.getEncoder().encodeToString(signature.sign())
-                                        val device = SupremeAttestationClient.completeVerification(
-                                            session.accessToken,
-                                            prepared,
-                                            proof,
+                                    signature.update(prepared.material.proofPayload)
+                                    val proof = Base64.getEncoder().encodeToString(signature.sign())
+                                    val device = SupremeAttestationClient.completeVerification(
+                                        session.accessToken,
+                                        prepared,
+                                        proof,
+                                    )
+                                    if (!device.proofOfPossessionVerified ||
+                                        (device.securityLevel != "TRUSTED_ENVIRONMENT" &&
+                                            device.securityLevel != "STRONG_BOX")
+                                    ) {
+                                        throw IllegalStateException(
+                                            "This device did not pass Supreme hardware security verification.",
                                         )
-                                        if (!device.proofOfPossessionVerified ||
-                                            (device.securityLevel != "TRUSTED_ENVIRONMENT" &&
-                                                device.securityLevel != "STRONG_BOX")
-                                        ) {
-                                            throw IllegalStateException(
-                                                "This device did not pass Supreme hardware security verification.",
-                                            )
-                                        }
-                                        val refreshed = SupremeAuthClient.refresh(session.refreshToken)
-                                        if (refreshed.userId != session.userId ||
-                                            refreshed.sessionId != session.sessionId ||
-                                            refreshed.assuranceLevel != "aal2"
-                                        ) {
-                                            throw IllegalStateException(
-                                                "Supreme AAL2 session continuity could not be confirmed.",
-                                            )
-                                        }
-                                        SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
-                                        sessionStore.saveRefreshToken(refreshed.refreshToken)
-                                    pendingMfaStore.clear()
-                                        val services = SupremeAuthClient.listServices(refreshed.accessToken)
-                                        val requests = SupremeAuthClient.listPendingRequests(refreshed.accessToken)
-                                        runOnUiThread {
-                                            currentAccessToken = refreshed.accessToken
-                                            pendingPasswordSession = null
-                                            pendingFactorId = null
-                                            pendingChallengeId = null
-                                            codeInput.text.clear()
-                                            renderDashboard(services, requests)
-                                            setBusy(false, "Biometric device attestation and Supreme session checks passed.")
-                                        }
+                                    }
+                                    val refreshed = SupremeAuthClient.refresh(session.refreshToken)
+                                    if (refreshed.userId != session.userId ||
+                                        refreshed.sessionId != session.sessionId ||
+                                        refreshed.assuranceLevel != "aal2"
+                                    ) {
+                                        throw IllegalStateException(
+                                            "Supreme AAL2 session continuity could not be confirmed.",
+                                        )
+                                    }
+                                    SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
+                                    sessionStore.saveRefreshToken(refreshed.refreshToken)
+                                pendingMfaStore.clear()
+                                    val services = SupremeAuthClient.listServices(refreshed.accessToken)
+                                    val requests = SupremeAuthClient.listPendingRequests(refreshed.accessToken)
+                                    runOnUiThread {
+                                        currentAccessToken = refreshed.accessToken
+                                        pendingPasswordSession = null
+                                        pendingFactorId = null
+                                        pendingChallengeId = null
+                                        codeInput.text.clear()
+                                        renderDashboard(services, requests)
+                                        setBusy(false, "Biometric device attestation and Supreme session checks passed.")
+                                    }
                                     } catch (error: Exception) {
                                         handleMfaDeviceRegistrationFailure(error)
                                     }
