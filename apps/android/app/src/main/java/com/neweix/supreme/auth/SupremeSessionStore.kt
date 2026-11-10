@@ -29,7 +29,7 @@ internal class SupremeSessionStore(context: Context) {
             val safeEvent = event.replace(Regex("[^A-Za-z0-9_ =:./-]"), "_").take(180)
             val previous = if (diagnosticsFile.exists()) diagnosticsFile.readLines().takeLast(180) else emptyList()
             val lines = (previous + "${Instant.now()} $safeEvent").takeLast(200)
-            diagnosticsFile.writeText(lines.joinToString("\\n", postfix = "\\n"))
+            diagnosticsFile.writeText(lines.joinToString("\n", postfix = "\n"))
         } catch (_: Exception) { /* Diagnostics must never interrupt authentication. */ }
     }
 
