@@ -137,3 +137,9 @@ APK required by the hardware-attestation policy. A release APK must be signed
 with the permanent production key whose SHA-256 certificate digest is configured
 server-side; the private signing key must never be committed to this repository
 or embedded in the app.
+
+## Session restoration and device verification
+
+The Android app stores only the rotating Supabase refresh token in an encrypted Android Keystore-backed file. After a token refresh, the replacement token must be committed locally before any additional network request so process termination cannot invalidate the only saved credential.
+
+A failed device-session check must fail closed without deleting a still-valid refresh token. HTTP 401 means the Auth session is no longer valid and requires sign-in. HTTP 403 means device authorization or the signed `supreme_app_session` claim is missing/denied: keep the app locked, retain the encrypted token for retry, and verify that the Supabase Custom Access Token Hook is enabled under Authentication → Hooks. Do not bypass the signed claim or the server-side device/session checks.
