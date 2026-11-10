@@ -403,11 +403,8 @@ class MainActivity : FragmentActivity() {
                     authenticateForSigning(
                         prepared.material.proofSigner,
                         onSigned = { signature ->
-                            // Complete the cryptographic operation off the UI thread.
-                            // Any Keystore/provider exception is handled as a sign-in
-                            // failure rather than escaping the BiometricPrompt callback.
                             background.execute {
-                                    try {
+                                try {
                                     signature.update(prepared.material.proofPayload)
                                     val proof = Base64.getEncoder().encodeToString(signature.sign())
                                     val device = SupremeAttestationClient.completeVerification(
@@ -434,7 +431,9 @@ class MainActivity : FragmentActivity() {
                                     }
                                     SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
                                     sessionStore.saveRefreshToken(refreshed.refreshToken)
-                                pendingMfaStore.clear()
+                                    // Commit the durable session before deleting the recovery
+                                    // record, so a crash cannot lose both credentials.
+                                    pendingMfaStore.clear()
                                     val services = SupremeAuthClient.listServices(refreshed.accessToken)
                                     val requests = SupremeAuthClient.listPendingRequests(refreshed.accessToken)
                                     runOnUiThread {
@@ -446,16 +445,16 @@ class MainActivity : FragmentActivity() {
                                         renderDashboard(services, requests)
                                         setBusy(false, "Biometric device attestation and Supreme session checks passed.")
                                     }
-                                    } catch (error: Exception) {
-                                        handleMfaDeviceRegistrationFailure(error)
-                                    }
+                                } catch (error: Exception) {
+                                    handleMfaDeviceRegistrationFailure(error)
                                 }
-                            },
-                            onFailure = { message ->
-                                handleMfaDeviceRegistrationFailure(IllegalStateException(message))
-                            },
-                        )
-                    }
+                            }
+                        },
+                        onFailure = { message ->
+                            handleMfaDeviceRegistrationFailure(IllegalStateException(message))
+                        },
+                    )
+                }
             } catch (error: Exception) {
                 handleMfaDeviceRegistrationFailure(error)
             }
