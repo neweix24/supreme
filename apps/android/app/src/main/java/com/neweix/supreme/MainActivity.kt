@@ -390,7 +390,15 @@ class MainActivity : FragmentActivity() {
                 // Persist the server-issued AAL2 session before starting device attestation.
                 // The encrypted record expires automatically after ten minutes.
                 pendingMfaStore.save(session.accessToken, session.refreshToken, session.userId, session.sessionId)
-                continueDeviceRegistration(session)
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        pendingPasswordSession = null
+                        pendingFactorId = null
+                        pendingChallengeId = null
+                        codeInput.text.clear()
+                        continueDeviceRegistration(session)
+                    }
+                }
             } catch (error: Exception) {
                 handleMfaDeviceRegistrationFailure(error)
             }
