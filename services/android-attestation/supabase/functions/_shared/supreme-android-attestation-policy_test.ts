@@ -200,18 +200,22 @@ Deno.test("Supreme Android policy accepts hardware-backed TEE and StrongBox app 
   for (const [level, expected] of [[1, "TRUSTED_ENVIRONMENT"], [2, "STRONG_BOX"]] as const) {
     for (const omitAuthTimeout of [false, true]) {
       const result = validateSupremeAndroidKeyDescription(
-      makeDescription({ attestationSecurityLevel: level, keyMintSecurityLevel: level, omitAuthTimeout }),
-      policy(),
-    );
-    if (
-      result.packageName !== SUPREME_ANDROID_PACKAGE_NAME ||
-      result.securityLevel !== expected ||
-      result.deviceLocked !== true ||
-      result.verifiedBootState !== "VERIFIED" ||
-      result.origin !== "GENERATED" ||
-      result.curve !== "P-256"
-    ) {
-      throw new Error("Supreme policy returned an unexpected hardware attestation result.");
+        makeDescription({
+          attestationSecurityLevel: level,
+          keyMintSecurityLevel: level,
+          omitAuthTimeout,
+        }),
+        policy(),
+      );
+      if (
+        result.packageName !== SUPREME_ANDROID_PACKAGE_NAME ||
+        result.securityLevel !== expected ||
+        result.deviceLocked !== true ||
+        result.verifiedBootState !== "VERIFIED" ||
+        result.origin !== "GENERATED" ||
+        result.curve !== "P-256"
+      ) {
+        throw new Error("Supreme policy returned an unexpected hardware attestation result.");
       }
     }
   }
