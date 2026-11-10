@@ -261,6 +261,14 @@ class MainActivity : FragmentActivity() {
             gravity = Gravity.CENTER
         }
         screen.addView(statusText, matchWrap())
+        screen.addView(Button(this).apply {
+            text = "COPY DIAGNOSTICS"
+            setOnClickListener {
+                val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Supreme diagnostics", sessionStore.exportDiagnostics()))
+                android.widget.Toast.makeText(this@MainActivity, "Supreme diagnostics copied", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }, matchWrap())
 
         screen.addView(TextView(this).apply {
             text = "ACCESS IS VERIFIED SERVER-SIDE · UNAUTHORIZED DEVICES ARE DENIED"
@@ -306,14 +314,6 @@ class MainActivity : FragmentActivity() {
             addView(Button(this@MainActivity).apply {
                 text = "UNLOCK SUPREME"
                 setOnClickListener { authenticateToUnlock() }
-            }, matchWrap())
-            addView(Button(this@MainActivity).apply {
-                text = "COPY DIAGNOSTICS"
-                setOnClickListener {
-                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Supreme diagnostics", sessionStore.exportDiagnostics()))
-                    statusText.text = "Supreme diagnostics copied. Send the copied text to support."
-                }
             }, matchWrap())
         }
         root.addView(lockOverlay, FrameLayout.LayoutParams(
@@ -486,8 +486,7 @@ class MainActivity : FragmentActivity() {
             // If attestation registration already returned a rotated token, a 403
             // from the session verifier must not erase it. Keep the app locked and
             // allow retry after the project Auth Hook/device policy is corrected.
-            // Invalid/expired credentials (401) and all pre-registration failures
-            // still discard any stale local session.
+            // MFA/device-registration failures do not invalidate the refresh token.
             val status = (error as? SupremeAuthException)?.statusCode
             // MFA/device-registration failures must not erase a previously valid refresh token.
             // Only the dedicated session-refresh path may clear a credential after HTTP 401.
