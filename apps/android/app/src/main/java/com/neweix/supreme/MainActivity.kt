@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.text.InputType
 import android.text.method.PasswordTransformationMethod
 import android.view.Gravity
@@ -413,6 +414,9 @@ class MainActivity : FragmentActivity() {
                                     // network request. Registration has succeeded, so this
                                     // preserves the AAL2 session across process death.
                                     sessionStore.saveRefreshToken(refreshed.refreshToken)
+                                    check(sessionStore.readRefreshToken() == refreshed.refreshToken) {
+                                        "Supreme session credential could not be verified after secure storage."
+                                    }
                                     if (refreshed.userId != session.userId ||
                                         refreshed.sessionId != session.sessionId ||
                                         refreshed.assuranceLevel != "aal2"
@@ -802,8 +806,21 @@ class MainActivity : FragmentActivity() {
 
     private fun resumeStoredSession() {
         if (resumeSessionCheck || restoreInProgress || pendingFactorId != null) return
-        val refreshToken = sessionStore.readRefreshToken()
+        val refreshToken = try {
+            sessionStore.readRefreshToken()
+        } catch (error: Exception) {
+            Log.e("SupremeSession", "Encrypted session read failed; credential was preserved.", error)
+            restoreInProgress = false
+            resumeSessionCheck = false
+            // A lost or invalidated Keystore key cannot decrypt the old credential.
+            // Keep the encrypted file for diagnosis, but expose the normal MFA sign-in
+            // recovery path so the user is not trapped behind an unusable lock screen.
+            showSignIn()
+            setBusy(false, "Saved Supreme session could not be opened. Sign in again to create a new secure session; the old encrypted file was preserved.")
+            return
+        }
         if (refreshToken == null) {
+            Log.w("SupremeSession", "No encrypted refresh credential exists in app storage.")
             restoreInProgress = false
             showSignIn()
             setBusy(false, "No saved Supreme session is available. Sign in again.")
@@ -822,6 +839,9 @@ class MainActivity : FragmentActivity() {
                 // immediately, before device verification or dashboard requests, so a
                 // process death or a temporary verifier failure cannot strand the session.
                 sessionStore.saveRefreshToken(session.refreshToken)
+                check(sessionStore.readRefreshToken() == session.refreshToken) {
+                    "Rotated Supreme session credential could not be verified after secure storage."
+                }
                 SupremeAuthClient.verifyDeviceSession(session.accessToken)
                 var dashboardWarning: String? = null
                 val services = try {
@@ -848,6 +868,7 @@ class MainActivity : FragmentActivity() {
                 }
             } catch (error: Exception) {
                 val status = (error as? SupremeAuthException)?.statusCode
+                Log.w("SupremeSession", "Session restore failed; HTTP status=${status ?: "none"}, error=${error.javaClass.simpleName}.")
                 // A 401 means the Auth refresh credential is invalid/revoked. A 403
                 // can instead mean the device verifier or project Auth Hook is denying
                 // an otherwise valid session. Never unlock on 403, but do not destroy
