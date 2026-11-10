@@ -242,7 +242,11 @@ class MainActivity : FragmentActivity() {
             setTextColor(Color.rgb(18, 16, 10))
             setBackgroundColor(Color.rgb(212, 175, 55))
             setOnClickListener {
-                if (pendingFactorId == null) beginPasswordSignIn() else verifyMfaCode()
+                if (pendingFactorId != null) {
+                    verifyMfaCode()
+                } else if (!resumePendingMfaRegistration()) {
+                    beginPasswordSignIn()
+                }
             }
         }
         val buttonParams = matchWrap()
