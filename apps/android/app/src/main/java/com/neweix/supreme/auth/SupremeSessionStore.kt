@@ -73,7 +73,7 @@ internal class SupremeSessionStore(context: Context) {
             val iv = input.copyOfRange(1, 1 + ivLength)
             val ciphertext = input.copyOfRange(1 + ivLength, input.size)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(128, iv))
+            cipher.init(Cipher.DECRYPT_MODE, getExistingKey(), GCMParameterSpec(128, iv))
             String(cipher.doFinal(ciphertext), Charsets.UTF_8)
                 .takeIf { it.isNotBlank() && it.length <= 8192 && it != "null" }
                 ?: run {
@@ -96,9 +96,14 @@ internal class SupremeSessionStore(context: Context) {
         atomicFile.delete()
     }
 
-    private fun getOrCreateKey(): SecretKey {
+    private fun getExistingKey(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        val existing = store.getKey(KEY_ALIAS, null) as? SecretKey
+        return store.getKey(KEY_ALIAS, null) as? SecretKey
+            ?: throw IllegalStateException("The Android Keystore session key is missing. The encrypted session was preserved.")
+    }
+
+    private fun getOrCreateKey(): SecretKey {
+        val existing = runCatching { getExistingKey() }.getOrNull()
         if (existing != null) return existing
 
         val generator = KeyGenerator.getInstance(
