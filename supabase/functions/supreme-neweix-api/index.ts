@@ -1,3 +1,46 @@
+import * as Sentry from "npm:@sentry/deno@11.9.0";
+
+const SENTRY_DSN = Deno.env.get("SENTRY_DSN") ?? "https://4a80e5b20d5f93801845e87071a1e612@o4512412827058176.ingest.us.sentry.io/4512412888530944";
+Sentry.init({
+  dsn: SENTRY_DSN,
+  defaultIntegrations: false,
+  sendDefaultPii: false,
+  tracesSampleRate: 0,
+  environment: Deno.env.get("SENTRY_ENVIRONMENT") ?? "production",
+});
+
+async function reportSentryError(error: unknown, functionName: string, requestId?: string | null): Promise<void> {
+  Sentry.withScope((scope) => {
+    scope.setTag("service", "neweix");
+    scope.setTag("supabase_function", functionName);
+    const region = Deno.env.get("SB_REGION");
+    const executionId = Deno.env.get("SB_EXECUTION_ID");
+    if (region) scope.setTag("region", region);
+    if (executionId) scope.setExtra("execution_id", executionId);
+    if (requestId) scope.setTag("request_id", requestId);
+    Sentry.captureException(error);
+  });
+  await Sentry.flush(2000);
+}
+
+function withSentry(functionName: string, handler: (request: Request) => Response | Promise<Response>): (request: Request) => Promise<Response> {
+  return async (request: Request): Promise<Response> => {
+    try {
+      const result = await handler(request);
+      if (result.status >= 500) {
+        await reportSentryError(new Error(`${functionName} returned HTTP ${result.status}`), functionName, result.headers.get("x-request-id"));
+      }
+      return result;
+    } catch (error) {
+      await reportSentryError(error, functionName, request.headers.get("x-request-id"));
+      return new Response(JSON.stringify({ error: { code: "INTERNAL_ERROR" } }), {
+        status: 500,
+        headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+      });
+    }
+  };
+}
+
 import postgres from "npm:postgres@3.4.7";
 
 const SUPREME_PROJECT_URL = "https://grhybvlhdnzlopwbaqun.supabase.co";
@@ -210,7 +253,7 @@ async function recentOrders(url: URL, requestId: string): Promise<Response> {
   return json({ success: true, service: "neweix", orders: rows, request_id: requestId }, 200, requestId);
 }
 
-Deno.serve(async (request: Request) => {
+Deno.serve(withSentry("supreme-neweix-api", async (request: Request) => {
   const requestId = crypto.randomUUID();
   if (request.method === "OPTIONS") return json({ success: true, request_id: requestId }, 200, requestId);
   if (request.method !== "GET") return json({ error: { code: "READ_ONLY_API", request_id: requestId } }, 405, requestId);
@@ -246,4 +289,4 @@ Deno.serve(async (request: Request) => {
     console.error("Neweix Control Plane service request failed", { requestId, error: String(error) });
     return json({ error: { code: "INTERNAL_ERROR", request_id: requestId } }, 500, requestId);
   }
-});
+}));
