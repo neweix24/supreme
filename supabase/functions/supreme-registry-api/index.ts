@@ -4,7 +4,6 @@ const SENTRY_DSN = Deno.env.get("SENTRY_DSN") ?? "https://4a80e5b20d5f93801845e8
 Sentry.init({
   dsn: SENTRY_DSN,
   defaultIntegrations: false,
-  sendDefaultPii: false,
   tracesSampleRate: 0,
   environment: Deno.env.get("SENTRY_ENVIRONMENT") ?? "production",
 });
