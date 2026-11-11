@@ -983,16 +983,19 @@ class MainActivity : FragmentActivity() {
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     signingBiometricPrompt = null
-                    // Some Android/OEM BiometricPrompt implementations report a
-                    // successful CryptoObject authentication but omit the CryptoObject
-                    // from AuthenticationResult. Keep the exact Signature instance that
-                    // was supplied to authenticate(). Its Android Keystore operation is
-                    // still auth-per-use protected: sign() will fail with
-                    // UserNotAuthenticatedException if the OS did not authorize it.
-                    // Prefer the callback's object when present, otherwise use only the
-                    // original object bound to this prompt. Never create/reinitialize a
-                    // new Signature as a fallback.
-                    val authorized = result.cryptoObject?.signature ?: signature
+                    // A successful prompt callback is not enough by itself: the
+                    // Keystore signing operation is authorized only when Android
+                    // returns the CryptoObject bound to this authentication. Never
+                    // fall back to the pre-prompt Signature, because it may not carry
+                    // the operation authentication token and sign() will fail with
+                    // KEY_USER_NOT_AUTHENTICATED.
+                    val authorized = result.cryptoObject?.signature
+                    if (authorized == null) {
+                        onFailure(
+                            "Android did not return the biometric-authorized signing operation. No signature was created. Retry fingerprint verification.",
+                        )
+                        return
+                    }
                     onSigned(authorized)
                 }
 
