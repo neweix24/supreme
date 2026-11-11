@@ -35,6 +35,7 @@ import com.neweix.supreme.auth.SupremeSessionStore
 import com.neweix.supreme.security.SupremeAttestationClient
 import com.neweix.supreme.security.SupremeKeyAttestation
 import java.security.Signature
+import io.sentry.Sentry
 import java.util.Base64
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -471,6 +472,9 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun handleMfaDeviceRegistrationFailure(error: Exception) {
+        // This failure is intentionally handled in-app; report it so Sentry
+        // records device-verification and MFA registration failures.
+        Sentry.captureException(error)
         runOnUiThread {
             // If attestation registration already returned a rotated token, a 403
             // from the session verifier must not erase it. Keep the app locked and
@@ -869,6 +873,9 @@ class MainActivity : FragmentActivity() {
                     setBusy(false, dashboardWarning ?: "Supreme session restored.")
                 }
             } catch (error: Exception) {
+                // Session restore failures are handled to keep the app locked, but
+                // must also reach Sentry so production failures are diagnosable.
+                Sentry.captureException(error)
                 val status = (error as? SupremeAuthException)?.statusCode
                 Log.w("SupremeSession", "Session restore failed; HTTP status=${status ?: "none"}, error=${error.javaClass.simpleName}.")
                 // A 401 means the Auth refresh credential is invalid/revoked. A 403
