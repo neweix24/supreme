@@ -636,14 +636,203 @@ async function createControlRequest(
   return { id: existing.id, status: existing.status, created_at: existing.created_at, duplicate: true };
 }
 
+
+function canonicalRequestTarget(url: URL): string {
+  const target = url.pathname + url.search;
+  if (target.length > 4096 || !target.startsWith("/") || target.startsWith("//") ||
+      target.includes("#") || target.includes("\\\\") ||
+      /%(?![0-9A-F]{2})/.test(target) || /%2f|%5c/i.test(url.pathname) ||
+      /%2e/i.test(url.pathname)) {
+    throw new TypeError("Non-canonical request target.");
+  }
+  const segments = url.pathname.split("/");
+  if (segments.some((segment) => segment === "." || segment === "..")) {
+    throw new TypeError("Dot segments are forbidden.");
+  }
+  const seen = new Set<string>();
+  for (const pair of url.searchParams) {
+    const key = pair[0];
+    if (seen.has(key)) throw new TypeError("Duplicate query parameters are forbidden.");
+    seen.add(key);
+  }
+  return target;
+}
+
+async function issueApiRequestChallenge(
+  userId: string,
+  claims: JsonObject,
+  requestId: string,
+): Promise<Response> {
+  if (!db) return errorResponse("BACKEND_NOT_CONFIGURED", "Registry backend is not configured.", 503, requestId);
+  const binding = claims.supreme_app_session as JsonObject;
+  const appSessionId = requireString(binding.session_id, "app session", 36);
+  const deviceId = requireString(binding.device_id, "device", 36);
+  const nonce = crypto.getRandomValues(new Uint8Array(32));
+  const nonceHash = await sha256Bytes(nonce);
+  const [challenge] = await db`
+    with device_lock as materialized (
+      select pg_advisory_xact_lock(hashtextextended(${deviceId}::text, 0))
+    ),
+    recent as materialized (
+      select count(*)::integer as challenge_count
+      from supreme.api_request_challenges c
+      cross join device_lock
+      where c.device_id = ${deviceId}::uuid
+        and c.created_at > now() - interval '10 minutes'
+    )
+    insert into supreme.api_request_challenges
+      (user_id, app_session_id, device_id, nonce_sha256, expires_at)
+    select ${userId}::uuid, ${appSessionId}::uuid, ${deviceId}::uuid,
+           ${nonceHash}, now() + interval '60 seconds'
+    from recent
+    where recent.challenge_count < 60
+    returning id::text, expires_at
+  `;
+  if (!challenge) {
+    return errorResponse("REQUEST_CHALLENGE_RATE_LIMITED", "Too many API request challenges were issued.", 429, requestId);
+  }
+  await audit({
+    actor: userId,
+    action: "api_request.challenge",
+    outcome: "success",
+    requestId,
+    details: { challenge_id: challenge.id, device_id: deviceId },
+  });
+  return json({
+    challenge_id: challenge.id,
+    nonce: base64Url(nonce),
+    expires_at: challenge.expires_at,
+    request_id: requestId,
+  }, 200, requestId);
+}
+
+async function verifyAppBoundRequest(
+  request: Request,
+  userId: string,
+  claims: JsonObject,
+  requestId: string,
+): Promise<Response | null> {
+  if (!db) return errorResponse("BACKEND_NOT_CONFIGURED", "Registry backend is not configured.", 503, requestId);
+  const challengeId = request.headers.get("x-supreme-challenge-id") ?? "";
+  const nonceEncoded = request.headers.get("x-supreme-nonce") ?? "";
+  const timestampText = request.headers.get("x-supreme-timestamp") ?? "";
+  const signatureEncoded = request.headers.get("x-supreme-signature") ?? "";
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuid.test(challengeId) || !/^[0-9]{10}$/.test(timestampText) ||
+      signatureEncoded.length > 256 || !signatureEncoded) {
+    await audit({ actor: userId, action: "api_request.denied", outcome: "denied", requestId,
+      details: { reason: "missing_or_malformed_proof" } });
+    return errorResponse("APP_REQUEST_PROOF_REQUIRED", "A valid Supreme app request signature is required.", 403, requestId);
+  }
+  const timestamp = Number(timestampText);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (!Number.isSafeInteger(timestamp) || Math.abs(nowSeconds - timestamp) > 60) {
+    await audit({ actor: userId, action: "api_request.denied", outcome: "denied", requestId,
+      details: { reason: "timestamp_out_of_window" } });
+    return errorResponse("APP_REQUEST_PROOF_EXPIRED", "The Supreme app request signature has expired.", 403, requestId);
+  }
+
+  let nonce: Uint8Array;
+  let signatureDer: Uint8Array;
+  let target: string;
+  let bodyBytes: Uint8Array;
+  try {
+    nonce = decodeCanonicalBase64Url(nonceEncoded, 32);
+    signatureDer = decodeCanonicalBase64(signatureEncoded, 128);
+    target = canonicalRequestTarget(new URL(request.url));
+    const buffer = await request.clone().arrayBuffer();
+    if (buffer.byteLength > 1024 * 1024) throw new RangeError("Request body too large.");
+    bodyBytes = new Uint8Array(buffer);
+  } catch {
+    await audit({ actor: userId, action: "api_request.denied", outcome: "denied", requestId,
+      details: { reason: "malformed_proof_payload" } });
+    return errorResponse("APP_REQUEST_PROOF_INVALID", "The Supreme app request proof is invalid.", 403, requestId);
+  }
+
+  const binding = claims.supreme_app_session as JsonObject;
+  const appSessionId = binding.session_id as string;
+  const deviceId = binding.device_id as string;
+  const nonceHash = await sha256Bytes(nonce);
+  const [challenge] = await db`
+    select c.id::text, c.nonce_sha256, d.device_request_signing_public_key_spki
+    from supreme.api_request_challenges c
+    join supreme.devices d on d.id = c.device_id
+    where c.id = ${challengeId}::uuid
+      and c.user_id = ${userId}::uuid
+      and c.app_session_id = ${appSessionId}::uuid
+      and c.device_id = ${deviceId}::uuid
+      and c.consumed_at is null
+      and c.expires_at > now()
+      and d.user_id = ${userId}::uuid
+      and d.status = 'active'
+      and d.device_request_signing_public_key_spki is not null
+    limit 1
+  `;
+  if (!challenge || hex(new Uint8Array(challenge.nonce_sha256)) !== hex(nonceHash)) {
+    await audit({ actor: userId, action: "api_request.denied", outcome: "denied", requestId,
+      details: { reason: "challenge_mismatch_or_replay", challenge_id: challengeId } });
+    return errorResponse("APP_REQUEST_CHALLENGE_INVALID", "The Supreme app request challenge is invalid or expired.", 409, requestId);
+  }
+
+  let signatureValid = false;
+  try {
+    const spki = new Uint8Array(challenge.device_request_signing_public_key_spki);
+    const publicKey = await crypto.subtle.importKey(
+      "spki", toArrayBuffer(spki), { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"],
+    );
+    const payload = new TextEncoder().encode([
+      "NEWEIX-SUPREME-API-REQUEST-V1",
+      challengeId,
+      nonceEncoded,
+      request.method.toUpperCase(),
+      target,
+      hex(await sha256Bytes(bodyBytes)),
+      timestampText,
+    ].join("\\n"));
+    signatureValid = await crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" },
+      publicKey,
+      toArrayBuffer(derEcdsaToP1363(signatureDer)),
+      toArrayBuffer(payload),
+    );
+  } catch {
+    signatureValid = false;
+  }
+  if (!signatureValid) {
+    await audit({ actor: userId, action: "api_request.denied", outcome: "denied", requestId,
+      details: { reason: "invalid_device_signature", challenge_id: challengeId } });
+    return errorResponse("APP_REQUEST_SIGNATURE_INVALID", "The Supreme app request signature is invalid.", 403, requestId);
+  }
+
+  const [consumed] = await db`
+    update supreme.api_request_challenges
+    set consumed_at = now()
+    where id = ${challengeId}::uuid
+      and user_id = ${userId}::uuid
+      and app_session_id = ${appSessionId}::uuid
+      and device_id = ${deviceId}::uuid
+      and nonce_sha256 = ${nonceHash}
+      and consumed_at is null
+      and expires_at > now()
+    returning id::text
+  `;
+  if (!consumed) {
+    await audit({ actor: userId, action: "api_request.denied", outcome: "denied", requestId,
+      details: { reason: "challenge_replay", challenge_id: challengeId } });
+    return errorResponse("APP_REQUEST_REPLAYED", "The Supreme app request challenge has already been used.", 409, requestId);
+  }
+  return null;
+}
+
 async function handle(request: Request): Promise<Response> {
   const requestId = crypto.randomUUID();
   const origin = request.headers.get("origin");
-  const cors = corsHeaders(origin);
-  if (origin && !allowedOrigins.has(origin)) {
-    return errorResponse("ORIGIN_NOT_ALLOWED", "This origin is not allowed.", 403, requestId);
-  }
-  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+  const cors: Record<string, string> = { "cache-control": "no-store", vary: "Origin" };
+  // Supreme is native-app-only. CORS is not the security boundary, but no
+  // browser origin is granted cross-origin access; signed device proof below
+  // remains mandatory even for non-browser HTTP clients.
+  if (origin) return errorResponse("ORIGIN_NOT_ALLOWED", "Supreme is accessible only through its native Android app.", 403, requestId);
+  if (request.method === "OPTIONS") return new Response(null, { status: 403, headers: cors });
 
   try {
     if (!db) return errorResponse("BACKEND_NOT_CONFIGURED", "Registry backend is not configured.", 503, requestId);
@@ -652,6 +841,13 @@ async function handle(request: Request): Promise<Response> {
     const routeIndex = url.pathname.indexOf("/v1/");
     const path = routeIndex >= 0 ? url.pathname.slice(routeIndex) : url.pathname;
     const parts = path.split("/").filter(Boolean);
+
+    if (request.method === "POST" && parts.length === 2 &&
+        parts[0] === "v1" && parts[1] === "request-challenge") {
+      return await issueApiRequestChallenge(userId, claims, requestId);
+    }
+    const proofFailure = await verifyAppBoundRequest(request, userId, claims, requestId);
+    if (proofFailure) return proofFailure;
 
     if (request.method === "GET" && parts.length === 2 && parts[0] === "v1" && parts[1] === "services") {
       const limitRaw = Number(url.searchParams.get("limit") ?? "50");
