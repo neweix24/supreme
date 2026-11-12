@@ -48,6 +48,9 @@ const SUPABASE_ANON_KEY =
   Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ??
   "";
 const DATABASE_URL = Deno.env.get("SUPABASE_DB_URL") ?? "";
+const db = DATABASE_URL
+  ? postgres(DATABASE_URL, { max: 1, prepare: false, ssl: "require" })
+  : null;
 
 type JsonObject = Record<string, unknown>;
 
