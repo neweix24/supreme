@@ -251,10 +251,14 @@ function validateHardwareKey(description: AndroidKeyDescription, authenticationM
   // Approval keys require hardware-enforced biometric authentication for every use.
   // The dedicated request-transport key is UID-scoped and non-exportable, so it has no per-use prompt.
   if (authenticationMode === "none") {
-    if ([...hardware.entries, ...description.softwareEnforced.entries].some((entry) =>
-      entry.tagNumber === 503 || entry.tagNumber === 504 || entry.tagNumber === 505
-    )) {
-      throw new TypeError("Supreme request-signing keys must not declare a user-authentication policy.");
+    // KeyMint tag 503 is the hardware-enforced NO_AUTH_REQUIRED marker.
+    // It must be present only in the hardware list; biometric auth tags must be absent.
+    if (!hardware.entries.some((entry) => entry.tagNumber === 503) ||
+        description.softwareEnforced.entries.some((entry) => entry.tagNumber === 503) ||
+        [...hardware.entries, ...description.softwareEnforced.entries].some((entry) =>
+          entry.tagNumber === 504 || entry.tagNumber === 505
+        )) {
+      throw new TypeError("Supreme request-signing keys must have hardware-enforced NO_AUTH_REQUIRED and no biometric auth tags.");
     }
   } else {
     if (hardware.entries.some((entry) => entry.tagNumber === 503) ||
