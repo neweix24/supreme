@@ -646,6 +646,18 @@ async function issueApiRequestChallenge(
   const binding = claims.supreme_app_session as JsonObject;
   const appSessionId = requireString(binding.session_id, "app session", 36);
   const deviceId = requireString(binding.device_id, "device", 36);
+  const [registeredKey] = await db`
+    select id::text
+    from supreme.devices
+    where id = ${deviceId}::uuid
+      and user_id = ${userId}::uuid
+      and status = 'active'
+      and device_request_signing_public_key_spki is not null
+    limit 1
+  `;
+  if (!registeredKey) {
+    return errorResponse("REQUEST_SIGNING_KEY_REQUIRED", "This Supreme device has not registered its API signing key.", 403, requestId);
+  }
   const nonce = crypto.getRandomValues(new Uint8Array(32));
   const nonceHash = await sha256Bytes(nonce);
   const [challenge] = await db`
