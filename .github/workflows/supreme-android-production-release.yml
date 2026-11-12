@@ -2,6 +2,13 @@ name: Supreme Android production release
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/android/**"
+      - "services/android-attestation/**"
+      - ".github/workflows/supreme-android-production-release.yml"
 
 permissions:
   contents: read
