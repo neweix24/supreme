@@ -148,7 +148,7 @@ internal object SupremeRequestSigningKey {
         }
     }
 
-    private fun canonicalTarget(value: String): String {
+    internal fun canonicalTarget(value: String): String {
         require(value.isNotEmpty() && value.length <= 4096 && value.all { it.code in 0x21..0x7e }) { "Invalid request target." }
         require(value.startsWith("/") && !value.startsWith("//")) { "Request target must be an absolute path." }
         require(!value.contains('#') && !value.contains('\\')) { "Request target contains forbidden characters." }
