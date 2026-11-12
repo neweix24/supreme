@@ -98,6 +98,7 @@ type FixtureOptions = {
   authTimeout?: bigint;
   noAuthRequired?: boolean;
   biometricAuthInSoftware?: boolean;
+  authenticationMode?: "biometric_per_operation" | "none";
 };
 
 function makeDescription(options: FixtureOptions = {}) {
@@ -114,8 +115,6 @@ function makeDescription(options: FixtureOptions = {}) {
     contextTag(3, integer(options.keySize ?? 256n)),
     contextTag(5, setOf(...(options.digests ?? [4n]).map(integer))),
     contextTag(10, integer(options.curve ?? 1n)),
-    contextTag(504, integer(options.biometricAuthType ?? 2n)),
-    contextTag(505, integer(options.authTimeout ?? 0n)),
     contextTag(702, integer(options.origin ?? 0n)),
     contextTag(704, seq(
       octets(bootKey),
@@ -126,6 +125,11 @@ function makeDescription(options: FixtureOptions = {}) {
   ];
   if (options.noAuthRequired) {
     hardwareEntries.push(contextTag(503, tlv([0x05], [])));
+  } else {
+    hardwareEntries.push(
+      contextTag(504, integer(options.biometricAuthType ?? 2n)),
+      contextTag(505, integer(options.authTimeout ?? 0n)),
+    );
   }
   if (options.biometricAuthInSoftware) {
     softwareEntries.push(
@@ -163,6 +167,7 @@ function policy(options: FixtureOptions = {}): SupremeAndroidKeyPolicy {
     expectedChallenge: options.challenge ?? challenge,
     minimumPackageVersion: options.minimumVersion ?? 2n,
     signingCertificateSha256: signer,
+    authenticationMode: options.authenticationMode,
   };
 }
 
@@ -244,6 +249,27 @@ Deno.test("Supreme Android policy requires per-operation hardware biometric auth
   assertRejected(makeDescription({ authTimeout: 30n }), policy(), "cached biometric authorization");
   assertRejected(makeDescription({ noAuthRequired: true }), policy(), "no-auth-required key");
   assertRejected(makeDescription({ biometricAuthInSoftware: true }), policy(), "software-enforced biometric authorization");
+});
+
+
+Deno.test("Supreme request-signing key policy accepts only hardware-enforced NO_AUTH_REQUIRED", () => {
+  const result = validateSupremeAndroidKeyDescription(
+    makeDescription({ noAuthRequired: true }),
+    policy({ authenticationMode: "none" }),
+  );
+  if (result.securityLevel !== "TRUSTED_ENVIRONMENT") {
+    throw new Error("Request-signing key must retain hardware security-level validation.");
+  }
+  assertRejected(
+    makeDescription({ noAuthRequired: true, biometricAuthInSoftware: true }),
+    policy({ authenticationMode: "none" }),
+    "software biometric tags on request-signing key",
+  );
+  assertRejected(
+    makeDescription({ noAuthRequired: false }),
+    policy({ authenticationMode: "none" }),
+    "request-signing key missing NO_AUTH_REQUIRED",
+  );
 });
 
 Deno.test("Supreme Android policy requires a hardware-enforced locked VERIFIED RootOfTrust", () => {
