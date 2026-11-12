@@ -89,7 +89,7 @@ tasks.configureEach {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("io.sentry:sentry-android:8.33.0")
     testImplementation("junit:junit:4.13.2")
