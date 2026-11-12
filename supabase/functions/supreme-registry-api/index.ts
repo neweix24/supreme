@@ -740,9 +740,34 @@ async function verifyAppBoundRequest(
     nonce = decodeCanonicalBase64Url(nonceEncoded, 32);
     signatureDer = decodeCanonicalBase64(signatureEncoded, 128);
     target = canonicalRequestTarget(new URL(request.url));
-    const buffer = await request.clone().arrayBuffer();
-    if (buffer.byteLength > 1024 * 1024) throw new RangeError("Request body too large.");
-    bodyBytes = new Uint8Array(buffer);
+    const clonedBody = request.clone().body;
+    if (!clonedBody) {
+      bodyBytes = new Uint8Array(0);
+    } else {
+      const reader = clonedBody.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.byteLength;
+          if (total > 1024 * 1024) {
+            await reader.cancel();
+            throw new RangeError("Request body too large.");
+          }
+          chunks.push(value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      bodyBytes = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bodyBytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+    }
   } catch {
     await audit({ actor: userId, action: "api_request.denied", outcome: "denied", requestId,
       details: { reason: "malformed_proof_payload" } });
