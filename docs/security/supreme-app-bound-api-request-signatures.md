@@ -56,7 +56,7 @@ Rules:
 - Reject fragments, absolute URLs, encoded path separators, dot segments, duplicate security-sensitive query parameters, and non-canonical base64url.
 - Use a bounded clock-skew window (60 seconds maximum).
 - Never include the bearer token in the signed payload or expose it to page JavaScript.
-- Send the challenge ID, timestamp, and DER signature in dedicated headers. The nonce itself need not be sent because the server retrieves its hash-bound challenge row.
+- Send the challenge ID, canonical base64url nonce, timestamp, and DER signature in dedicated headers. The server hashes the supplied nonce and compares it with the challenge row before signature verification. Storing only the nonce hash means the server cannot reconstruct the raw nonce from the row.
 
 ### 4. Verify and consume before routing
 
