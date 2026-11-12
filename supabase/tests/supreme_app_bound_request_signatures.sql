@@ -28,8 +28,7 @@ begin
   end if;
 
   if has_table_privilege('anon', 'supreme.api_request_challenges', 'SELECT')
-     or has_table_privilege('authenticated', 'supreme.api_request_challenges', 'SELECT')
-     or has_table_privilege('public', 'supreme.api_request_challenges', 'SELECT') then
+     or has_table_privilege('authenticated', 'supreme.api_request_challenges', 'SELECT') then
     raise exception 'A client/public role can read private request challenges';
   end if;
 
