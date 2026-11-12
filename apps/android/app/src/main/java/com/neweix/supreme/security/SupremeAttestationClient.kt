@@ -120,6 +120,74 @@ internal object SupremeAttestationClient {
         )
     }
 
+    /**
+     * Enrolls a second, non-exportable hardware key dedicated to API request
+     * signatures. The existing biometric-per-use approval key is untouched.
+     * Must run off the UI thread after the primary device session is registered.
+     */
+    fun enrollRequestSigningKey(accessToken: String): Verification {
+        check(Looper.myLooper() != Looper.getMainLooper()) {
+            "Supreme request-key enrollment must run off the Android UI thread."
+        }
+        require(accessToken.isNotBlank()) { "Supreme AAL2 access token is required." }
+
+        val challengeResponse = postJson("/functions/v1/supreme-session-api/challenge", null, accessToken)
+        if (challengeResponse.first != HttpURLConnection.HTTP_OK) {
+            throw IllegalStateException("Supreme request-key challenge could not be issued.")
+        }
+        val challengeJson = JSONObject(challengeResponse.second)
+        check(challengeJson.optBoolean("success", false)) {
+            "Supreme request-key challenge response was invalid."
+        }
+        val challengeId = challengeJson.optString("challenge_id")
+        require(UUID_V4.matches(challengeId)) { "Supreme request-key challenge ID was invalid." }
+        val challengeEncoded = challengeJson.optString("challenge")
+        require(challengeEncoded.isNotEmpty() && challengeEncoded.length <= 64) {
+            "Supreme request-key challenge was invalid."
+        }
+        val challenge = Base64.getUrlDecoder().decode(challengeEncoded)
+        require(challenge.size == 32 &&
+            Base64.getUrlEncoder().withoutPadding().encodeToString(challenge) == challengeEncoded
+        ) { "Supreme request-key challenge was not canonical." }
+
+        val material = SupremeRequestSigningKey.createAttestedKey(challengeId, challenge)
+        val certificates = JSONArray()
+        material.certificateChainBase64.forEach { certificates.put(it) }
+        val payload = JSONObject()
+            .put("challenge_id", challengeId)
+            .put("challenge", challengeEncoded)
+            .put("certificate_chain", certificates)
+            .put("proof_signature", material.proofSignatureBase64)
+            .put("key_purpose", "request_signing")
+        val response = postJson(
+            "/functions/v1/supreme-session-api/issue",
+            payload.toString().toByteArray(StandardCharsets.UTF_8),
+            accessToken,
+        )
+        if (response.first != HttpURLConnection.HTTP_OK) {
+            SupremeRequestSigningKey.delete()
+            throw IllegalStateException(
+                "Supreme request-signing key registration was rejected (HTTP ${response.first}).",
+            )
+        }
+        val result = JSONObject(response.second)
+        check(result.optBoolean("registered", false) &&
+            result.optString("key_purpose") == "request_signing"
+        ) {
+            SupremeRequestSigningKey.delete()
+            "Supreme request-signing key registration was not confirmed."
+        }
+        return Verification(
+            securityLevel = when (result.optString("security_level")) {
+                "strongbox" -> "STRONG_BOX"
+                "trusted_environment" -> "TRUSTED_ENVIRONMENT"
+                else -> "unknown"
+            },
+            provisioningMethod = result.optString("provisioning_method", "unknown"),
+            proofOfPossessionVerified = true,
+        )
+    }
+
     private fun postJson(path: String, body: ByteArray?, accessToken: String? = null): Pair<Int, String> {
         val url = URL(ORIGIN + path)
         require(

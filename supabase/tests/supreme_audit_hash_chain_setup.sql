@@ -53,3 +53,16 @@ insert into supreme.audit_events (
 ) values
   (gen_random_uuid(), null, 'legacy.audit.event.one', 'success', 'v1', jsonb_build_object('legacy', 1)),
   (gen_random_uuid(), null, 'legacy.audit.event.two', 'pending', 'v1', jsonb_build_object('legacy', 2));
+
+
+-- Minimal parent-table fixture for the app-bound request-signature migration.
+create table supreme.devices (
+  id uuid primary key,
+  user_id uuid not null references auth.users(id) on delete cascade
+);
+
+create table supreme.app_sessions (
+  id uuid primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  device_id uuid not null references supreme.devices(id) on delete cascade
+);

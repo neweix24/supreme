@@ -318,8 +318,8 @@ async function issueDeviceSession(
     }, error instanceof RangeError ? 413 : 400, requestId);
   }
 
-  const allowedKeys = new Set(["challenge_id", "challenge", "certificate_chain", "proof_signature"]);
-  if (Object.keys(payload).length !== 4 ||
+  const allowedKeys = new Set(["challenge_id", "challenge", "certificate_chain", "proof_signature", "key_purpose"]);
+  if (Object.keys(payload).length < 4 || Object.keys(payload).length > 5 ||
       Object.keys(payload).some((key) => !allowedKeys.has(key)) ||
       typeof payload.challenge_id !== "string" || !UUID_V4.test(payload.challenge_id) ||
       typeof payload.challenge !== "string" ||
@@ -336,6 +336,11 @@ async function issueDeviceSession(
     challenge = decodeBase64Url(payload.challenge);
   } catch {
     return response({ error: { code: "INVALID_CHALLENGE", request_id: requestId } }, 400, requestId);
+  }
+
+  const keyPurpose = payload.key_purpose === undefined ? "approval" : payload.key_purpose;
+  if (keyPurpose !== "approval" && keyPurpose !== "request_signing") {
+    return response({ error: { code: "INVALID_KEY_PURPOSE", request_id: requestId } }, 400, requestId);
   }
 
   const challengeHash = await sha256Hex(challenge);
@@ -355,6 +360,7 @@ async function issueDeviceSession(
         challenge: payload.challenge,
         certificate_chain: payload.certificate_chain,
         proof_signature: payload.proof_signature,
+        key_purpose: keyPurpose,
       }),
       redirect: "error",
       signal: AbortSignal.timeout(30_000),
@@ -378,6 +384,7 @@ async function issueDeviceSession(
 
   if (!verifierResponse.ok || verified.verified !== true ||
       verified.proof_of_possession_verified !== true ||
+      verified.key_purpose !== keyPurpose ||
       typeof verified.device_key_sha256 !== "string" || !SHA256.test(verified.device_key_sha256) ||
       typeof verified.device_public_key_spki_base64 !== "string" ||
       verified.device_public_key_spki_base64.length > 1024 ||
@@ -385,6 +392,51 @@ async function issueDeviceSession(
     return response({
       error: { code: verifierResponse.status >= 500 ? "ATTESTATION_SERVICE_UNAVAILABLE" : "ATTESTATION_REJECTED", request_id: requestId },
     }, verifierResponse.status >= 500 ? 503 : 403, requestId);
+  }
+
+  if (keyPurpose === "request_signing") {
+    // A request-signing key is enrolled only onto the already active device
+    // for this exact Supabase Auth session. It must never replace the biometric
+    // approval key or alter the device's primary attestation fingerprint.
+    const authSessionId = auth.authSessionId;
+    const activeRows = await db.unsafe(
+      "select s.device_id::text as device_id from supreme.app_sessions s join supreme.devices d on d.id = s.device_id where s.user_id = $1::uuid and s.auth_session_id = $2::uuid and s.status = 'active' and s.expires_at > now() and s.attested_at > now() - interval '30 days' and d.user_id = $1::uuid and d.status = 'active' and d.app_package = 'com.neweix.supreme' and d.security_level in ('trusted_environment', 'strongbox') and d.device_public_key_spki is not null and d.device_key_biometric_auth_required = true and d.attested_at > now() - interval '30 days' limit 1",
+      [auth.userId, authSessionId],
+    );
+    const activeDeviceId = activeRows[0]?.device_id;
+    if (!isUuid(activeDeviceId)) {
+      return response({ error: { code: "ACTIVE_DEVICE_SESSION_REQUIRED", request_id: requestId } }, 403, requestId);
+    }
+    let publicKeyDer: Uint8Array;
+    try {
+      const binary = atob(verified.device_public_key_spki_base64 as string);
+      publicKeyDer = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      if (publicKeyDer.length < 64 || publicKeyDer.length > 256 ||
+          btoa(binary) !== verified.device_public_key_spki_base64) {
+        throw new TypeError("Invalid request-signing public key.");
+      }
+    } catch {
+      return response({ error: { code: "INVALID_REQUEST_SIGNING_KEY", request_id: requestId } }, 502, requestId);
+    }
+    const storedRequestKey = await db.unsafe(
+      "update supreme.devices set device_request_signing_key_sha256 = $1, device_request_signing_public_key_spki = decode($2, 'base64'), updated_at = now() where id = $3::uuid and user_id = $4::uuid and status = 'active' returning id::text",
+      [verified.device_key_sha256, verified.device_public_key_spki_base64, activeDeviceId, auth.userId],
+    );
+    if (storedRequestKey.length !== 1) {
+      return response({ error: { code: "REQUEST_SIGNING_KEY_REGISTRATION_FAILED", request_id: requestId } }, 503, requestId);
+    }
+    await db.unsafe(
+      "insert into supreme.audit_events (actor_user_id, action, outcome, policy_version, details) values ($1::uuid, 'device.request_signing_key.register', 'success', 'v1', jsonb_build_object('device_id', $2::uuid, 'key_sha256', $3, 'request_id', $4))",
+      [auth.userId, activeDeviceId, verified.device_key_sha256, requestId],
+    );
+    return response({
+      registered: true,
+      key_purpose: "request_signing",
+      device_id: activeDeviceId,
+      security_level: verified.security_level,
+      provisioning_method: verified.provisioning_method ?? "unknown",
+      request_id: requestId,
+    }, 200, requestId);
   }
 
   const now = new Date();

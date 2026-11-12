@@ -44,6 +44,9 @@ jobs:
         uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
         with:
           gradle-version: "8.9"
+      - name: Run Supreme Android unit tests
+        working-directory: apps/android
+        run: gradle --no-daemon :app:testDebugUnitTest
       - name: Assemble native Supreme debug APK
         working-directory: apps/android
         run: gradle --no-daemon :app:assembleDebug

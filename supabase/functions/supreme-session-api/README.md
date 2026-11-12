@@ -16,11 +16,13 @@ All endpoints require a valid Supabase bearer access token. Challenge creation a
 
 - `GET /functions/v1/supreme-session-api/factors`: lists only the signed-in Supreme ruler's verified MFA factor metadata; it is used before AAL2 and never returns factor secrets or credentials.
 - `POST /functions/v1/supreme-session-api/challenge`: creates a five-minute server nonce. Its rate-limit binding is derived from the authenticated user and exact Supabase Auth session; client-provided IP headers are not trusted.
-- `POST /functions/v1/supreme-session-api/issue`: calls the deployed Android verifier, then registers the verifier-returned hardware key against the exact AAL2 Auth session using the service-role-only registration RPC.
+- `POST /functions/v1/supreme-session-api/issue`: calls the deployed Android verifier, then registers the verifier-returned hardware key against the exact AAL2 Auth session using the service-role-only registration RPC. The optional `key_purpose` is `approval` (default, biometric-per-operation) or `request_signing` (a distinct hardware-backed transport key, accepted only for an already active device session and stored separately from the approval key).
 - `GET /functions/v1/supreme-session-api`: returns the current Auth session's device-bound status. It does not treat a valid Supabase user session as sufficient Supreme authorization.
 - `DELETE /functions/v1/supreme-session-api`: revokes only the current Auth session's Supreme device-session record and appends an audit event.
 
 All responses are private/no-store. The API does not accept a user ID or Auth session ID from the request body.
+
+The Android client enrolls the `request_signing` key immediately after primary device-session registration. Every privileged Registry API request then obtains a fresh one-time challenge and includes a device-key ECDSA signature over the method, exact path/query, exact body hash and timestamp. The Registry API rejects missing, invalid, expired or replayed signatures. Browser-origin requests are denied; CORS is not treated as the proof of app identity.
 
 ## Required deployment and activation order
 
