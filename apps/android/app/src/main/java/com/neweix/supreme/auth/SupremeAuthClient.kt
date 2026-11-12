@@ -1,6 +1,7 @@
 package com.neweix.supreme.auth
 
 import com.neweix.supreme.BuildConfig
+import com.neweix.supreme.security.SupremeRequestSigningKey
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
