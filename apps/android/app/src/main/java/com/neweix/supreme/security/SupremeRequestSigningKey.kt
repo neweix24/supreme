@@ -10,6 +10,7 @@ import java.security.MessageDigest
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
 import java.net.URI
+import java.net.URLDecoder
 import java.util.Locale
 
 /**
@@ -163,6 +164,11 @@ internal object SupremeRequestSigningKey {
         val decodedSegments = rawPath.split("/")
         require(decodedSegments.none { it == "." || it == ".." }) {
             "Dot segments are forbidden."
+        }
+        val queryKeys = HashSet<String>()
+        uri.rawQuery?.split("&")?.forEach { pair ->
+            val key = URLDecoder.decode(pair.substringBefore("="), StandardCharsets.UTF_8.name())
+            require(queryKeys.add(key)) { "Duplicate query parameters are forbidden." }
         }
         return rawPath + (uri.rawQuery?.let { "?$it" } ?: "")
     }
