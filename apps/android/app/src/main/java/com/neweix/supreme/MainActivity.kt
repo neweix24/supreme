@@ -428,6 +428,15 @@ class MainActivity : FragmentActivity() {
                                             "Supreme AAL2 session continuity could not be confirmed.",
                                         )
                                     }
+                                    val requestKey = SupremeAttestationClient.enrollRequestSigningKey(refreshed.accessToken)
+                                    if (!requestKey.proofOfPossessionVerified ||
+                                        (requestKey.securityLevel != "TRUSTED_ENVIRONMENT" &&
+                                            requestKey.securityLevel != "STRONG_BOX")
+                                    ) {
+                                        throw IllegalStateException(
+                                            "This device did not pass Supreme API request-key attestation.",
+                                        )
+                                    }
                                     SupremeAuthClient.verifyDeviceSession(refreshed.accessToken)
                                     var dashboardWarning: String? = null
                                     val services = try {
