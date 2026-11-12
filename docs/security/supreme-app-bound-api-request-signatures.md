@@ -1,6 +1,6 @@
 # Supreme app-bound API request signatures
 
-Status: implementation in branch PR #58; schema prerequisites are a draft SQL artifact, and production enforcement is not enabled.
+Status: implementation in branch PR #58; a versioned Supabase migration candidate is now included, but it has not been applied. Production enforcement is not enabled.
 
 ## Goal
 
@@ -22,7 +22,7 @@ This is a second factor at the API transport boundary. It does not replace passw
 - The session API accepts the explicit `request_signing` attestation purpose and stores the verified public key separately on the already active device.
 - The attestation verifier enforces hardware `NO_AUTH_REQUIRED` for this transport key, while retaining per-operation biometric authentication for approval keys.
 - The Registry API verifies the request signature and atomically consumes the challenge before dispatching the route. Browser-origin requests are denied.
-- The required database changes are only in `docs/security/supreme-api-request-signatures-schema.sql`; they are not yet a generated or applied migration.
+- The required database changes are in `supabase/migrations/20261112170000_supreme_app_bound_request_signatures.sql`; this is a reviewed migration candidate, not an applied migration. The older `docs/security/supreme-api-request-signatures-schema.sql` remains a reference copy.
 
 ## Required design
 
@@ -90,12 +90,13 @@ Missing, invalid, expired, mismatched, or replayed proof must fail closed with a
 
 ### 6. Rollout and acceptance gates
 
-Do not deploy server enforcement until the Android signed-request client and server verifier are merged and tested together. Deploy in this order:
-1. Add the request-proof key fields and private challenge storage with service-role-only access.
-2. Deploy challenge issuance and signature verification in a non-enforcing compatibility mode that emits audit-only diagnostics.
-3. Ship an Android build that enrolls the second key and signs every Registry request.
-4. Verify positive and negative physical-device tests, including wrong key, wrong path, changed body, expired challenge, replay, revoked device, expired app session, and bearer token replay from a browser/script.
-5. Enable enforcement. Remove compatibility mode and verify browser requests are denied even when supplied a copied bearer token.
-6. Confirm no client-role grants or RLS policies accidentally expose the private challenge table.
+Do not deploy server enforcement until the Android signed-request client and server verifier are merged and tested together. Because the current Registry Function will reject unsigned privileged requests, the production rollout must be coordinated and the older APK must not be treated as compatible. Proposed order:
+1. Review and apply the versioned schema migration during an approved maintenance window; verify the new columns, private challenge table, constraints, indexes, RLS, and service-role-only grants.
+2. Deploy the updated attestation verifier and session API so the second hardware-backed key can be enrolled without replacing the biometric approval key.
+3. Deploy the updated Registry API that issues one-time challenges and requires request signatures for every privileged route.
+4. Release the matching Android APK only after positive and negative physical-device tests pass: wrong key, wrong path, changed body, expired challenge, replay, revoked device, expired app session, and copied bearer token from a browser/script.
+5. Verify no client-role grants or RLS policies expose the private challenge table, and confirm browser-origin requests are denied.
+
+Do not use an audit-only compatibility mode that permits bearer-only privileged requests; it would defeat the app-bound access requirement.
 
 No production database migration, Edge Function deployment, Auth Hook change, or signing-secret change is authorized by this design document alone.
