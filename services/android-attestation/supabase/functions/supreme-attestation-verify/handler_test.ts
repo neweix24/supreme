@@ -150,6 +150,32 @@ Deno.test("valid request verifies cryptography before atomically consuming the c
   assertEquals(calls.join(","), "challenge-available,metadata,verify,consume", "security gate order");
 });
 
+
+Deno.test("request-signing attestation selects the no-auth hardware key policy", async () => {
+  let authenticationMode: string | undefined;
+  const response = await handleSupremeAttestationVerify(
+    makeRequest({ ...validPayload(), key_purpose: "request_signing" }),
+    makeDependencies({
+      verifyAttestation: (input) => {
+        authenticationMode = input.keyPolicy.authenticationMode;
+        return Promise.resolve(verificationResult());
+      },
+    }),
+  );
+  const body = await responseBody(response);
+  assertEquals(response.status, 200, "request-signing attestation status");
+  assertEquals(authenticationMode, "none", "request-signing authentication policy");
+  assertEquals(body.key_purpose, "request_signing", "verified key purpose");
+});
+
+Deno.test("unknown attestation key purpose is rejected", async () => {
+  const response = await handleSupremeAttestationVerify(
+    makeRequest({ ...validPayload(), key_purpose: "admin_override" }),
+    makeDependencies(),
+  );
+  assertEquals(response.status, 400, "invalid key purpose status");
+});
+
 Deno.test("Supabase service-role authentication is mandatory", async () => {
   const response = await handleSupremeAttestationVerify(
     makeRequest(validPayload(), { authorization: "Bearer client-token" }),
