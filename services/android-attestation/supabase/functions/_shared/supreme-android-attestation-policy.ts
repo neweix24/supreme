@@ -28,6 +28,7 @@ export type SupremeAndroidKeyPolicy = {
   minimumPackageVersion: bigint;
   /** SHA-256 of the production APK signing certificate; never a debug signer. */
   signingCertificateSha256: Uint8Array;
+  authenticationMode?: "biometric_per_operation" | "none";
 };
 
 export type SupremeAndroidKeyPolicyResult = {
@@ -222,7 +223,7 @@ function validateAppIdentity(
   }
 }
 
-function validateHardwareKey(description: AndroidKeyDescription): "TRUSTED_ENVIRONMENT" | "STRONG_BOX" {
+function validateHardwareKey(description: AndroidKeyDescription, authenticationMode: "biometric_per_operation" | "none" = "biometric_per_operation"): "TRUSTED_ENVIRONMENT" | "STRONG_BOX" {
   const securityLevel = description.attestationSecurityLevel;
   if (
     securityLevel !== description.keyMintSecurityLevel ||
@@ -247,17 +248,24 @@ function validateHardwareKey(description: AndroidKeyDescription): "TRUSTED_ENVIR
   requireIntegerTag(hardware, 10, KEYMINT_EC_CURVE_P256, "EC curve");
   requireIntegerTag(hardware, 702, KEYMINT_ORIGIN_GENERATED, "key origin");
 
-  // Supreme transaction keys must require per-operation biometric
-  // authentication. Android KeyMint tag 504 is the SET OF authenticator
-  // types (fingerprint = 2); timeout 0 means authentication for every use.
-  if (hardware.entries.some((entry) => entry.tagNumber === 503) ||
-      description.softwareEnforced.entries.some((entry) =>
-        entry.tagNumber === 503 || entry.tagNumber === 504 || entry.tagNumber === 505
-      )) {
-    throw new TypeError("Supreme biometric authorization must be hardware-enforced and must not allow no-auth keys.");
+  // Approval keys require hardware-enforced biometric authentication for every use.
+  // The dedicated request-transport key is UID-scoped and non-exportable, so it has no per-use prompt.
+  if (authenticationMode === "none") {
+    if ([...hardware.entries, ...description.softwareEnforced.entries].some((entry) =>
+      entry.tagNumber === 503 || entry.tagNumber === 504 || entry.tagNumber === 505
+    )) {
+      throw new TypeError("Supreme request-signing keys must not declare a user-authentication policy.");
+    }
+  } else {
+    if (hardware.entries.some((entry) => entry.tagNumber === 503) ||
+        description.softwareEnforced.entries.some((entry) =>
+          entry.tagNumber === 503 || entry.tagNumber === 504 || entry.tagNumber === 505
+        )) {
+      throw new TypeError("Supreme biometric authorization must be hardware-enforced and must not allow no-auth keys.");
+    }
+    requireIntegerTag(hardware, 504, 2n, "biometric authenticator type");
+    requireIntegerTag(hardware, 505, 0n, "per-operation biometric authentication timeout");
   }
-  requireIntegerTag(hardware, 504, 2n, "biometric authenticator type");
-  requireIntegerTag(hardware, 505, 0n, "per-operation biometric authentication timeout");
 
   validateHardwareRootOfTrust(description.softwareEnforced, hardware);
   return securityLevel === SECURITY_LEVEL_STRONG_BOX
@@ -282,7 +290,7 @@ export function validateSupremeAndroidKeyDescription(
   policy: SupremeAndroidKeyPolicy,
 ): SupremeAndroidKeyPolicyResult {
   validateAppIdentity(description, policy);
-  const securityLevel = validateHardwareKey(description);
+  const securityLevel = validateHardwareKey(description, policy.authenticationMode);
   return {
     packageName: SUPREME_ANDROID_PACKAGE_NAME,
     minimumPackageVersion: policy.minimumPackageVersion,
