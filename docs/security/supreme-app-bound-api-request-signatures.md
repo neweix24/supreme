@@ -1,6 +1,6 @@
 # Supreme app-bound API request signatures
 
-Status: implementation design; not enabled in production.
+Status: implementation in branch PR #58; schema prerequisites are a draft SQL artifact, and production enforcement is not enabled.
 
 ## Goal
 
@@ -15,6 +15,14 @@ This is a second factor at the API transport boundary. It does not replace passw
 - The native app already uses a one-time nonce and that key to sign control-decision approvals/rejections.
 - The Registry API currently validates the Supabase bearer token, the signed `supreme_app_session` claim, AAL2, the active Supreme identity, and the live device/session rows.
 - Ordinary Registry reads and writes do not currently require a device-key signature. CORS and User-Agent/Origin checks cannot close this gap.
+
+## Implementation status in this branch
+
+- Android now has a distinct non-exportable P-256 request-signing key and a central Registry transport that obtains a one-time challenge and signs each privileged request.
+- The session API accepts the explicit `request_signing` attestation purpose and stores the verified public key separately on the already active device.
+- The attestation verifier enforces hardware `NO_AUTH_REQUIRED` for this transport key, while retaining per-operation biometric authentication for approval keys.
+- The Registry API verifies the request signature and atomically consumes the challenge before dispatching the route. Browser-origin requests are denied.
+- The required database changes are only in `docs/security/supreme-api-request-signatures-schema.sql`; they are not yet a generated or applied migration.
 
 ## Required design
 
