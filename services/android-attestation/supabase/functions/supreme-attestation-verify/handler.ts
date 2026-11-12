@@ -46,6 +46,7 @@ type VerifyPayload = {
   challenge: string;
   certificate_chain: string[];
   proof_signature: string;
+  key_purpose?: "approval" | "request_signing";
 };
 
 type ParsedPayload = {
@@ -53,6 +54,7 @@ type ParsedPayload = {
   challenge: Uint8Array;
   chain: ParsedX509Certificate[];
   proofSignature: Uint8Array;
+  keyPurpose: "approval" | "request_signing";
 };
 
 function json(body: unknown, status: number): Response {
@@ -127,6 +129,7 @@ function parsePayload(value: unknown, parseCertificate: (der: Uint8Array) => Par
     "challenge",
     "certificate_chain",
     "proof_signature",
+    "key_purpose",
   ]);
   if (Object.keys(object).some((key) => !allowedKeys.has(key)) || Object.keys(object).length !== 4) {
     throw new TypeError("Attestation payload has missing or unknown fields.");
@@ -162,12 +165,17 @@ function parsePayload(value: unknown, parseCertificate: (der: Uint8Array) => Par
     "proof signature",
     MAX_PROOF_SIGNATURE_DER_BYTES,
   );
+  const keyPurpose = object.key_purpose === undefined ? "approval" : object.key_purpose;
+  if (keyPurpose !== "approval" && keyPurpose !== "request_signing") {
+    throw new TypeError("Invalid attestation key purpose.");
+  }
 
   return {
     challengeId: object.challenge_id,
     challenge,
     chain,
     proofSignature,
+    keyPurpose,
   };
 }
 
@@ -295,6 +303,7 @@ export async function handleSupremeAttestationVerify(
         expectedChallenge: payload.challenge,
         minimumPackageVersion,
         signingCertificateSha256,
+        authenticationMode: payload.keyPurpose === "request_signing" ? "none" : "biometric_per_operation",
       },
     });
   } catch (error) {
@@ -326,6 +335,7 @@ export async function handleSupremeAttestationVerify(
     security_level: verification.keyPolicy.securityLevel === "STRONG_BOX" ? "strongbox" : "trusted_environment",
     provisioning_method: verification.chain.provisioningMethod,
     proof_of_possession_verified: verification.proofOfPossessionVerified,
+    key_purpose: payload.keyPurpose,
     device_key_sha256: verification.deviceKeySha256,
     device_public_key_spki_base64: verification.devicePublicKeySpkiBase64,
   }, 200);
