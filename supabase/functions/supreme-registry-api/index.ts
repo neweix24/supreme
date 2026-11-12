@@ -49,16 +49,6 @@ const SUPABASE_ANON_KEY =
   "";
 const DATABASE_URL = Deno.env.get("SUPABASE_DB_URL") ?? "";
 
-const allowedOrigins = new Set([
-  "https://neweix.com",
-  "https://www.neweix.com",
-  "http://localhost:3000",
-]);
-
-const db = DATABASE_URL
-  ? postgres(DATABASE_URL, { max: 1, prepare: false, ssl: "require" })
-  : null;
-
 type JsonObject = Record<string, unknown>;
 
 function json(
@@ -87,17 +77,6 @@ function errorResponse(
   requestId: string,
 ): Response {
   return json({ error: { code, message, request_id: requestId } }, status, requestId);
-}
-
-function corsHeaders(origin: string | null): Record<string, string> {
-  const headers: Record<string, string> = {
-    "access-control-allow-headers": "authorization, apikey, content-type, idempotency-key, if-match",
-    "access-control-allow-methods": "GET, POST, PATCH, OPTIONS",
-    "access-control-max-age": "600",
-    vary: "Origin",
-  };
-  if (origin && allowedOrigins.has(origin)) headers["access-control-allow-origin"] = origin;
-  return headers;
 }
 
 function decodeClaimsAfterSupabaseUserVerification(token: string): JsonObject {
