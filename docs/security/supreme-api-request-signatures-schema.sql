@@ -1,7 +1,7 @@
--- Draft schema prerequisites for app-bound Supreme API request signatures.
--- This is a review artifact, NOT an applied migration.
--- Generate the actual migration with the Supabase CLI after the local project
--- is available, then test it against a disposable Supabase development branch.
+-- Reference copy of the app-bound request-signature schema.
+-- The versioned migration candidate is:
+-- supabase/migrations/20261112170000_supreme_app_bound_request_signatures.sql
+-- Neither file has been applied to the live database.
 
 alter table supreme.devices
   add column if not exists device_request_signing_key_sha256 text,
