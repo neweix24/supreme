@@ -640,7 +640,7 @@ async function createControlRequest(
 function canonicalRequestTarget(url: URL): string {
   const target = url.pathname + url.search;
   if (target.length > 4096 || !target.startsWith("/") || target.startsWith("//") ||
-      target.includes("#") || target.includes("\\\\") ||
+      target.includes("#") || target.includes("\\") ||
       /%(?![0-9A-F]{2})/.test(target) || /%2f|%5c/i.test(url.pathname) ||
       /%2e/i.test(url.pathname)) {
     throw new TypeError("Non-canonical request target.");
@@ -788,7 +788,7 @@ async function verifyAppBoundRequest(
       target,
       hex(await sha256Bytes(bodyBytes)),
       timestampText,
-    ].join("\\n"));
+    ].join("\n"));
     signatureValid = await crypto.subtle.verify(
       { name: "ECDSA", hash: "SHA-256" },
       publicKey,
