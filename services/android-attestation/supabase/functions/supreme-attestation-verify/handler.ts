@@ -131,7 +131,7 @@ function parsePayload(value: unknown, parseCertificate: (der: Uint8Array) => Par
     "proof_signature",
     "key_purpose",
   ]);
-  if (Object.keys(object).some((key) => !allowedKeys.has(key)) || Object.keys(object).length !== 4) {
+  if (Object.keys(object).some((key) => !allowedKeys.has(key)) || (Object.keys(object).length < 4 || Object.keys(object).length > 5)) {
     throw new TypeError("Attestation payload has missing or unknown fields.");
   }
 
