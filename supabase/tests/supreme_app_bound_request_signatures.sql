@@ -1,10 +1,10 @@
 -- Regression tests for the Supreme app-bound request-signature schema.
 do $$
 declare
-  user_id uuid := gen_random_uuid();
-  device_id uuid := gen_random_uuid();
-  session_id uuid := gen_random_uuid();
-  challenge_id uuid;
+  v_user_id uuid := gen_random_uuid();
+  v_device_id uuid := gen_random_uuid();
+  v_session_id uuid := gen_random_uuid();
+  v_challenge_id uuid;
 begin
   if not exists (
     select 1 from information_schema.columns
@@ -39,25 +39,25 @@ begin
     raise exception 'Service role is missing required challenge-table privileges';
   end if;
 
-  insert into auth.users(id) values (user_id);
-  insert into supreme.devices(id, user_id) values (device_id, user_id);
+  insert into auth.users(id) values (v_user_id);
+  insert into supreme.devices(id, user_id) values (v_device_id, v_user_id);
   insert into supreme.app_sessions(id, user_id, device_id)
-    values (session_id, user_id, device_id);
+    values (v_session_id, v_user_id, v_device_id);
 
   insert into supreme.devices (
     id, user_id, device_request_signing_key_sha256,
     device_request_signing_public_key_spki
   ) values (
-    gen_random_uuid(), user_id, repeat('a', 64), decode(repeat('ab', 64), 'hex')
+    gen_random_uuid(), v_user_id, repeat('a', 64), decode(repeat('ab', 64), 'hex')
   );
 
   insert into supreme.api_request_challenges (
     user_id, app_session_id, device_id, nonce_sha256, expires_at
   ) values (
-    user_id, session_id, device_id, decode(repeat('cd', 32), 'hex'), now() + interval '60 seconds'
-  ) returning id into challenge_id;
+    v_user_id, v_session_id, v_device_id, decode(repeat('cd', 32), 'hex'), now() + interval '60 seconds'
+  ) returning id into v_challenge_id;
 
-  if challenge_id is null then
+  if v_challenge_id is null then
     raise exception 'Challenge row could not be inserted';
   end if;
 
@@ -65,7 +65,7 @@ begin
     insert into supreme.api_request_challenges (
       user_id, app_session_id, device_id, nonce_sha256, expires_at
     ) values (
-      user_id, session_id, device_id, decode(repeat('ef', 31), 'hex'), now() + interval '60 seconds'
+      v_user_id, v_session_id, v_device_id, decode(repeat('ef', 31), 'hex'), now() + interval '60 seconds'
     );
     raise exception 'Invalid nonce length was accepted';
   exception when check_violation then
