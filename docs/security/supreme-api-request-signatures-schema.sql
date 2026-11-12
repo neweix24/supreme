@@ -26,7 +26,7 @@ alter table supreme.devices
 
 create table if not exists supreme.api_request_challenges (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete restrict,
+  user_id uuid not null references auth.users(id) on delete cascade,
   app_session_id uuid not null references supreme.app_sessions(id) on delete cascade,
   device_id uuid not null references supreme.devices(id) on delete cascade,
   nonce_sha256 bytea not null unique
