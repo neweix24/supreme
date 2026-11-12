@@ -354,7 +354,50 @@ internal object SupremeAuthClient {
         path: String,
         accessToken: String? = null,
         body: JSONObject? = null,
+        skipRegistrySigning: Boolean = false,
     ): JSONObject {
+        val bodyBytes = body?.toString()?.toByteArray(StandardCharsets.UTF_8)
+        val isPrivilegedRegistryCall =
+            path.startsWith("/functions/v1/supreme-registry-api/v1/") &&
+                !path.endsWith("/v1/request-challenge") &&
+                !skipRegistrySigning
+        var requestProof: SupremeRequestSigningKey.SignedHeaders? = null
+        var requestNonceEncoded: String? = null
+        if (isPrivilegedRegistryCall) {
+            val token = accessToken?.takeIf { it.isNotBlank() }
+                ?: throw SupremeAuthException("Supreme API access token is missing.", 401)
+            if (!SupremeRequestSigningKey.isKeyAvailable()) {
+                throw SupremeAuthException("This device's API signing key is unavailable. Re-authenticate and re-register the device.", 403)
+            }
+            val challengeResponse = request(
+                "POST",
+                "/functions/v1/supreme-registry-api/v1/request-challenge",
+                token,
+                JSONObject(),
+                skipRegistrySigning = true,
+            )
+            val challengeId = challengeResponse.optString("challenge_id")
+            val nonceEncoded = challengeResponse.optString("nonce")
+            if (!UUID_PATTERN.matches(challengeId) || !Regex("^[A-Za-z0-9_-]{43}$").matches(nonceEncoded)) {
+                throw SupremeAuthException("Supreme API request challenge is invalid.", 502)
+            }
+            val nonce = Base64.getUrlDecoder().decode(nonceEncoded)
+            if (nonce.size != 32 ||
+                Base64.getUrlEncoder().withoutPadding().encodeToString(nonce) != nonceEncoded
+            ) {
+                throw SupremeAuthException("Supreme API request challenge is not canonical.", 502)
+            }
+            requestNonceEncoded = nonceEncoded
+            requestProof = SupremeRequestSigningKey.signRequest(
+                challengeId = challengeId,
+                nonce = nonce,
+                method = method,
+                pathAndQuery = path,
+                bodyBytes = bodyBytes ?: ByteArray(0),
+                timestampSeconds = System.currentTimeMillis() / 1000L,
+            )
+        }
+
         val url = URL(BuildConfig.SUPABASE_URL.trimEnd('/') + path)
         require(url.protocol == "https" && url.host == "grhybvlhdnzlopwbaqun.supabase.co" &&
             url.port == -1 && url.userInfo == null
@@ -367,24 +410,32 @@ internal object SupremeAuthClient {
             instanceFollowRedirects = false
             useCaches = false
             doInput = true
-            doOutput = body != null
+            doOutput = bodyBytes != null
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Cache-Control", "no-store")
             setRequestProperty("apikey", BuildConfig.SUPABASE_PUBLISHABLE_KEY)
             if (!accessToken.isNullOrBlank()) {
                 setRequestProperty("Authorization", "Bearer $accessToken")
             }
-            if (body != null) {
+            requestProof?.let { proof ->
+                setRequestProperty("x-supreme-challenge-id", proof.challengeId)
+                setRequestProperty(
+                    "x-supreme-nonce",
+                    requestNonceEncoded ?: throw IllegalStateException("Request nonce is missing."),
+                )
+                setRequestProperty("x-supreme-timestamp", proof.timestamp)
+                setRequestProperty("x-supreme-signature", proof.signatureBase64)
+            }
+            if (bodyBytes != null) {
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
             }
         }
 
         try {
-            if (body != null) {
-                val bytes = body.toString().toByteArray(StandardCharsets.UTF_8)
-                require(bytes.size <= 16 * 1024) { "Supreme request is too large." }
-                connection.setFixedLengthStreamingMode(bytes.size)
-                connection.outputStream.use { it.write(bytes) }
+            if (bodyBytes != null) {
+                require(bodyBytes.size <= 16 * 1024) { "Supreme request is too large." }
+                connection.setFixedLengthStreamingMode(bodyBytes.size)
+                connection.outputStream.use { it.write(bodyBytes) }
             }
 
             val status = connection.responseCode
