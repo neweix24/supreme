@@ -148,7 +148,7 @@ internal object SupremeRequestSigningKey {
     }
 
     private fun canonicalTarget(value: String): String {
-        require(value.isNotEmpty() && value.length <= 4096) { "Invalid request target." }
+        require(value.isNotEmpty() && value.length <= 4096 && value.all { it.code in 0x21..0x7e }) { "Invalid request target." }
         require(value.startsWith("/") && !value.startsWith("//")) { "Request target must be an absolute path." }
         require(!value.contains('#') && !value.contains('\\')) { "Request target contains forbidden characters." }
         require(!Regex("(?i)%2f|%5c").containsMatchIn(value)) { "Encoded path separators are forbidden." }
@@ -159,8 +159,9 @@ internal object SupremeRequestSigningKey {
         }
         val rawPath = uri.rawPath ?: throw IllegalArgumentException("Request path is missing.")
         require(rawPath.startsWith("/") && !rawPath.contains("//")) { "Request path is not canonical." }
+        require(!Regex("(?i)%2e").containsMatchIn(rawPath)) { "Encoded dot segments are forbidden." }
         val decodedSegments = rawPath.split("/")
-        require(decodedSegments.none { it == "." || it == ".." || it.equals("%2e", true) || it.equals("%2e%2e", true) }) {
+        require(decodedSegments.none { it == "." || it == ".." }) {
             "Dot segments are forbidden."
         }
         return rawPath + (uri.rawQuery?.let { "?$it" } ?: "")
