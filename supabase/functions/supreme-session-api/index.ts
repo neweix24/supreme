@@ -400,7 +400,7 @@ async function issueDeviceSession(
     // approval key or alter the device's primary attestation fingerprint.
     const authSessionId = auth.authSessionId;
     const activeRows = await db.unsafe(
-      "select s.device_id::text as device_id from supreme.app_sessions s join supreme.devices d on d.id = s.device_id where s.user_id = $1::uuid and s.auth_session_id = $2::uuid and s.status = 'active' and s.expires_at > now() and d.user_id = $1::uuid and d.status = 'active' and d.app_package = 'com.neweix.supreme' and d.security_level in ('trusted_environment', 'strongbox') limit 1",
+      "select s.device_id::text as device_id from supreme.app_sessions s join supreme.devices d on d.id = s.device_id where s.user_id = $1::uuid and s.auth_session_id = $2::uuid and s.status = 'active' and s.expires_at > now() and s.attested_at > now() - interval '30 days' and d.user_id = $1::uuid and d.status = 'active' and d.app_package = 'com.neweix.supreme' and d.security_level in ('trusted_environment', 'strongbox') and d.device_public_key_spki is not null and d.device_key_biometric_auth_required = true and d.attested_at > now() - interval '30 days' limit 1",
       [auth.userId, authSessionId],
     );
     const activeDeviceId = activeRows[0]?.device_id;
