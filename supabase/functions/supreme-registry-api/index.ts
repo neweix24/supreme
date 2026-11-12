@@ -670,6 +670,9 @@ async function issueApiRequestChallenge(
   if (!challenge) {
     return errorResponse("REQUEST_CHALLENGE_RATE_LIMITED", "Too many API request challenges were issued.", 429, requestId);
   }
+  // Keep expired/consumed challenge rows bounded without exposing a cleanup API.
+  await db`delete from supreme.api_request_challenges
+    where expires_at < now() - interval '1 day'`;
   await audit({
     actor: userId,
     action: "api_request.challenge",
