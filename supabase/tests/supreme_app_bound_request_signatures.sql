@@ -71,5 +71,57 @@ begin
   exception when check_violation then
     null;
   end;
+
+  -- Invalid key fingerprints must be rejected.
+  begin
+    insert into supreme.devices (
+      id, user_id, device_request_signing_key_sha256,
+      device_request_signing_public_key_spki
+    ) values (
+      gen_random_uuid(), v_user_id, 'not-a-sha256', decode(repeat('ab', 64), 'hex')
+    );
+    raise exception 'Invalid request-signing key fingerprint was accepted';
+  exception when check_violation then
+    null;
+  end;
+
+  -- A request-signing key must be stored as a complete fingerprint/SPKI pair.
+  begin
+    insert into supreme.devices (
+      id, user_id, device_request_signing_key_sha256,
+      device_request_signing_public_key_spki
+    ) values (
+      gen_random_uuid(), v_user_id, repeat('b', 64), null
+    );
+    raise exception 'Incomplete request-signing key pair was accepted';
+  exception when check_violation then
+    null;
+  end;
+
+  -- SPKI storage must remain within the expected DER size bounds.
+  begin
+    insert into supreme.devices (
+      id, user_id, device_request_signing_key_sha256,
+      device_request_signing_public_key_spki
+    ) values (
+      gen_random_uuid(), v_user_id, repeat('c', 64), decode(repeat('ab', 20), 'hex')
+    );
+    raise exception 'Undersized SPKI was accepted';
+  exception when check_violation then
+    null;
+  end;
+
+  -- The challenge must remain bound to an existing user/session/device and
+  -- cannot be created with an already-expired interval.
+  begin
+    insert into supreme.api_request_challenges (
+      user_id, app_session_id, device_id, nonce_sha256, expires_at
+    ) values (
+      v_user_id, v_session_id, v_device_id, decode(repeat('12', 32), 'hex'), now() - interval '1 second'
+    );
+    raise exception 'Expired challenge interval was accepted';
+  exception when check_violation then
+    null;
+  end;
 end;
-$$;
+$;
