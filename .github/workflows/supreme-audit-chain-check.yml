@@ -66,13 +66,13 @@ jobs:
         run: psql --set ON_ERROR_STOP=1 --file supabase/tests/supreme_audit_hash_chain.sql
 
       - name: Apply app-bound request-signature schema migration
-        run: psql --set ON_ERROR_STOP=1 --file supabase/migrations/20261112170000_supreme_app_bound_request_signatures.sql
+        run: psql --set ON_ERROR_STOP=1 --file supabase/migrations/20261112170509_supreme_app_bound_request_signatures.sql
 
       - name: Verify app-bound request-signature schema and grants
         run: psql --set ON_ERROR_STOP=1 --file supabase/tests/supreme_app_bound_request_signatures.sql
 
       - name: Reapply app-bound request-signature migration to verify idempotency
-        run: psql --set ON_ERROR_STOP=1 --file supabase/migrations/20261112170000_supreme_app_bound_request_signatures.sql
+        run: psql --set ON_ERROR_STOP=1 --file supabase/migrations/20261112170509_supreme_app_bound_request_signatures.sql
 
       - name: Verify concurrent audit writers remain in one valid chain
         shell: bash
