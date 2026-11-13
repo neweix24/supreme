@@ -890,20 +890,20 @@ class MainActivity : FragmentActivity() {
                 SupremeAuthClient.verifyDeviceSession(session.accessToken)
                 // Device verification remains a hard prerequisite. Once it passes,
                 // fetch independent dashboard resources concurrently to reduce restore latency.
-                val servicesFuture = dashboardBackground.submit {
+                val servicesFuture = dashboardBackground.submit(java.util.concurrent.Callable {
                     try {
                         Pair(SupremeAuthClient.listServices(session.accessToken), null as String?)
                     } catch (error: Exception) {
                         Pair(emptyList<SupremeAuthClient.Service>(), safeMessage(error))
                     }
-                }
-                val requestsFuture = dashboardBackground.submit {
+                })
+                val requestsFuture = dashboardBackground.submit(java.util.concurrent.Callable {
                     try {
                         Pair(SupremeAuthClient.listPendingRequests(session.accessToken), null as String?)
                     } catch (error: Exception) {
                         Pair(emptyList<SupremeAuthClient.ControlRequest>(), safeMessage(error))
                     }
-                }
+                })
                 val (services, servicesWarning) = servicesFuture.get()
                 val (requests, requestsWarning) = requestsFuture.get()
                 val dashboardWarning = servicesWarning ?: requestsWarning
