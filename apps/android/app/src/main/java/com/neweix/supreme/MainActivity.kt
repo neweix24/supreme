@@ -32,6 +32,7 @@ import androidx.fragment.app.FragmentActivity
 import com.neweix.supreme.auth.SupremeAuthClient
 import com.neweix.supreme.auth.SupremeAuthException
 import com.neweix.supreme.auth.SupremeSessionStore
+import com.neweix.supreme.auth.SupremeSessionFailurePolicy
 import com.neweix.supreme.security.SupremeAttestationClient
 import com.neweix.supreme.security.SupremeKeyAttestation
 import java.security.Signature
