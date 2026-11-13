@@ -64,6 +64,7 @@ class MainActivity : FragmentActivity() {
     private var signingBiometricPrompt: BiometricPrompt? = null
     private var authInProgress = false
     private var restoreInProgress = false
+    @Volatile private var rotatedRefreshTokenPersisted = false
     private var isUnlocked = false
     private var isBusy = false
     private var resumeSessionCheck = false
@@ -367,6 +368,7 @@ class MainActivity : FragmentActivity() {
         val code = codeInput.text.toString().trim()
         if (isBusy) return
 
+        rotatedRefreshTokenPersisted = false
         setBusy(true, "Verifying multi-factor authentication…")
         background.execute {
             try {
@@ -428,6 +430,11 @@ class MainActivity : FragmentActivity() {
                                             "Supreme AAL2 session continuity could not be confirmed.",
                                         )
                                     }
+                                    // From this point onward, a failed request-key enrollment
+                                    // must not erase the successfully rotated, securely stored
+                                    // refresh token. A transient server error can occur after
+                                    // the server has already registered the device key.
+                                    rotatedRefreshTokenPersisted = true
                                     val requestKey = SupremeAttestationClient.enrollRequestSigningKey(refreshed.accessToken)
                                     if (!requestKey.proofOfPossessionVerified ||
                                         (requestKey.securityLevel != "TRUSTED_ENVIRONMENT" &&
@@ -453,6 +460,7 @@ class MainActivity : FragmentActivity() {
                                     }
                                     runOnUiThread {
                                         currentAccessToken = refreshed.accessToken
+                                        rotatedRefreshTokenPersisted = false
                                         pendingPasswordSession = null
                                         pendingFactorId = null
                                         pendingChallengeId = null
@@ -485,13 +493,18 @@ class MainActivity : FragmentActivity() {
         // records device-verification and MFA registration failures.
         Sentry.captureException(error)
         runOnUiThread {
-            // If attestation registration already returned a rotated token, a 403
-            // from the session verifier must not erase it. Keep the app locked and
-            // allow retry after the project Auth Hook/device policy is corrected.
-            // Invalid/expired credentials (401) and all pre-registration failures
-            // still discard any stale local session.
+            // Preserve the rotated refresh token after a successful secure save if
+            // request-key enrollment or post-enrollment verification fails with a
+            // server error (or a transport failure with no HTTP status). The server
+            // may have committed enrollment before returning an error. Keep access
+            // locked; a retry can resume using the retained refresh token.
+            // Explicit 401 and failures before the rotated token was persisted still
+            // clear stale credentials. A 403 remains retained for policy recovery.
             val status = (error as? SupremeAuthException)?.statusCode
-            if (status != 403) sessionStore.clear()
+            val retainRotatedSession = rotatedRefreshTokenPersisted &&
+                (status == null || status >= 500)
+            if (status != 403 && !retainRotatedSession) sessionStore.clear()
+            rotatedRefreshTokenPersisted = false
             isUnlocked = false
             lockOverlay.visibility = View.VISIBLE
             pendingPasswordSession = null
