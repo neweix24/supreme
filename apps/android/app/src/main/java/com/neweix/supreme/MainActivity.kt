@@ -64,6 +64,8 @@ class MainActivity : FragmentActivity() {
     private lateinit var lockStatusText: TextView
     private var biometricPrompt: BiometricPrompt? = null
     private var signingBiometricPrompt: BiometricPrompt? = null
+    // Keeps the Android 15 framework prompt alive while an operation-handle auth is pending.
+    private var platformSigningBiometricPrompt: Any? = null
     private var authInProgress = false
     private var restoreInProgress = false
     @Volatile private var rotatedRefreshTokenPersisted = false
@@ -1014,6 +1016,15 @@ class MainActivity : FragmentActivity() {
         onSigned: (Signature) -> Unit,
         onFailure: (String) -> Unit,
     ) {
+        // Android 15 exposes operation handles for auth-per-use CryptoObjects.
+        // Use the framework API directly there instead of the older AndroidX
+        // compatibility bridge, then require the exact same operation handle
+        // to be returned before allowing the original Signature to sign.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            authenticateForSigningWithOperationHandle(signature, onSigned, onFailure)
+            return
+        }
+
         val prompt = BiometricPrompt(
             this,
             ContextCompat.getMainExecutor(this),
@@ -1022,8 +1033,7 @@ class MainActivity : FragmentActivity() {
                     signingBiometricPrompt = null
                     // Only the CryptoObject returned by Android may be used.
                     // Falling back to the pre-prompt Signature can reach Keystore without
-                    // an authorization token on some Android/OEM implementations and
-                    // produces KeyStoreException -26 even though the prompt looked successful.
+                    // an authorization token on some Android/OEM implementations.
                     val authorized = result.cryptoObject?.signature
                     if (authorized == null) {
                         onFailure(
@@ -1057,6 +1067,73 @@ class MainActivity : FragmentActivity() {
             prompt.authenticate(info, BiometricPrompt.CryptoObject(signature))
         } catch (error: Exception) {
             signingBiometricPrompt = null
+            onFailure("Strong biometric signing is unavailable on this device.")
+        }
+    }
+
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    private fun authenticateForSigningWithOperationHandle(
+        signature: Signature,
+        onSigned: (Signature) -> Unit,
+        onFailure: (String) -> Unit,
+    ) {
+        val executor = ContextCompat.getMainExecutor(this)
+        try {
+            val signatureCrypto = android.hardware.biometrics.BiometricPrompt.CryptoObject(signature)
+            val expectedOperationHandle = signatureCrypto.operationHandle
+            if (expectedOperationHandle == 0L) {
+                onFailure("Android Keystore did not expose a valid signing operation. No signature was created.")
+                return
+            }
+
+            // Passing the operation handle avoids relying on AndroidX's older
+            // Signature wrapper on Android 15. The callback must return the same
+            // handle; otherwise the original Signature is never used.
+            val promptCrypto = android.hardware.biometrics.BiometricPrompt.CryptoObject(
+                expectedOperationHandle,
+            )
+            val prompt = android.hardware.biometrics.BiometricPrompt.Builder(this)
+                .setTitle("Confirm Supreme security operation")
+                .setSubtitle("Fingerprint verification is required to authorize this signature")
+                .setDescription("The private key remains protected inside Android Keystore.")
+                .setAllowedAuthenticators(
+                    android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_STRONG,
+                )
+                .setNegativeButton("Cancel", executor) { _, _ -> }
+                .build()
+            platformSigningBiometricPrompt = prompt
+            prompt.authenticate(
+                promptCrypto,
+                android.os.CancellationSignal(),
+                executor,
+                object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(
+                        result: android.hardware.biometrics.BiometricPrompt.AuthenticationResult,
+                    ) {
+                        platformSigningBiometricPrompt = null
+                        val returnedHandle = result.cryptoObject?.operationHandle ?: 0L
+                        if (returnedHandle == 0L || returnedHandle != expectedOperationHandle) {
+                            onFailure(
+                                "Android did not confirm the original biometric signing operation. " +
+                                    "No signature was created. Retry the operation.",
+                            )
+                            return
+                        }
+                        onSigned(signature)
+                    }
+
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        platformSigningBiometricPrompt = null
+                        onFailure("Fingerprint verification was cancelled or failed. No signature was created.")
+                    }
+
+                    override fun onAuthenticationFailed() {
+                        // Keep the biometric prompt active for another strong-biometric attempt.
+                    }
+                },
+            )
+        } catch (error: Exception) {
+            platformSigningBiometricPrompt = null
             onFailure("Strong biometric signing is unavailable on this device.")
         }
     }
