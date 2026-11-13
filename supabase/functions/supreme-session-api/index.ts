@@ -426,7 +426,7 @@ async function issueDeviceSession(
       return response({ error: { code: "REQUEST_SIGNING_KEY_REGISTRATION_FAILED", request_id: requestId } }, 503, requestId);
     }
     await db.unsafe(
-      "insert into supreme.audit_events (actor_user_id, action, outcome, policy_version, details) values ($1::uuid, 'device.request_signing_key.register', 'success', 'v1', jsonb_build_object('device_id', $2::uuid, 'key_sha256', $3, 'request_id', $4))",
+      "insert into supreme.audit_events (actor_user_id, action, outcome, policy_version, details) values ($1::uuid, 'device.request_signing_key.register', 'success', 'v1', jsonb_build_object('device_id', $2::uuid, 'key_sha256', $3::text, 'request_id', $4::text))",
       [auth.userId, activeDeviceId, verified.device_key_sha256, requestId],
     );
     return response({
@@ -567,7 +567,7 @@ async function readOrRevokeSession(
     return response({ error: { code: "SESSION_ALREADY_REVOKED", request_id: requestId } }, 409, requestId);
   }
   await db.unsafe(
-    "insert into supreme.audit_events (actor_user_id, action, outcome, policy_version, details) values ($1::uuid, 'device_session.revoke_self', 'success', 'v1', jsonb_build_object('session_id', $2::uuid, 'device_id', $3::uuid, 'request_id', $4))",
+    "insert into supreme.audit_events (actor_user_id, action, outcome, policy_version, details) values ($1::uuid, 'device_session.revoke_self', 'success', 'v1', jsonb_build_object('session_id', $2::uuid, 'device_id', $3::uuid, 'request_id', $4::text))",
     [auth.userId, session.session_id, session.device_id, requestId],
   );
   return response({ revoked: true, request_id: requestId }, 200, requestId);
