@@ -736,7 +736,11 @@ async function verifyAppBoundRequest(
   try {
     nonce = decodeCanonicalBase64Url(nonceEncoded, 32);
     signatureDer = decodeCanonicalBase64(signatureEncoded, 128);
-    target = canonicalRequestTarget(new URL(request.url));
+    // Supabase Edge Functions usually expose request.url without the public
+    // "/functions/v1" gateway prefix, while the Android app signs the full public
+    // path. Normalise to the public path so both sides sign the same target.
+    const rawTarget = canonicalRequestTarget(new URL(request.url));
+    target = rawTarget.startsWith("/functions/v1/") ? rawTarget : "/functions/v1" + rawTarget;
     const clonedBody = request.clone().body;
     if (!clonedBody) {
       bodyBytes = new Uint8Array(0);
