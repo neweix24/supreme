@@ -52,6 +52,7 @@ begin
      and d.user_id = event_user_id
      and d.status = 'active'
      and d.app_package = 'com.neweix.supreme'
+     and d.security_level in ('trusted_environment', 'strongbox')
      and d.attested_at <= now()
      and d.attested_at > now() - interval '30 days'
    limit 1;
