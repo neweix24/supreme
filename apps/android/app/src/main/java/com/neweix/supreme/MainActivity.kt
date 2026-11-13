@@ -501,9 +501,11 @@ class MainActivity : FragmentActivity() {
             // Explicit 401 and failures before the rotated token was persisted still
             // clear stale credentials. A 403 remains retained for policy recovery.
             val status = (error as? SupremeAuthException)?.statusCode
-            val retainRotatedSession = rotatedRefreshTokenPersisted &&
-                (status == null || status >= 500)
-            if (status != 403 && !retainRotatedSession) sessionStore.clear()
+            if (!SupremeSessionFailurePolicy.shouldRetainRefreshToken(
+                    rotatedTokenPersisted = rotatedRefreshTokenPersisted,
+                    statusCode = status,
+                )
+            ) sessionStore.clear()
             rotatedRefreshTokenPersisted = false
             isUnlocked = false
             lockOverlay.visibility = View.VISIBLE
