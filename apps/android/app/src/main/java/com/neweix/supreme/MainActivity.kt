@@ -61,6 +61,7 @@ class MainActivity : FragmentActivity() {
     private lateinit var codeInput: EditText
     private lateinit var primaryButton: Button
     private lateinit var lockOverlay: LinearLayout
+    private lateinit var lockStatusText: TextView
     private var biometricPrompt: BiometricPrompt? = null
     private var signingBiometricPrompt: BiometricPrompt? = null
     private var authInProgress = false
@@ -303,6 +304,15 @@ class MainActivity : FragmentActivity() {
                 setTextColor(Color.LTGRAY)
                 setPadding(0, dp(12), 0, dp(20))
             }, matchWrap())
+            lockStatusText = TextView(this@MainActivity).apply {
+                text = "Your saved Supreme session will be checked after device unlock."
+                textSize = 12f
+                gravity = Gravity.CENTER
+                setTextColor(Color.rgb(210, 180, 110))
+                setPadding(dp(8), 0, dp(8), dp(18))
+                contentDescription = "Supreme session status"
+            }
+            addView(lockStatusText, matchWrap())
             addView(Button(this@MainActivity).apply {
                 text = "UNLOCK SUPREME"
                 setOnClickListener { authenticateToUnlock() }
@@ -982,7 +992,9 @@ class MainActivity : FragmentActivity() {
                     restoreInProgress = false
                     isUnlocked = false
                     lockOverlay.visibility = View.VISIBLE
-                    statusText.text = "Device unlock failed. Supreme content remains hidden."
+                    val message = "Device unlock failed. Supreme content remains hidden."
+                    statusText.text = message
+                    if (::lockStatusText.isInitialized) lockStatusText.text = message
                 }
 
                 override fun onAuthenticationFailed() {
@@ -1088,7 +1100,15 @@ class MainActivity : FragmentActivity() {
             primaryButton.text.toString() == "SIGN OUT"
         primaryButton.isEnabled = !busy && hasAuthorizedAction
         primaryButton.alpha = if (primaryButton.isEnabled) 1f else 0.6f
-        if (!message.isNullOrBlank()) statusText.text = message
+        if (!message.isNullOrBlank()) {
+            statusText.text = message
+            // The lock screen covers the main content, so mirror restore and
+            // verification errors there instead of leaving the user staring at
+            // an apparently frozen biometric screen.
+            if (::lockStatusText.isInitialized && lockOverlay.visibility == View.VISIBLE) {
+                lockStatusText.text = message
+            }
+        }
     }
 
     private fun safeMessage(error: Exception): String {
