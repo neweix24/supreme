@@ -43,6 +43,8 @@ import java.util.concurrent.Executors
 
 class MainActivity : FragmentActivity() {
     private val background: ExecutorService = Executors.newSingleThreadExecutor()
+    // Dashboard reads are independent after server-side device verification.
+    private val dashboardBackground: ExecutorService = Executors.newFixedThreadPool(2)
     private val idleHandler = Handler(Looper.getMainLooper())
     private val idleLockRunnable = Runnable {
         if (isUnlocked && pendingFactorId == null && !isBusy) {
@@ -886,19 +888,25 @@ class MainActivity : FragmentActivity() {
                     "Rotated Supreme session credential could not be verified after secure storage."
                 }
                 SupremeAuthClient.verifyDeviceSession(session.accessToken)
-                var dashboardWarning: String? = null
-                val services = try {
-                    SupremeAuthClient.listServices(session.accessToken)
-                } catch (error: Exception) {
-                    dashboardWarning = safeMessage(error)
-                    emptyList()
+                // Device verification remains a hard prerequisite. Once it passes,
+                // fetch independent dashboard resources concurrently to reduce restore latency.
+                val servicesFuture = dashboardBackground.submit {
+                    try {
+                        Pair(SupremeAuthClient.listServices(session.accessToken), null as String?)
+                    } catch (error: Exception) {
+                        Pair(emptyList(), safeMessage(error))
+                    }
                 }
-                val requests = try {
-                    SupremeAuthClient.listPendingRequests(session.accessToken)
-                } catch (error: Exception) {
-                    if (dashboardWarning == null) dashboardWarning = safeMessage(error)
-                    emptyList()
+                val requestsFuture = dashboardBackground.submit {
+                    try {
+                        Pair(SupremeAuthClient.listPendingRequests(session.accessToken), null as String?)
+                    } catch (error: Exception) {
+                        Pair(emptyList(), safeMessage(error))
+                    }
                 }
+                val (services, servicesWarning) = servicesFuture.get()
+                val (requests, requestsWarning) = requestsFuture.get()
+                val dashboardWarning = servicesWarning ?: requestsWarning
                 runOnUiThread {
                     currentAccessToken = session.accessToken
                     resumeSessionCheck = false
@@ -1331,6 +1339,7 @@ class MainActivity : FragmentActivity() {
         clearTransientCredentials()
         restoreInProgress = false
         background.shutdownNow()
+        dashboardBackground.shutdownNow()
         biometricPrompt = null
         super.onDestroy()
     }
