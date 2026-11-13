@@ -268,7 +268,16 @@ function validateHardwareKey(description: AndroidKeyDescription, authenticationM
       throw new TypeError("Supreme biometric authorization must be hardware-enforced and must not allow no-auth keys.");
     }
     requireIntegerTag(hardware, 504, 2n, "biometric authenticator type");
-    requireIntegerTag(hardware, 505, 0n, "per-operation biometric authentication timeout");
+    // Android Keymaster omits the optional AUTH_TIMEOUT tag (505) when the
+    // timeout is zero, which is the per-operation authentication mode.
+    // If a device does emit the tag, it must explicitly encode zero.
+    const authTimeout = hardware.entries.find((entry) => entry.tagNumber === 505);
+    if (authTimeout) {
+      const timeout = readPositiveInteger(authTimeout, "per-operation biometric authentication timeout");
+      if (timeout !== 0n) {
+        throw new TypeError("Android hardware-enforced biometric authentication must be per-operation.");
+      }
+    }
   }
 
   validateHardwareRootOfTrust(description.softwareEnforced, hardware);

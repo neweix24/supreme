@@ -96,6 +96,7 @@ type FixtureOptions = {
   minimumVersion?: bigint;
   biometricAuthType?: bigint;
   authTimeout?: bigint;
+  omitAuthTimeout?: boolean;
   noAuthRequired?: boolean;
   biometricAuthInSoftware?: boolean;
   authenticationMode?: "biometric_per_operation" | "none";
@@ -128,8 +129,10 @@ function makeDescription(options: FixtureOptions = {}) {
   } else {
     hardwareEntries.push(
       contextTag(504, integer(options.biometricAuthType ?? 2n)),
-      contextTag(505, integer(options.authTimeout ?? 0n)),
     );
+    if (!options.omitAuthTimeout) {
+      hardwareEntries.push(contextTag(505, integer(options.authTimeout ?? 0n)));
+    }
   }
   if (options.biometricAuthInSoftware) {
     softwareEntries.push(
@@ -244,6 +247,13 @@ Deno.test("Supreme Android policy requires generated P-256 EC signing and SHA-25
 });
 
 Deno.test("Supreme Android policy requires per-operation hardware biometric authorization", () => {
+  const omittedTimeout = validateSupremeAndroidKeyDescription(
+    makeDescription({ omitAuthTimeout: true }),
+    policy(),
+  );
+  if (omittedTimeout.securityLevel !== "TRUSTED_ENVIRONMENT") {
+    throw new Error("An omitted Android AUTH_TIMEOUT tag must represent per-operation authentication.");
+  }
   assertRejected(makeDescription({ biometricAuthType: 1n }), policy(), "password-only authenticator");
   assertRejected(makeDescription({ biometricAuthType: 0xffffffffn }), policy(), "any authenticator type");
   assertRejected(makeDescription({ authTimeout: 30n }), policy(), "cached biometric authorization");
