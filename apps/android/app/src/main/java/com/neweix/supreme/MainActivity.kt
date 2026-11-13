@@ -894,14 +894,14 @@ class MainActivity : FragmentActivity() {
                     try {
                         Pair(SupremeAuthClient.listServices(session.accessToken), null as String?)
                     } catch (error: Exception) {
-                        Pair(emptyList(), safeMessage(error))
+                        Pair(emptyList<SupremeAuthClient.Service>(), safeMessage(error))
                     }
                 }
                 val requestsFuture = dashboardBackground.submit {
                     try {
                         Pair(SupremeAuthClient.listPendingRequests(session.accessToken), null as String?)
                     } catch (error: Exception) {
-                        Pair(emptyList(), safeMessage(error))
+                        Pair(emptyList<SupremeAuthClient.ControlRequest>(), safeMessage(error))
                     }
                 }
                 val (services, servicesWarning) = servicesFuture.get()
