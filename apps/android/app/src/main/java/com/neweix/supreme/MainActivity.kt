@@ -1020,16 +1020,18 @@ class MainActivity : FragmentActivity() {
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     signingBiometricPrompt = null
-                    // Some Android/OEM BiometricPrompt implementations report a
-                    // successful CryptoObject authentication but omit the CryptoObject
-                    // from AuthenticationResult. Keep the exact Signature instance that
-                    // was supplied to authenticate(). Its Android Keystore operation is
-                    // still auth-per-use protected: sign() will fail with
-                    // UserNotAuthenticatedException if the OS did not authorize it.
-                    // Prefer the callback's object when present, otherwise use only the
-                    // original object bound to this prompt. Never create/reinitialize a
-                    // new Signature as a fallback.
-                    val authorized = result.cryptoObject?.signature ?: signature
+                    // Only the CryptoObject returned by Android may be used.
+                    // Falling back to the pre-prompt Signature can reach Keystore without
+                    // an authorization token on some Android/OEM implementations and
+                    // produces KeyStoreException -26 even though the prompt looked successful.
+                    val authorized = result.cryptoObject?.signature
+                    if (authorized == null) {
+                        onFailure(
+                            "Android did not return the biometric-authorized signing operation. " +
+                                "No signature was created. Retry the operation.",
+                        )
+                        return
+                    }
                     onSigned(authorized)
                 }
 
@@ -1112,6 +1114,21 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun safeMessage(error: Exception): String {
+        var cause: Throwable? = error
+        var depth = 0
+        while (cause != null && depth < 8) {
+            val detail = cause.message.orEmpty()
+            val type = cause.javaClass.name
+            if (type.endsWith("UserNotAuthenticatedException") ||
+                detail.contains("Key user not authenticated", ignoreCase = true) ||
+                detail.contains("internal Keystore code: -26", ignoreCase = true)
+            ) {
+                return "Android did not authorize the secure signing key. Keep Supreme open, retry the fingerprint prompt, and try the operation again. Access remains locked until signing succeeds."
+            }
+            cause = cause.cause
+            depth++
+        }
+
         return when (error) {
             is SupremeAuthException -> when (error.statusCode) {
                 400, 422 -> "Supreme sign-in could not be verified. Check the account credentials."
