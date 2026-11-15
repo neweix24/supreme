@@ -937,7 +937,17 @@ class MainActivity : FragmentActivity() {
                         showSignIn()
                         setBusy(false, "The Supreme sign-in session expired or was revoked. Sign in again.")
                     } else if (status == 403) {
-                        setBusy(false, "Supreme device verification is denied (403). Your encrypted session is retained, but access remains locked. Check device registration and the Supabase Auth Hook.")
+                        // A 403 after refresh commonly means the four-hour device-bound
+                        // session has expired and the access-token hook correctly omitted
+                        // supreme_app_session. Retain the rotated refresh token, but do not
+                        // trap the user behind a biometric retry loop: expose the normal
+                        // password + TOTP + hardware-attestation flow so a fresh device
+                        // session can be registered. No privileged screen is unlocked here.
+                        showSignIn()
+                        setBusy(
+                            false,
+                            "This device session has expired or needs verification. Sign in with your Supreme password and authenticator code to verify this device again. Your saved encrypted session is retained until the new device session is confirmed.",
+                        )
                     } else {
                         // Keep the session and privileged content locked on transient
                         // network/server errors. The user can retry without signing in again.
