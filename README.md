@@ -43,6 +43,12 @@ Supreme Core Backend
 - `config/` — safe, non-secret configuration and ecosystem capability catalog
 - `docs/` — architecture, security, operations, and development notes
 
+## Developer-facing product cancellation
+
+All developer-facing products and programs are cancelled, including Developer Marketplace, Developer Portal/Dashboard, Developer API Platform, developer onboarding, developer subscriptions/billing, and developer integration/publishing workflows. No such capability may be added or exposed without a new explicit Supreme approval.
+
+See [Developer Program and Developer-Facing Features: Cancelled](docs/developer-program-cancellation.md) for the binding scope, exclusions, and audit limits. This does not cancel ordinary internal software engineering, maintenance, CI/CD, or existing customer-facing services.
+
 ## Existing ecosystem features
 
 The already implemented features in Neweix, Eixon, Neweix Account and Supreme have been inventoried with their source ownership and migration readiness. See [Ecosystem feature inventory](docs/ecosystem-feature-inventory.md) and the machine-readable [capability catalog](config/ecosystem-capabilities.json).
@@ -66,6 +72,7 @@ The already implemented features in Neweix, Eixon, Neweix Account and Supreme ha
 - No production-signed APK has been built or verified. The available APK artifacts are debug-signed for UI/testing only; production release requires the protected keystore, alias/passwords, and a SHA-256 signer fingerprint matching the server verifier. Whether those secrets are already configured could not be verified through the available repository connector.
 - Native challenge issuance and device-session registration run through the Supreme-owned `supreme-session-api` Supabase Edge Function. The Android app no longer depends on a Neweix website API route or Neweix Account identity.
 - Live registry currently contains six service entries but zero capabilities and zero secret references. GitHub, Cloudflare, Supabase administration and each service's operations still need scoped adapters and approval/execution tests. The standalone web dashboard is not deployed.
+
 ## Production Android release
 
 The protected [production APK release workflow](.github/workflows/supreme-android-production-release.yml) builds only after the permanent keystore and server-approved signer fingerprint are configured. Follow [Production Android release setup](docs/production-android-release.md); never commit or share the keystore.
@@ -100,7 +107,6 @@ Existing Supreme implementation work from `neweix24/neweix` has been copied into
 - Extraction notes: [docs/migration-from-neweix.md](docs/migration-from-neweix.md)
 
 **Important:** imported commerce API/UI modules still depend on the original Neweix application and are preserved as a source snapshot. SQL files under `migrations-reference` are not safe to apply directly to a fresh database. The original `neweix` repository remains unchanged.
-
 
 ## Governance and authority model
 
