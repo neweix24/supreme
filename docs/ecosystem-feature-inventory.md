@@ -10,6 +10,10 @@ This inventory records features that already exist in the ecosystem so Supreme c
 - A capability becomes controllable from Supreme only after its service adapter is implemented, narrowly authorized, and integration-tested.
 - Never copy production secrets or apply another service's migrations into Supreme.
 
+## Developer-facing capability exclusion
+
+Developer-facing products and programs are cancelled. The ecosystem must not add or expose a Developer Marketplace, Developer Portal/Dashboard, third-party Developer API Platform, developer onboarding, developer subscriptions/billing, or developer integration/publishing workflows. See [Developer Program and Developer-Facing Features: Cancelled](developer-program-cancellation.md). No separate developer platform capability is included in the approved inventory.
+
 ## Existing implementation inventory
 
 | Service | Already implemented source areas | Current Supreme status |
