@@ -24,4 +24,15 @@ class SupremeSessionFailurePolicyTest {
         assertFalse(SupremeSessionFailurePolicy.shouldRetainRefreshToken(false, 500))
         assertFalse(SupremeSessionFailurePolicy.shouldRetainRefreshToken(false, null))
     }
+
+    @Test
+    fun routesAuthenticationFailuresToInteractiveSignIn() {
+        assertTrue(SupremeSessionFailurePolicy.shouldReturnToSignIn(400))
+        assertTrue(SupremeSessionFailurePolicy.shouldReturnToSignIn(401))
+        assertTrue(SupremeSessionFailurePolicy.shouldReturnToSignIn(403))
+        assertTrue(SupremeSessionFailurePolicy.shouldReturnToSignIn(422))
+        assertFalse(SupremeSessionFailurePolicy.shouldReturnToSignIn(429))
+        assertFalse(SupremeSessionFailurePolicy.shouldReturnToSignIn(500))
+        assertFalse(SupremeSessionFailurePolicy.shouldReturnToSignIn(null))
+    }
 }
