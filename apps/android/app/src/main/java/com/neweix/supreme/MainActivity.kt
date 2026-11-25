@@ -533,9 +533,16 @@ class MainActivity : FragmentActivity() {
             codeInput.visibility = View.GONE
             primaryButton.text = "SIGN IN"
             val message = when (status) {
-                400, 422 -> "Authenticator code was rejected. Wait for a fresh six-digit code and try again."
-                403 -> "Supreme device verification is denied (403). Your encrypted session is retained, but access remains locked. Check device registration and the Supabase Auth Hook."
+                400, 422 -> "Authenticator code was rejected. Sign in again and enter a fresh six-digit code."
+                403 -> "Device verification was denied (403). Your encrypted session is retained. Sign in again to renew MFA and hardware attestation. Supreme access stays locked until the server verifies the new device session."
                 else -> safeMessage(error)
+            }
+            if (SupremeSessionFailurePolicy.shouldReturnToSignIn(status)) {
+                // A device-session 403 cannot be repaired by repeating the local
+                // biometric prompt. Expose the password + TOTP form so the user can
+                // create a fresh AAL2 Auth session and complete hardware attestation.
+                // The retained refresh token is deliberately not used to bypass MFA.
+                showSignIn()
             }
             setBusy(false, message)
         }
