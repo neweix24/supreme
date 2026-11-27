@@ -107,6 +107,7 @@ EIX is a Neweix ecosystem utility token intended to make purchases of Neweix pro
 Binding product boundaries:
 
 - EIX is usable only for eligible Neweix-owned products and services.
+- For BDT-denominated eligible Neweix purchases, the approved denomination is **1 BDT = 1 EIX**. Eixon is the sole authoritative quote issuer and must calculate from the immutable order snapshot. No silent rounding, conversion spread, or extra conversion fee is allowed; reject amounts the ledger cannot represent exactly. This is a denomination rule for the internal Neweix purchase utility token, not a claim of money value, cash redemption, or external exchangeability. The rate does not itself authorize checkout or production payment activation.
 - EIX acquisition/loading uses an approved direct online payment method inside the Eixon flow. Eixon is responsible for the load/payment record and EIX ledger. Provider activation requires separate verification and Supreme approval.
 - Do not create third-party EIX merchants or an EIX marketplace for buying/loading EIX.
 - No ordinary person-to-person transfer, wallet-to-wallet transfer, Account ID transfer, username transfer, or QR-based transfer.
