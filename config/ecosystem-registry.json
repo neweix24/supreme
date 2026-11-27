@@ -45,10 +45,10 @@
       "service": "Employees",
       "role": "workforce-and-admin-identity",
       "default_branch": "main",
-      "implementation": "placeholder-domain-documentation-only",
+      "implementation": "workforce-admin-governance-documentation-foundation",
       "status": "planned",
       "host": "https://www.employees.neweix.com",
-      "runtime_evidence": "DNS record documented; repository currently contains only DOMAIN.md; hosting/runtime not verified.",
+      "runtime_evidence": "README, architecture and phased delivery plan now define the workforce/Admin grant model, but no application, database, issuer, Admin principal, CI, or verified runtime exists.",
       "notes": "Placeholder only; no application or Admin grant issuer. The required grant semantics are design-only in Supreme docs/contracts/admin-grant-v1.md."
     },
     {
@@ -61,7 +61,7 @@
       "host": "https://www.eixon.neweix.com",
       "working_branch": "feat/standalone-eixon-app",
       "draft_pr": 1,
-      "runtime_evidence": "No standalone production runtime verified. Legacy main contains old transfer/reward/EixVerse/Neweix+ code. PR #1 is draft and must not be merged as-is."
+      "runtime_evidence": "Main contains legacy EixPay/EixVerse source; active wallet/transfer/reward/referral/mission/Neweix+ UI/API routes were replaced with informational/410 retirement responses. Historical SQL functions/migrations remain and require database-level privilege review. Draft PR #1 is blocked and must not merge as-is."
     },
     {
       "repo": "neweix24/shop",
@@ -90,20 +90,20 @@
       "service": "Neweix+",
       "role": "subscription-and-entitlements",
       "default_branch": "main",
-      "implementation": "placeholder-domain-and-copied-blueprint-only",
+      "implementation": "subscription-governance-documentation-placeholder",
       "status": "planned",
       "host": "https://www.neweix-plus.neweix.com",
-      "runtime_evidence": "Repository contains DOMAIN.md and a copied blueprint only; hosting/runtime not verified."
+      "runtime_evidence": "Domain declaration, service ownership README, ecosystem alignment and canonical Supreme charter pointer exist; no subscription application, database, API, CI, or verified runtime."
     },
     {
       "repo": "neweix24/eixora",
       "service": "Eixora",
       "role": "social-platform",
       "default_branch": "main",
-      "implementation": "placeholder-domain-documentation-only",
+      "implementation": "social-platform-documentation-placeholder",
       "status": "planned",
       "host": "https://www.eixora.neweix.com",
-      "runtime_evidence": "Repository currently contains only DOMAIN.md; hosting/runtime not verified."
+      "runtime_evidence": "Domain declaration, service purpose README, and ecosystem alignment exist; no social application, database, API, CI, or verified runtime."
     }
   ],
   "policy": {
