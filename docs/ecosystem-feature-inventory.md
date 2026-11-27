@@ -25,7 +25,7 @@ This document records repository-level implementation evidence. A planned servic
 | `neweix24/employees` | Workforce and Admin identity/grants | One tracked path: `DOMAIN.md`. | Placeholder only; no application, database, CI, or verified runtime. Do not fabricate Admin/staff records. |
 | `neweix24/eixon` | EIX token, wallet, unit ledger, approved loading/gift/purchase lifecycle | Legacy EixPay transfer/reward, EixVerse and Neweix+ source remains on main. Draft PR #1 proposes a separate financial-platform/ledger architecture and is unmerged. | Policy realignment required. No standalone production runtime verified. Legacy transfer/reward surfaces must remain disabled; PR #1 must not merge as-is. |
 | `neweix24/shop` | Single-vendor Neweix commerce | Main contains only three documentation entries. Application is on `feat/shop-ecosystem-remediation` with Next.js Storefront, NestJS API, Worker, tests and readiness docs. Draft PR #2 targets `neweix24-patch-1`, not `main`. | Storefront deployed; `/api` returns 503; catalogue/inventory are empty; checkout is disabled. CI passed 27 Nov. PR base/merge strategy and release blockers remain. |
-| `neweix24/connect` | Messaging, conversations, notifications and attachments | Worker/API shell, initial database migration, tests and contracts exist. No CI workflow run was found for the current main SHA. | Foundation only. Account service contract, safe membership/RLS, atomic conversation creation, real-time authorization and production deployment remain incomplete. |
+| `neweix24/connect` | Messaging, conversations, notifications and attachments | Worker/API shell, initial migration, atomic conversation RPC/RLS hardening source, production API guard, Account table/status check, and CI workflow exist. GitHub Actions attempted two runs on 27 Nov, but both jobs failed before a runner was allocated; no CI steps executed. | Foundation only. Account service contract, isolated migration/RLS acceptance, complete messaging/realtime, and production deployment remain incomplete. |
 | `neweix24/neweix-plus` | Subscription plans, memberships and entitlements | Three tracked paths: `DOMAIN.md` and copied blueprint. | Placeholder only; no application, database, CI, or verified runtime. Must not be implemented inside Eixon. |
 | `neweix24/eixora` | Social platform and moderation | One tracked path: `DOMAIN.md`. | Placeholder only; no application, database, CI, or verified runtime. |
 
@@ -37,7 +37,8 @@ This document records repository-level implementation evidence. A planned servic
 4. Remove Eixon's legacy person-to-person transfer and reward/membership surfaces from active routes. EIX is for Neweix purchases and the designated gift policy only.
 5. Keep Neweix+ subscription/entitlement logic separate from Eixon.
 6. Keep Shop on its reviewed remediation branch until its base-branch strategy and API runtime, Account SSO, Eixon contract, Admin grant, fulfilment, and schema gates are resolved.
-7. Fix Connect membership/RLS and creation atomicity before enabling messaging.
+7. Validate Connect membership/RLS and atomic-creation migrations in an isolated database; the source fix is not yet applied or production-tested.
+8. Implement the Employees Admin grant issuer and service-side validation against [Admin Grant Contract v1](./contracts/admin-grant-v1.md).
 
 ## Verification boundaries
 
