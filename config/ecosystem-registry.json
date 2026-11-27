@@ -48,7 +48,8 @@
       "implementation": "placeholder-domain-documentation-only",
       "status": "planned",
       "host": "https://www.employees.neweix.com",
-      "runtime_evidence": "DNS record documented; repository currently contains only DOMAIN.md; hosting/runtime not verified."
+      "runtime_evidence": "DNS record documented; repository currently contains only DOMAIN.md; hosting/runtime not verified.",
+      "notes": "Placeholder only; no application or Admin grant issuer. The required grant semantics are design-only in Supreme docs/contracts/admin-grant-v1.md."
     },
     {
       "repo": "neweix24/eixon",
@@ -82,7 +83,7 @@
       "implementation": "worker-api-schema-and-preview-foundation",
       "status": "in-development",
       "host": "https://www.connect.neweix.com",
-      "runtime_evidence": "Preview config and initial migration exist; no production deployment or production Account integration verified. Membership/RLS and atomic-conversation fixes are required."
+      "runtime_evidence": "Preview config and Worker/API source foundation exist. Atomic owner membership/RLS migration is source-only. Account service-client contract and production deployment are not verified. GitHub Actions CI runs failed before a runner was allocated, so no validation steps executed."
     },
     {
       "repo": "neweix24/neweix-plus",
