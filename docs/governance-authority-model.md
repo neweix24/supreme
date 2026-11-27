@@ -29,7 +29,7 @@ Supreme is not intended to perform every routine order, customer-support, or cat
 
 ### Neweix — central headquarters and control plane
 
-Neweix provides the central portal, service directory, operational overview, and administration workspace. It coordinates services through explicit APIs and does not become the owner of their private business data.
+Neweix currently provides the public portal and service directory. The unified Admin workspace and cross-service operational overview are target capabilities and are not yet implemented as verified live features. It coordinates services through explicit APIs and does not become the owner of their private business data.
 
 Neweix must:
 - Display only the controls allowed by the authenticated actor's server-issued permissions.

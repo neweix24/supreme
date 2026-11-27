@@ -77,7 +77,7 @@ Each repository below owns its domain code and data. Supreme owns governance and
 | Repository | Service | Source-of-truth responsibility |
 |---|---|---|
 | `neweix24/supreme` | Supreme | Highest authority, governance policy, approvals, registry, privileged audit, and protected Supreme Android/control-plane security |
-| `neweix24/neweix` | Neweix | Public website, central service directory, ecosystem navigation, Admin workspace entry point, and cross-service operational overview |
+| `neweix24/neweix` | Neweix | Public website and central service directory. The unified Admin workspace and cross-service operational overview are target capabilities, not verified live features. |
 | `neweix24/account` | Neweix Account | Customer credentials, signup/login, central Account ID, customer profiles, recovery, customer sessions, and customer verification |
 | `neweix24/employees` | Employees | Admin/workforce identity records, employee records, job roles, and delegated workforce permissions |
 | `neweix24/eixon` | Eixon | EIX policy implementation, EIX wallet records, EIX unit ledger, approved loading/gift/purchase lifecycle, and EIX audit/reconciliation |

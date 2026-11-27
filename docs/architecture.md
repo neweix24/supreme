@@ -34,7 +34,7 @@ Customer Account rows, user metadata, browser roles, usernames, and client heade
 - Does not absorb Shop, Eixon, Account, Connect, Neweix+, Eixora, or workforce business logic.
 
 ### Admin operations
-- Admin's operational workspace is entered from Neweix and the relevant service Admin interfaces.
+- Until the unified Neweix Admin workspace is implemented, Admin enters each available service's authenticated Admin interface directly. Neweix remains the public service directory.
 - Admin performs daily business operations through each owning service's API/UI.
 - Supreme issues or approves the Admin grant. Employees owns workforce records. Each service independently validates the grant and requested scope.
 - Routine operations proceed within the grant. Reserved actions pause for Supreme approval; Admin or a narrow executor performs the approved action.
@@ -61,7 +61,7 @@ Approval is not execution. A client-side hidden button is not authorization. App
 
 ## 5. Service data and integration boundaries
 
-- **Neweix:** public hub, service directory, Admin entry point, and operational overview only.
+- **Neweix:** public hub and service directory. The unified Admin workspace and cross-service operational overview are planned capabilities, not verified live features.
 - **Account:** customer identity and sessions.
 - **Employees:** Admin/workforce identity records and delegated workforce permissions.
 - **Eixon:** EIX wallet/unit ledger and approved EIX lifecycle.

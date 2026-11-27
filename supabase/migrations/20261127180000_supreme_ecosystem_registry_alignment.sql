@@ -9,7 +9,7 @@ insert into supreme.services (
   health_check_expected_status, metadata_version
 ) values
   ('supreme', 'Supreme', 'Highest ecosystem authority: policy, delegated authority, reserved approvals, oversight, and protected control-plane security.', 'github', 'neweix24/supreme', 'main', 'https://github.com/neweix24/supreme', 'Supreme', 'restricted', 'critical', 'active', 'none', null, 5, array[200], 2),
-  ('neweix', 'Neweix', 'Public ecosystem website, central service directory, and Admin workspace entry point. Service-owned data remains outside Neweix.', 'github', 'neweix24/neweix', 'main', 'https://github.com/neweix24/neweix', 'Neweix', 'public', 'high', 'active', 'none', null, 5, array[200], 2),
+  ('neweix', 'Neweix', 'Public ecosystem website and central service directory. A unified Admin workspace is a future capability; until implemented, Admin operates through each owning service interface. Service-owned data remains outside Neweix.', 'github', 'neweix24/neweix', 'main', 'https://github.com/neweix24/neweix', 'Neweix', 'public', 'high', 'active', 'none', null, 5, array[200], 2),
   ('neweix-account', 'Neweix Account', 'Customer identity, credentials, Account IDs, customer profiles, recovery, and customer sessions. Not the Admin or Supreme identity provider.', 'github', 'neweix24/account', 'main', 'https://github.com/neweix24/account', 'Neweix Account', 'restricted', 'critical', 'active', 'none', null, 5, array[200], 2),
   ('employees', 'Employees', 'Admin and workforce identity records, employee records, job roles, and delegated workforce permissions.', 'github', 'neweix24/employees', 'main', 'https://github.com/neweix24/employees', 'Employees', 'restricted', 'high', 'planned', 'none', null, 5, array[200], 1),
   ('eixon', 'Eixon', 'EIX token, wallet and unit ledger for eligible Neweix purchases and the designated gift workflow. Ordinary P2P and external transfers are prohibited.', 'github', 'neweix24/eixon', 'main', 'https://github.com/neweix24/eixon', 'Eixon', 'restricted', 'critical', 'planned', 'none', null, 5, array[200], 2),
@@ -49,12 +49,13 @@ set display_name = 'Neweix Message (retired alias)',
     updated_at = now()
 where service_id = 'neweix-message';
 
--- Production endpoints are enabled only for existing, documented production hosts.
+-- Keep production endpoints fail-closed until live HTTP/authentication acceptance is recorded.
+-- Neweix is the only production environment enabled by this source migration. Account's latest deploy failed; Shop's public Storefront exists but its API/checkout are disabled.
 insert into supreme.service_environments (service_id, environment_id, classification, api_base_url, enabled)
 values
   ('neweix', 'production', 'production', 'https://www.neweix.com', true),
-  ('neweix-account', 'production', 'production', 'https://www.accounts.neweix.com', true),
-  ('neweix-shop', 'production', 'production', 'https://www.shop.neweix.com', true),
+  ('neweix-account', 'production', 'production', 'https://www.accounts.neweix.com', false),
+  ('neweix-shop', 'production', 'production', 'https://www.shop.neweix.com', false),
   ('supreme', 'production', 'production', null, false),
   ('employees', 'development', 'development', null, false),
   ('eixon', 'development', 'development', null, false),
@@ -72,3 +73,4 @@ set enabled = false, updated_at = now()
 where service_id = 'neweix-message';
 
 -- No service capabilities or provider secrets are granted by this inventory migration.
+-- Enabling Account or Shop requires a separate reviewed registry update after end-to-end acceptance.
