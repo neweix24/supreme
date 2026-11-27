@@ -47,7 +47,7 @@
       "default_branch": "main",
       "implementation": "placeholder-domain-documentation-only",
       "status": "planned",
-      "host": "https://employees.neweix.com",
+      "host": "https://www.employees.neweix.com",
       "runtime_evidence": "DNS record documented; repository currently contains only DOMAIN.md; hosting/runtime not verified."
     },
     {
@@ -57,7 +57,7 @@
       "default_branch": "main",
       "implementation": "legacy-extraction-with-conflicting-draft-redesign",
       "status": "policy-realignment-required",
-      "host": "https://eixon.neweix.com",
+      "host": "https://www.eixon.neweix.com",
       "working_branch": "feat/standalone-eixon-app",
       "draft_pr": 1,
       "runtime_evidence": "No standalone production runtime verified. Legacy main contains old transfer/reward/EixVerse/Neweix+ code. PR #1 is draft and must not be merged as-is."
@@ -81,7 +81,7 @@
       "default_branch": "main",
       "implementation": "worker-api-schema-and-preview-foundation",
       "status": "in-development",
-      "host": "https://connect.neweix.com",
+      "host": "https://www.connect.neweix.com",
       "runtime_evidence": "Preview config and initial migration exist; no production deployment or production Account integration verified. Membership/RLS and atomic-conversation fixes are required."
     },
     {
@@ -91,7 +91,7 @@
       "default_branch": "main",
       "implementation": "placeholder-domain-and-copied-blueprint-only",
       "status": "planned",
-      "host": "https://neweix-plus.neweix.com",
+      "host": "https://www.neweix-plus.neweix.com",
       "runtime_evidence": "Repository contains DOMAIN.md and a copied blueprint only; hosting/runtime not verified."
     },
     {
@@ -101,7 +101,7 @@
       "default_branch": "main",
       "implementation": "placeholder-domain-documentation-only",
       "status": "planned",
-      "host": "https://eixora.neweix.com",
+      "host": "https://www.eixora.neweix.com",
       "runtime_evidence": "Repository currently contains only DOMAIN.md; hosting/runtime not verified."
     }
   ],
@@ -112,6 +112,7 @@
     "shared_database_does_not_imply_shared_ownership": true,
     "production_write_capabilities_enabled": false,
     "client_supplied_roles_or_account_ids_trusted": false,
-    "draft_prs_are_authoritative": false
+    "draft_prs_are_authoritative": false,
+    "canonical_host_rule": "Use www-prefixed canonical hostnames for public service URLs. DNS/Worker bindings and live HTTP must still be independently verified."
   }
 }
