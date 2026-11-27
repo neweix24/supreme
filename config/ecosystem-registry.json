@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-11-27",
+  "authority": {
+    "supreme": "Highest and final authority for policy, delegation, reserved approvals, suspension/revocation, and oversight.",
+    "admin": "Single day-to-day operational authority across services, acting only through scoped service permissions.",
+    "operating_rule": "Supreme governs and approves reserved actions; Admin performs and coordinates normal operations."
+  },
+  "repositories": [
+    {
+      "repo": "neweix24/supreme",
+      "service": "Supreme",
+      "role": "governance-and-authority",
+      "default_branch": "main",
+      "implementation": "android-app-and-protected-backend-foundation",
+      "status": "active-foundation",
+      "source_of_truth": [
+        "docs/ecosystem-governance-charter.md",
+        "config/ecosystem-registry.json"
+      ],
+      "notes": "Provider execution adapters and some registry/session integrations remain gated."
+    },
+    {
+      "repo": "neweix24/neweix",
+      "service": "Neweix",
+      "role": "public-hub-and-admin-entry",
+      "default_branch": "main",
+      "implementation": "public-website-and-service-directory",
+      "status": "deployed-ci-success-2026-11-27",
+      "host": "https://www.neweix.com",
+      "runtime_evidence": "GitHub Actions validation and Cloudflare Worker deploy succeeded; live HTTP was not independently verified in this audit."
+    },
+    {
+      "repo": "neweix24/account",
+      "service": "Neweix Account",
+      "role": "customer-identity",
+      "default_branch": "main",
+      "implementation": "nextjs-account-app-and-supabase-auth",
+      "status": "deployed-with-acceptance-gaps",
+      "host": "https://www.accounts.neweix.com",
+      "runtime_evidence": "Worker/custom-domain binding documented; latest production deployment workflow failed on 2026-11-14 because CLOUDFLARE_API_TOKEN was unavailable. OIDC service-client contract remains unverified."
+    },
+    {
+      "repo": "neweix24/employees",
+      "service": "Employees",
+      "role": "workforce-and-admin-identity",
+      "default_branch": "main",
+      "implementation": "placeholder-domain-documentation-only",
+      "status": "planned",
+      "host": "https://employees.neweix.com",
+      "runtime_evidence": "DNS record documented; repository currently contains only DOMAIN.md; hosting/runtime not verified."
+    },
+    {
+      "repo": "neweix24/eixon",
+      "service": "Eixon",
+      "role": "eix-token-wallet-and-ledger",
+      "default_branch": "main",
+      "implementation": "legacy-extraction-with-conflicting-draft-redesign",
+      "status": "policy-realignment-required",
+      "host": "https://eixon.neweix.com",
+      "working_branch": "feat/standalone-eixon-app",
+      "draft_pr": 1,
+      "runtime_evidence": "No standalone production runtime verified. Legacy main contains old transfer/reward/EixVerse/Neweix+ code. PR #1 is draft and must not be merged as-is."
+    },
+    {
+      "repo": "neweix24/shop",
+      "service": "Neweix Shop",
+      "role": "single-vendor-commerce",
+      "default_branch": "main",
+      "implementation": "storefront-and-nestjs-api-on-working-branch",
+      "status": "storefront-deployed-api-disabled",
+      "host": "https://www.shop.neweix.com",
+      "working_branch": "feat/shop-ecosystem-remediation",
+      "draft_pr": 2,
+      "runtime_evidence": "Worker deployment and custom-domain mapping confirmed; /api deliberately returns 503; catalog and inventory are empty; checkout remains disabled. PR #2 is draft/unmerged and targets neweix24-patch-1, not main."
+    },
+    {
+      "repo": "neweix24/connect",
+      "service": "Neweix Connect",
+      "role": "messaging-and-communication",
+      "default_branch": "main",
+      "implementation": "worker-api-schema-and-preview-foundation",
+      "status": "in-development",
+      "host": "https://connect.neweix.com",
+      "runtime_evidence": "Preview config and initial migration exist; no production deployment or production Account integration verified. Membership/RLS and atomic-conversation fixes are required."
+    },
+    {
+      "repo": "neweix24/neweix-plus",
+      "service": "Neweix+",
+      "role": "subscription-and-entitlements",
+      "default_branch": "main",
+      "implementation": "placeholder-domain-and-copied-blueprint-only",
+      "status": "planned",
+      "host": "https://neweix-plus.neweix.com",
+      "runtime_evidence": "Repository contains DOMAIN.md and a copied blueprint only; hosting/runtime not verified."
+    },
+    {
+      "repo": "neweix24/eixora",
+      "service": "Eixora",
+      "role": "social-platform",
+      "default_branch": "main",
+      "implementation": "placeholder-domain-documentation-only",
+      "status": "planned",
+      "host": "https://eixora.neweix.com",
+      "runtime_evidence": "Repository currently contains only DOMAIN.md; hosting/runtime not verified."
+    }
+  ],
+  "policy": {
+    "one_master_charter": "neweix24/supreme/docs/ecosystem-governance-charter.md",
+    "one_master_registry": "neweix24/supreme/config/ecosystem-registry.json",
+    "service_owns_its_data": true,
+    "shared_database_does_not_imply_shared_ownership": true,
+    "production_write_capabilities_enabled": false,
+    "client_supplied_roles_or_account_ids_trusted": false,
+    "draft_prs_are_authoritative": false
+  }
+}
