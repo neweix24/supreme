@@ -46,3 +46,15 @@ This document records repository-level implementation evidence. A planned servic
 - CI success proves only the jobs in that workflow. It does not prove every production integration or user journey works.
 - Cloudflare deployment metadata, DNS presence, and Worker custom-domain bindings do not replace a controlled live HTTP/authentication test.
 - Production database migrations, secret changes, DNS changes, deployments, merges, and destructive operations require their own review/approval gates.
+
+
+## Live Supabase integration evidence (read-only, 2026-11-27)
+
+- The Neweix project’s Supreme service registry still contains six rows, including the old `neweix-message` planned alias with no repository metadata.
+- Only `neweix/production` is enabled and points at the non-canonical `https://neweix.com` host. Account, Shop, Eixon, Supreme and the old Message alias have disabled development environments.
+- Service capabilities: 0. Secret references: 0. Supreme control requests: 0.
+- Account’s `private.neweix_account_service_access` table has 0 rows; first-party service access is not provisioned.
+- The Eixon project has six RLS-enabled Core/Ledger tables and all six have zero rows. Four Eixon Core/Ledger migrations are applied. No Eixon principal, ledger account, journal entry or posting exists.
+- The registry alignment migration `20261127180000_supreme_ecosystem_registry_alignment.sql` remains source-only. It has not been applied to the live project.
+
+Therefore, the ecosystem is governed by the canonical charter in source, but the live Supreme registry is not yet the nine-service operational registry and has no enabled service capabilities. See [registry database notes](../services/registry/database.md).
