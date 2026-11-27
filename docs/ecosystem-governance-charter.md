@@ -68,7 +68,7 @@ Routine operational work does not require Supreme approval each time, provided i
 
 Neweix Account is the sole customer identity authority. A person may have multiple customer profiles/business identities beneath one Account, but that does not create workforce or Supreme authority. Supreme authentication remains separate from customer login. Admin and employee access must use the workforce/privileged authorization model, not a customer-supplied role, username, profile field, or browser flag.
 
-Until the Employees service and the Admin grant contract are implemented and tested, no new Admin identity, staff identity, or privileged access path may be fabricated. Existing operational access must remain explicitly provisioned and audited.
+The canonical [Admin Grant Contract v1](./contracts/admin-grant-v1.md) defines the required identity, token, approval, scope, revocation and service-side validation boundaries. It is design-only until implemented and tested. Until the Employees service and Admin grant issuer are implemented and tested, no new Admin identity, staff identity, or privileged access path may be fabricated. Existing operational access must remain explicitly provisioned and audited.
 
 ## 3. Repository and service ownership
 
