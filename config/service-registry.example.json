@@ -2,26 +2,277 @@
   "schema_version": 1,
   "services": [
     {
-      "service_id": "neweix-commerce",
-      "display_name": "Neweix Commerce",
+      "service_id": "supreme",
+      "display_name": "Supreme",
+      "description": "Highest ecosystem authority and governance control plane.",
+      "repository": {
+        "provider": "github",
+        "full_name": "neweix24/supreme",
+        "default_branch": "main"
+      },
+      "owner": {
+        "team": "Supreme"
+      },
+      "data_classification": "restricted",
+      "risk_tier": "critical",
+      "environments": [
+        {
+          "environment_id": "production",
+          "classification": "production",
+          "enabled": false
+        }
+      ],
+      "capabilities": [],
+      "integration_secret_refs": [],
+      "health_check": {
+        "kind": "none",
+        "timeout_seconds": 5
+      },
+      "status": "active",
+      "metadata_version": 2
+    },
+    {
+      "service_id": "neweix",
+      "display_name": "Neweix",
+      "description": "Public hub, service directory and Admin operations entry point.",
       "repository": {
         "provider": "github",
         "full_name": "neweix24/neweix",
         "default_branch": "main"
       },
+      "owner": {
+        "team": "Neweix"
+      },
+      "data_classification": "public",
+      "risk_tier": "high",
       "environments": [
         {
           "environment_id": "production",
-          "classification": "production"
+          "classification": "production",
+          "api_base_url": "https://www.neweix.com",
+          "enabled": true
         }
       ],
-      "capabilities": [
-        "repository.read",
-        "deployment.status.read",
-        "service.health.read"
-      ],
+      "capabilities": [],
       "integration_secret_refs": [],
-      "status": "planned"
+      "health_check": {
+        "kind": "none",
+        "timeout_seconds": 5
+      },
+      "status": "active",
+      "metadata_version": 2
+    },
+    {
+      "service_id": "neweix-account",
+      "display_name": "Neweix Account",
+      "description": "Customer identity and sessions only; not Admin or Supreme identity.",
+      "repository": {
+        "provider": "github",
+        "full_name": "neweix24/account",
+        "default_branch": "main"
+      },
+      "owner": {
+        "team": "Neweix Account"
+      },
+      "data_classification": "restricted",
+      "risk_tier": "critical",
+      "environments": [
+        {
+          "environment_id": "production",
+          "classification": "production",
+          "api_base_url": "https://www.accounts.neweix.com",
+          "enabled": true
+        }
+      ],
+      "capabilities": [],
+      "integration_secret_refs": [],
+      "health_check": {
+        "kind": "none",
+        "timeout_seconds": 5
+      },
+      "status": "active",
+      "metadata_version": 2
+    },
+    {
+      "service_id": "employees",
+      "display_name": "Employees",
+      "description": "Admin and workforce identity records and delegated workforce permissions.",
+      "repository": {
+        "provider": "github",
+        "full_name": "neweix24/employees",
+        "default_branch": "main"
+      },
+      "owner": {
+        "team": "Employees"
+      },
+      "data_classification": "restricted",
+      "risk_tier": "high",
+      "environments": [
+        {
+          "environment_id": "development",
+          "classification": "development",
+          "enabled": false
+        }
+      ],
+      "capabilities": [],
+      "integration_secret_refs": [],
+      "health_check": {
+        "kind": "none",
+        "timeout_seconds": 5
+      },
+      "status": "planned",
+      "metadata_version": 1
+    },
+    {
+      "service_id": "eixon",
+      "display_name": "Eixon",
+      "description": "EIX wallet and unit ledger for Neweix-only purchase and designated gift flows.",
+      "repository": {
+        "provider": "github",
+        "full_name": "neweix24/eixon",
+        "default_branch": "main"
+      },
+      "owner": {
+        "team": "Eixon"
+      },
+      "data_classification": "restricted",
+      "risk_tier": "critical",
+      "environments": [
+        {
+          "environment_id": "development",
+          "classification": "development",
+          "enabled": false
+        }
+      ],
+      "capabilities": [],
+      "integration_secret_refs": [],
+      "health_check": {
+        "kind": "none",
+        "timeout_seconds": 5
+      },
+      "status": "planned",
+      "metadata_version": 2
+    },
+    {
+      "service_id": "neweix-shop",
+      "display_name": "Neweix Shop",
+      "description": "Single-vendor commerce. Storefront deployed; API and checkout remain gated.",
+      "repository": {
+        "provider": "github",
+        "full_name": "neweix24/shop",
+        "default_branch": "main"
+      },
+      "owner": {
+        "team": "Neweix Shop"
+      },
+      "data_classification": "confidential",
+      "risk_tier": "high",
+      "environments": [
+        {
+          "environment_id": "production",
+          "classification": "production",
+          "api_base_url": "https://www.shop.neweix.com",
+          "enabled": true
+        }
+      ],
+      "capabilities": [],
+      "integration_secret_refs": [],
+      "health_check": {
+        "kind": "none",
+        "timeout_seconds": 5
+      },
+      "status": "active",
+      "metadata_version": 2
+    },
+    {
+      "service_id": "neweix-connect",
+      "display_name": "Neweix Connect",
+      "description": "Messaging and communication service; Account integration and production release remain gated.",
+      "repository": {
+        "provider": "github",
+        "full_name": "neweix24/connect",
+        "default_branch": "main"
+      },
+      "owner": {
+        "team": "Neweix Connect"
+      },
+      "data_classification": "confidential",
+      "risk_tier": "high",
+      "environments": [
+        {
+          "environment_id": "development",
+          "classification": "development",
+          "enabled": false
+        }
+      ],
+      "capabilities": [],
+      "integration_secret_refs": [],
+      "health_check": {
+        "kind": "none",
+        "timeout_seconds": 5
+      },
+      "status": "planned",
+      "metadata_version": 1
+    },
+    {
+      "service_id": "neweix-plus",
+      "display_name": "Neweix+",
+      "description": "Separate subscription and entitlements service; Eixon owns payment/ledger processing.",
+      "repository": {
+        "provider": "github",
+        "full_name": "neweix24/neweix-plus",
+        "default_branch": "main"
+      },
+      "owner": {
+        "team": "Neweix+"
+      },
+      "data_classification": "confidential",
+      "risk_tier": "moderate",
+      "environments": [
+        {
+          "environment_id": "development",
+          "classification": "development",
+          "enabled": false
+        }
+      ],
+      "capabilities": [],
+      "integration_secret_refs": [],
+      "health_check": {
+        "kind": "none",
+        "timeout_seconds": 5
+      },
+      "status": "planned",
+      "metadata_version": 1
+    },
+    {
+      "service_id": "eixora",
+      "display_name": "Eixora",
+      "description": "Social platform, profiles, feed, content and moderation.",
+      "repository": {
+        "provider": "github",
+        "full_name": "neweix24/eixora",
+        "default_branch": "main"
+      },
+      "owner": {
+        "team": "Eixora"
+      },
+      "data_classification": "confidential",
+      "risk_tier": "high",
+      "environments": [
+        {
+          "environment_id": "development",
+          "classification": "development",
+          "enabled": false
+        }
+      ],
+      "capabilities": [],
+      "integration_secret_refs": [],
+      "health_check": {
+        "kind": "none",
+        "timeout_seconds": 5
+      },
+      "status": "planned",
+      "metadata_version": 1
     }
   ]
 }
