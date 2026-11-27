@@ -23,12 +23,13 @@
     {
       "repo": "neweix24/neweix",
       "service": "Neweix",
-      "role": "public-hub-and-admin-entry",
+      "role": "public-hub-and-service-directory",
       "default_branch": "main",
       "implementation": "public-website-and-service-directory",
       "status": "deployed-ci-success-2026-11-27",
       "host": "https://www.neweix.com",
-      "runtime_evidence": "GitHub Actions validation and Cloudflare Worker deploy succeeded; live HTTP was not independently verified in this audit."
+      "runtime_evidence": "GitHub Actions validation and Cloudflare Worker deploy succeeded; live HTTP was not independently verified in this audit.",
+      "notes": "The public hub and service directory are deployed. A unified Admin operations workspace is a target capability, not a verified live feature; Admin currently operates through the owning service interfaces where available. Live HTTP was not independently verified in this audit."
     },
     {
       "repo": "neweix24/account",
@@ -36,9 +37,9 @@
       "role": "customer-identity",
       "default_branch": "main",
       "implementation": "nextjs-account-app-and-supabase-auth",
-      "status": "deployed-with-acceptance-gaps",
+      "status": "implementation-present-deployment-blocked",
       "host": "https://www.accounts.neweix.com",
-      "runtime_evidence": "Worker/custom-domain binding documented; latest production deployment workflow failed on 2026-11-14 because CLOUDFLARE_API_TOKEN was unavailable. OIDC service-client contract remains unverified."
+      "runtime_evidence": "Application source and Worker/custom-domain configuration exist, but the latest production deployment workflow failed on 2026-11-14 because CLOUDFLARE_API_TOKEN was unavailable. Do not describe production deployment as complete until a successful deployment and live smoke test are recorded. OIDC service-client contract remains unverified."
     },
     {
       "repo": "neweix24/employees",
@@ -114,6 +115,17 @@
     "production_write_capabilities_enabled": false,
     "client_supplied_roles_or_account_ids_trusted": false,
     "draft_prs_are_authoritative": false,
-    "canonical_host_rule": "Use www-prefixed canonical hostnames for public service URLs. DNS/Worker bindings and live HTTP must still be independently verified."
+    "canonical_host_rule": "Use www-prefixed canonical hostnames for public service URLs. DNS/Worker bindings and live HTTP must still be independently verified.",
+    "admin_workspace": {
+      "status": "not_yet_implemented_as_a_unified_workspace",
+      "operational_rule": "Admin is the single day-to-day operational authority across services, but must execute through each owning service's authenticated interface/API until the Neweix Admin workspace is implemented.",
+      "authority": "Supreme-approved scoped Admin grants only; no self-elevation or client-side role trust."
+    },
+    "canonical_governance_files": {
+      "charter": "neweix24/supreme/docs/ecosystem-governance-charter.md",
+      "registry": "neweix24/supreme/config/ecosystem-registry.json",
+      "admin_grant_contract": "neweix24/supreme/docs/contracts/admin-grant-v1.md",
+      "implementation_inventory": "neweix24/supreme/docs/ecosystem-feature-inventory.md"
+    }
   }
 }
