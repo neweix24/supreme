@@ -111,3 +111,16 @@ Existing Supreme implementation work from `neweix24/neweix` has been copied into
 ## Governance and authority model
 
 The authority boundaries between Supreme, Neweix, and the daily Admin are specified in [Governance and authority model](docs/governance-authority-model.md). The machine-readable [authority policy catalog](config/authority-policy.v1.json) is design-only and does not grant runtime permissions. Admin delegation and service-side enforcement must be implemented and tested before these proposed capabilities are enabled.
+
+
+
+## Canonical ecosystem governance
+
+Supreme is the highest and final authority for the Neweix ecosystem. Admin is the single day-to-day operational authority and manages normal operations across services within Supreme-approved, service-scoped permissions. Supreme owns policy, delegation, reserved approvals, emergency suspension/revocation, and oversight; it is not the routine business operator.
+
+- [Canonical Ecosystem Governance and Operating Charter](docs/ecosystem-governance-charter.md)
+- [Canonical nine-repository registry](config/ecosystem-registry.json)
+- [Current implementation inventory](docs/ecosystem-feature-inventory.md)
+- [Supreme service registry](services/registry/README.md)
+
+These documents supersede copied ecosystem blueprints in other service repositories. Each service retains ownership of its own application, API, and data. Registry membership does not grant execution permission.
