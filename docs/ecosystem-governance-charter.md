@@ -102,7 +102,7 @@ The current branch/implementation status is recorded in [the machine-readable ec
 
 ## 5. Eixon product policy
 
-EIX is a Neweix ecosystem utility token intended to make purchases of Neweix products and services easier. It is not to be presented or implemented as a virtual currency, cryptocurrency, investment, cash balance, external payment instrument, or general-purpose external transaction medium.
+EIX is a Neweix ecosystem utility token intended to make purchases of Neweix products and services easier. It is not to be presented or implemented as a virtual currency, virtual asset, cryptocurrency, investment, cash balance, external payment instrument, or general-purpose external transaction medium.
 
 Binding product boundaries:
 
@@ -112,7 +112,7 @@ Binding product boundaries:
 - No ordinary person-to-person transfer, wallet-to-wallet transfer, Account ID transfer, username transfer, or QR-based transfer.
 - Only a separately designed, designated gift workflow may be offered. The current maximum gift limit is **BDT 1,000 per gift**. Admin cannot change this limit. Supreme alone may amend it.
 - No cash-out, withdrawal, external remittance, or general deposit/withdraw dashboard function. Any future legally approved function requires explicit Supreme approval and a separate policy/release gate.
-- Each customer Account has one Eixon wallet; Personal and Business Profiles under the same Account do not create separate wallets.
+- Each customer Account has exactly one Eixon wallet. Personal and Business Profiles under the same Account use that same wallet and do not create separate wallets.
 - Eixon owns the EIX unit ledger. Shop and Neweix+ consume approved Eixon payment contracts; neither creates a shadow balance or ledger.
 
 The current Eixon repository contains legacy reward, transfer, EixVerse, and Neweix+ source. Those legacy flows are not authority to enable features. They must remain unavailable until replaced by code matching this policy. The current standalone-ledger Draft PR is not approved for merge as-is.
