@@ -104,5 +104,18 @@
     "approval_is_bound_to_exact_action_target_parameters_and_expiry",
     "privileged_allow_and_deny_decisions_are_audited",
     "authorization_failures_fail_closed"
-  ]
+  ],
+  "financial_policy": {
+    "shop_bdt_eix_denomination": {
+      "status": "supreme_decision_recorded",
+      "effective_date": "2026-11-27",
+      "bdt_per_eix": 1,
+      "eix_per_bdt": 1,
+      "applies_to": "BDT-denominated eligible Neweix purchases through an approved Eixon quote flow",
+      "quote_authority": "eixon",
+      "rounding": "none; reject if exact precision is unsupported",
+      "conversion_fee_or_spread": "none implied; any separate fee requires explicit Supreme approval",
+      "checkout_activation_authorized": false
+    }
+  }
 }
