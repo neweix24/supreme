@@ -38,7 +38,7 @@ on conflict (service_id) do update set
 -- Keep the old registry identifier for audit/history, but make it non-operational.
 update supreme.services
 set display_name = 'Neweix Message (retired alias)',
-    description = 'Retired legacy registry alias. The current communication service is ne weix-connect; this record must not be used for routing or authorization.',
+    description = 'Retired legacy registry alias. The current communication service is neweix-connect; this record must not be used for routing or authorization.',
     repository_provider = 'github',
     repository_full_name = 'neweix24/connect',
     repository_default_branch = 'main',
