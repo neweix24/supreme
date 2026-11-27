@@ -560,7 +560,7 @@ async function serviceRows(cursor: string | null, limit: number, onlyId?: string
       ) as health_check,
       s.status, s.metadata_version, s.updated_at
     from supreme.services s
-    where (${onlyId ?? null}::text is not null or s.status <> 'retired')
+    where (${onlyId ?? null}::text is not null or (s.status <> 'retired' and s.service_id <> 'neweix-message'))
       and (${onlyId ?? null}::text is null or s.service_id = ${onlyId ?? null})
       and (${cursor ?? null}::text is null or s.service_id > ${cursor ?? null})
     order by s.service_id
