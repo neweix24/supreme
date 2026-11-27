@@ -122,5 +122,6 @@ Supreme is the highest and final authority for the Neweix ecosystem. Admin is th
 - [Canonical nine-repository registry](config/ecosystem-registry.json)
 - [Current implementation inventory](docs/ecosystem-feature-inventory.md)
 - [Supreme service registry](services/registry/README.md)
+- [Supreme-approved Admin Grant Contract v1](docs/contracts/admin-grant-v1.md)
 
 These documents supersede copied ecosystem blueprints in other service repositories. Each service retains ownership of its own application, API, and data. Registry membership does not grant execution permission.
